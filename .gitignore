@@ -27,3 +27,8 @@ Thumbs.db
 # Local storage (user data)
 # Note: Keep this commented if you want to track example data
 # ~/.tardis/
+
+# Credentials and secrets
+credentials.json
+token.json
+sheets_config.json
