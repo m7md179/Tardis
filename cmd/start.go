@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"tardis/internal/session"
 	"tardis/internal/storage"
+
+	"github.com/spf13/cobra"
 )
 
 var startCmd = &cobra.Command{
@@ -22,20 +23,6 @@ var startCmd = &cobra.Command{
 		store, err := storage.New(getStoragePath())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: Failed to initialize storage: %v\n", err)
-			os.Exit(1)
-		}
-		
-		// Check if there's already an active session
-		current, err := store.GetCurrentSession()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to get current session: %v\n", err)
-			os.Exit(1)
-		}
-		
-		if current != nil && !current.IsEnded() {
-			fmt.Fprintf(os.Stderr, "Error: There is already an active session.\n")
-			fmt.Fprintf(os.Stderr, "Task: %s\n", current.Task)
-			fmt.Fprintf(os.Stderr, "Use 'tardis stop' to end it first.\n")
 			os.Exit(1)
 		}
 		

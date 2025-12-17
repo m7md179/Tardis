@@ -25,9 +25,12 @@ func init() {
 	rootCmd.AddCommand(pauseCmd)
 	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(logCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(wipeCmd)
 }
 
 func getStoragePath() string {
