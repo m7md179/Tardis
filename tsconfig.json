@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    // Language and Environment
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    // Type Checking
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+
+    // Emit
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": false,
+    "importHelpers": false,
+    "downlevelIteration": true,
+
+    // Interop Constraints
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+
+    // Completeness
+    "skipLibCheck": true,
+
+    // Bun-specific
+    "types": ["bun-types"],
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+
+    // Path Mapping
+    "baseUrl": ".",
+    "paths": {
+      "@tardis/shared": ["./packages/shared/src/index.ts"],
+      "@tardis/cli": ["./packages/cli/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*"],
+  "exclude": ["node_modules", "dist", "build", "coverage", "**/*.test.ts", "**/*.spec.ts"]
+}

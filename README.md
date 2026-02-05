@@ -1,177 +1,278 @@
-# TARDIS
+# TARDIS - Time Tracking CLI
 
-> A lightweight, offline-first CLI tool for tracking focused work time.
+⏰ **TARDIS** (Time And Resource Documentation & Insight System) is a powerful command-line time tracking tool that syncs seamlessly with Todoist.
 
-[![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?style=flat&logo=go)](https://golang.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
----
+## Features
 
-## Why TARDIS Exists
+✨ **Smart Task Matching**
+- Fuzzy search your Todoist tasks
+- Auto-complete task names
+- Extract time windows from descriptions
 
-TARDIS started as a personal tool.
+⏱️ **Session Management**
+- Start, stop, pause, and resume sessions
+- Track multiple tasks simultaneously
+- Automatic duration calculation
 
-I wanted a simple way to answer a basic question at the end of the day:  
-**"Did I actually work, or did I just feel busy?"**
+📊 **Time Analytics**
+- View daily, weekly, or all-time logs
+- Formatted tables with colored output
+- Export to CSV or JSON
 
-I didn't set out to build a time-tracking product. I just needed something that could reliably tell me how long I was actually focused on a task, without forcing me into a workflow that didn't fit how I work.
+🔄 **Todoist Integration**
+- Automatic sync on session completion
+- Manual sync for batch operations
+- Mark tasks complete from CLI
 
-I could have spent time trying and testing existing tools, but it was easier (and more flexible) to build something tailored to my own habits instead.
-
----
-
-## What Problem It Solves (For Me)
-
-TARDIS helps me keep an honest record of my work time.
-
-Not to optimize productivity, and not to gamify anything — just to see:
-- How long I spent on a task
-- When I started and stopped focusing
-- Whether a day was actually productive or just felt like it was
-
-Being explicit about starting, pausing, and stopping a session makes it harder to lie to myself about how my time is spent.
-
----
-
-## Design Philosophy
-
-TARDIS is built around how I actually work:
-
-- I spend most of my day in the terminal
-- I want something fast enough that I won't avoid using it
-- I want my data local and inspectable
-- I don't want to depend on a service just to track time
-
-That's why TARDIS is:
-- **CLI-first**
-- **Local-first**
-- **Explicit**, not automatic
-
-If I stop using it, my data is still there.  
-If I want to inspect or modify it, I can.
-
----
-
-## Why Google Sheets
-
-Google Sheets wasn't chosen as a "backend" — it's used as a **convenient mirror**.
-
-I wanted something that:
-- Already exists
-- Is reliable and well-tested
-- Works as both a simple frontend and a cloud database
-- Doesn't require me to build and maintain a UI
-
-Sheets fits that role well.  
-TARDIS continues to work without it, but syncing makes reviewing and organizing work over time easier.
-
----
+💾 **Smart Storage**
+- JSON-based local storage
+- Automatic session archiving by date
+- Migration from Go version included
 
 ## Quick Start
 
-### Installation
+```bash
+# Install dependencies
+bun install
 
-Build and install TARDIS:
+# Run setup wizard
+bun run packages/cli/bin/tardis.ts setup
+
+# Start tracking
+bun run packages/cli/bin/tardis.ts start "Write documentation"
+
+# Check status
+bun run packages/cli/bin/tardis.ts status
+
+# Stop and sync
+bun run packages/cli/bin/tardis.ts stop
+```
+
+## Installation
+
+### Option 1: From Source
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/yourusername/tardis.git
 cd tardis
-go build -o tardis main.go
-sudo cp tardis /usr/local/bin/  # or use a symlink
+bun install
+bun run build
+
+# Create symlink (optional)
+ln -s $(pwd)/packages/cli/bin/tardis.ts /usr/local/bin/tardis
 ```
 
-Or install to your user directory:
+### Option 2: Build Binary
 
 ```bash
-mkdir -p ~/bin
-cp tardis ~/bin/
-# Add ~/bin to your PATH in ~/.zshrc or ~/.bashrc
+bun install
+cd packages/cli
+bun build --compile --minify --sourcemap ./bin/tardis.ts --outfile tardis
+
+# Move to PATH
+sudo mv tardis /usr/local/bin/
 ```
 
-### Basic Usage
+## Commands
 
-**Start tracking a task:**
+### Session Management
+
 ```bash
-tardis start "Working on feature X"
+# Start a task
+tardis start "Write documentation"
+tardis start "Code review" --time-window "[9am-5pm]"
+
+# Stop current task
+tardis stop
+
+# Stop specific task
+tardis stop "Write documentation"
+
+# Pause task
+tardis pause
+
+# Resume task
+tardis resume
+
+# Check status
+tardis status
+
+# List all active sessions
+tardis list
 ```
 
-**Check what's running:**
+### History & Analytics
+
 ```bash
-tardis list          # List all active sessions
-tardis status        # Show status of current session
+# View today's log
+tardis log
+
+# View specific date
+tardis log 2024-01-15
+
+# View all history
+tardis log all
 ```
 
-**Pause and resume:**
+### Todoist Integration
+
 ```bash
-tardis pause         # Pause current session
-tardis resume        # Resume paused session
+# View Todoist tasks
+tardis tasks
+
+# Sync completed sessions
+tardis sync
+
+# Complete task in Todoist
+tardis complete "Task name"
 ```
 
-**End a session:**
+### Data Management
+
 ```bash
-tardis stop          # Stop and save session
+# Delete session by task name
+tardis delete "Old task"
+
+# Wipe all data (requires confirmation)
+tardis wipe
 ```
 
-**View your logs:**
+### Configuration
+
 ```bash
-tardis log           # Today's sessions
-tardis log 2024-01-15  # Specific date
-tardis log all       # All historical sessions
+# Run setup wizard
+tardis setup
+
+# Show configuration
+tardis config --show
+
+# Set Todoist token
+tardis config --todoist-token YOUR_TOKEN
 ```
 
-**Manage sessions:**
+## Time Windows
+
+Add time windows to your Todoist task descriptions:
+
+```
+[9am-5pm] Write documentation
+[14:00-15:30] Team meeting
+```
+
+TARDIS will extract and display these time windows automatically.
+
+## Configuration
+
+Configuration is stored at `~/.tardis/config.json`:
+
+```json
+{
+  "todoist": {
+    "apiToken": "your-token-here",
+    "syncInterval": 300
+  },
+  "storage": {
+    "type": "json",
+    "archiveAfterDays": 30
+  }
+}
+```
+
+Get your Todoist API token from:
+https://todoist.com/app/settings/integrations/developer
+
+## Data Storage
+
+TARDIS stores data in `~/.tardis/`:
+
+```
+~/.tardis/
+├── config.json              # Configuration
+├── active_sessions/         # Currently active sessions
+│   └── task_*.json
+└── sessions/                # Archived sessions by date
+    ├── 2024-01-15/
+    │   ├── task1_*.json
+    │   └── task2_*.json
+    └── 2024-01-16/
+        └── task3_*.json
+```
+
+## Migration from Go Version
+
+If you have data from the Go version of TARDIS:
+
 ```bash
-tardis delete "task name"  # Delete a specific session
-tardis wipe                # Delete all sessions (with confirmation)
+# Automatic migration (happens on first use)
+tardis status
+
+# Or run manual migration script
+bun run scripts/migrate-from-go.ts
 ```
 
-That's it! TARDIS stores everything locally in `~/.tardis/`.
+## Development
 
-For detailed documentation, installation options, Google Sheets sync, and more examples, see **[README_GO.md](README_GO.md)**.
+```bash
+# Install dependencies
+bun install
 
----
+# Run in development
+bun run dev
 
-## Scope and Direction
+# Run tests
+bun test
 
-TARDIS is primarily built for my own daily use.  
-If other people find it useful, that's a bonus — not the main goal.
+# Run linter
+bun run lint
 
-The project is intentionally kept small, but it's expected to evolve as my workflow evolves. Planned ideas include:
+# Type check
+bun run typecheck
 
-- Linking tracked tasks to **Git and GitHub workflows**
-- Expanding session data to better reflect how work actually happens
-- Improving logs and summaries in ways that are useful in day-to-day work
+# Build all packages
+bun run build
+```
 
-Anything added should make TARDIS more useful **without making it heavier or more complicated**.
+## Project Structure
 
----
+```
+tardis/
+├── packages/
+│   ├── shared/           # Shared types and utilities
+│   └── cli/             # CLI application
+├── scripts/             # Build and migration scripts
+└── docs/               # Documentation
+```
 
-## What TARDIS Is Not
+## Contributing
 
-TARDIS is not:
-- A productivity system
-- A task manager
-- A project planner
-- A SaaS product
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-It's simply a way to record work time honestly, with as little friction as possible.
-
----
-
-## Documentation
-
-For detailed information including:
-- Complete installation instructions
-- All available commands and options
-- Google Sheets sync setup
-- Task name matching rules
-- Data storage structure
-- Advanced usage examples
-
-👉 See **[README_GO.md](README_GO.md)** for the full technical documentation.
-
----
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-MIT
+MIT © [Your Name]
+
+## Acknowledgments
+
+- Built with [Bun](https://bun.sh/)
+- Powered by [Todoist API](https://developer.todoist.com/)
+- Inspired by the original Go implementation
+
+## Support
+
+- 📖 [Documentation](docs/)
+- 🐛 [Issue Tracker](https://github.com/yourusername/tardis/issues)
+- 💬 [Discussions](https://github.com/yourusername/tardis/discussions)
+
+---
+
+Made with ❤️ and TypeScript

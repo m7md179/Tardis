@@ -1,0 +1,30 @@
+{
+  "name": "@tardis/cli",
+  "version": "2.0.0",
+  "description": "TARDIS time tracking CLI",
+  "type": "module",
+  "bin": {
+    "tardis": "./bin/tardis.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "clean": "rm -rf dist coverage"
+  },
+  "dependencies": {
+    "@tardis/shared": "workspace:*",
+    "commander": "^14.0.3",
+    "inquirer": "^13.2.0",
+    "ora": "^9.1.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.13",
+    "@types/inquirer": "^9.0.7",
+    "@types/uuid": "^11.0.0",
+    "typescript": "^5.7.2"
+  }
+}

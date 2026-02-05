@@ -2,8 +2,23 @@
 tardis
 tardis-go
 tardis-*
+dist/
 
-# Go
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+.test-*
+*.test.local
+
+# Build
+*.tsbuildinfo
+.turbo/
+
+# Go (legacy)
 *.exe
 *.exe~
 *.dll
@@ -25,10 +40,32 @@ go.work
 Thumbs.db
 
 # Local storage (user data)
-# Note: Keep this commented if you want to track example data
-# ~/.tardis/
+.tardis/
 
 # Credentials and secrets
 credentials.json
 token.json
 sheets_config.json
+*.env
+*.env.local
+
+# Migration work-in-progress
+migration-chunks/
+
+# Temporary files
+*.log
+.claude/
+
+# Old Go files (migrated to TypeScript)
+cmd/
+internal/
+main.go
+go.mod
+go.sum
+README_GO.md
+
+# Temporary documentation
+MIGRATION-COMPLETE.md
+TEST-*.md
+phase1.md
+QUICK-START.md

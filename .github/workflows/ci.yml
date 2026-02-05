@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run linter
+        run: bun run lint
+
+      - name: Check formatting
+        run: bun run format:check
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run type checker
+        run: bun run typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run tests
+        run: bun test --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/coverage-final.json
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build packages
+        run: bun run build
+
+      - name: Check build artifacts
+        run: |
+          if [ ! -d "packages/cli/dist" ]; then
+            echo "Build failed: CLI dist directory not found"
+            exit 1
+          fi
+
+  build-binary:
+    name: Build Binary
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact: tardis-linux
+          - os: macos-latest
+            artifact: tardis-macos
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build binary
+        run: |
+          cd packages/cli
+          bun build --compile --minify --sourcemap ./bin/tardis.ts --outfile ${{ matrix.artifact }}
+
+      - name: Check binary size
+        run: |
+          BINARY_SIZE=$(stat -f%z "packages/cli/${{ matrix.artifact }}" 2>/dev/null || stat -c%s "packages/cli/${{ matrix.artifact }}")
+          MAX_SIZE=$((10 * 1024 * 1024))  # 10MB
+          if [ $BINARY_SIZE -gt $MAX_SIZE ]; then
+            echo "Binary size ($BINARY_SIZE bytes) exceeds maximum ($MAX_SIZE bytes)"
+            exit 1
+          fi
+          echo "Binary size: $(numfmt --to=iec-i --suffix=B $BINARY_SIZE)"
+
+      - name: Test binary
+        run: |
+          ./packages/cli/${{ matrix.artifact }} --version
+          ./packages/cli/${{ matrix.artifact }} --help
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: packages/cli/${{ matrix.artifact }}
