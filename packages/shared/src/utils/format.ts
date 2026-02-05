@@ -1,5 +1,7 @@
 import chalk from 'chalk';
+import { parseISO, differenceInDays, format, isPast, isToday, isTomorrow } from 'date-fns';
 import type { SessionStatus } from '../types/session';
+import type { TodoistDueDate } from '../types/task';
 
 /**
  * Format success message with checkmark
@@ -129,4 +131,46 @@ export function numbered(number: number, text: string): string {
 export function stripColors(text: string): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * Format relative date string
+ */
+function formatRelativeDate(date: Date, now: Date): string {
+  if (isToday(date)) return 'Today';
+  if (isTomorrow(date)) return 'Tomorrow';
+
+  const daysDiff = differenceInDays(date, now);
+
+  // 0-7 days: relative
+  if (daysDiff >= 0 && daysDiff <= 7) {
+    return `In ${daysDiff} days`;
+  }
+
+  // Same year: short format
+  if (date.getFullYear() === now.getFullYear()) {
+    return format(date, 'MMM d');
+  }
+
+  // Different year: full format
+  return format(date, 'yyyy-MM-dd');
+}
+
+/**
+ * Format due date with relative dates and color coding
+ */
+export function formatDueDate(due: TodoistDueDate | null | undefined): string {
+  if (!due || !due.date) {
+    return '-';
+  }
+
+  const dueDate = parseISO(due.date);
+  const now = new Date();
+
+  // Check if overdue
+  if (isPast(dueDate) && !isToday(dueDate)) {
+    return chalk.red(`! ${formatRelativeDate(dueDate, now)}`);
+  }
+
+  return formatRelativeDate(dueDate, now);
 }

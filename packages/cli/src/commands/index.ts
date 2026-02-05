@@ -15,5 +15,6 @@ export { wipeCommand } from './wipe';
 export { tasksCommand } from './tasks';
 export { syncCommand } from './sync';
 export { completeCommand } from './complete';
+export { addCommand } from './add';
 export { setupCommand } from './setup';
 export { configCommand } from './config';

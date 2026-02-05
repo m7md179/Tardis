@@ -9,6 +9,7 @@ export interface ParsedTask {
   content: string;
   description: string;
   timeWindow?: TimeWindow;
+  due?: TodoistTask['due'];
   labels: string[];
   priority: number;
   projectId: string;
@@ -52,6 +53,7 @@ export function parseTask(task: TodoistTask): ParsedTask {
     content: task.content,
     description: task.description,
     timeWindow: parseTaskTimeWindow(task.description),
+    due: task.due,
     labels: task.labels,
     priority: task.priority,
     projectId: task.project_id,

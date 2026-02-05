@@ -13,6 +13,7 @@ import {
   tasksCommand,
   syncCommand,
   completeCommand,
+  addCommand,
   setupCommand,
   configCommand,
 } from '../src/commands';
@@ -171,6 +172,22 @@ program
   .action(async (task) => {
     try {
       await completeCommand(task);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('add <content>')
+  .description('Add a new task to Todoist')
+  .option('-d, --description <text>', 'Task description (supports [HH:MM-HH:MM] time windows)')
+  .option('-p, --priority <level>', 'Priority level (1-4, default: 1)', '1')
+  .option('-l, --labels <labels>', 'Comma-separated labels')
+  .option('--due <date>', 'Due date (natural language or YYYY-MM-DD)')
+  .action(async (content, options) => {
+    try {
+      await addCommand(content, options);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : error);
       process.exit(1);

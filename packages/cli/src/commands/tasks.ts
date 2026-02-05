@@ -1,4 +1,4 @@
-import { error, heading, formatTaskName, dim, keyValue } from '@tardis/shared';
+import { error, heading, formatTaskName, dim, keyValue, formatDueDate } from '@tardis/shared';
 import { ConfigStore } from '../storage/config-store';
 import { TodoistClient, parseTask, getTasksWithTimeWindows } from '../todoist';
 import { spinner, table } from '../ui';
@@ -57,6 +57,7 @@ export async function tasksCommand(options: TasksOptions = {}): Promise<void> {
 
     type TaskRow = {
       content: string;
+      dueDate: string;
       timeWindow: string;
       priority: string;
       labels: string;
@@ -67,6 +68,12 @@ export async function tasksCommand(options: TasksOptions = {}): Promise<void> {
         header: 'Task',
         formatter: (row) => formatTaskName(row.content),
         align: 'left',
+      },
+      {
+        header: 'Due Date',
+        key: 'dueDate',
+        align: 'center',
+        width: 12,
       },
       {
         header: 'Time Window',
@@ -96,8 +103,11 @@ export async function tasksCommand(options: TasksOptions = {}): Promise<void> {
 
       const labelsStr = task.labels.length > 0 ? task.labels.join(', ') : '-';
 
+      const dueDateStr = formatDueDate(task.due);
+
       taskTable.addRow({
         content: task.content,
+        dueDate: dueDateStr,
         timeWindow: timeWindowStr,
         priority: priorityStr,
         labels: labelsStr,
