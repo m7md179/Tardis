@@ -1,0 +1,29 @@
+{
+  "name": "@tardis/server",
+  "version": "2.0.0",
+  "description": "TARDIS Server - REST API and background services",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "@tardis/shared": "workspace:*",
+    "hono": "^4.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "telegraf": "^4.16.3",
+    "zod": "^3.24.1",
+    "date-fns": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.13",
+    "@types/jsonwebtoken": "^9.0.5",
+    "typescript": "^5.7.2"
+  }
+}

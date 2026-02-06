@@ -64,12 +64,24 @@ export const StorageConfigSchema = z.object({
 export type StorageConfig = z.infer<typeof StorageConfigSchema>;
 
 /**
+ * Server configuration schema (for CLI)
+ */
+export const ServerConfigSchema = z.object({
+  url: z.string().url().optional(),
+  token: z.string().optional(),
+  expiresAt: z.string().optional(),
+  apiKey: z.string().optional(),
+});
+export type ServerConfig = z.infer<typeof ServerConfigSchema>;
+
+/**
  * Main application configuration schema
  */
 export const ConfigSchema = z.object({
   todoist: TodoistConfigSchema,
   notifications: NotificationsConfigSchema,
   storage: StorageConfigSchema,
+  server: ServerConfigSchema.optional(),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 

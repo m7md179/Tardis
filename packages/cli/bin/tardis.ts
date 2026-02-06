@@ -210,6 +210,8 @@ program
 program
   .command('config')
   .description('Show or update configuration')
+  .option('--server-url <url>', 'Set TARDIS server URL')
+  .option('--api-key <key>', 'Set server API key')
   .option('--todoist-token <token>', 'Set Todoist API token')
   .option('--show', 'Show current configuration')
   .action(async (options) => {

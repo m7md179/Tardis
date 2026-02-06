@@ -1,0 +1,25 @@
+[Unit]
+Description=TARDIS Time Tracking Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/lib/tardis
+Environment=TARDIS_CONFIG=/var/lib/tardis/config.json
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/bun /opt/tardis/packages/server/src/index.ts
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tardis
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
