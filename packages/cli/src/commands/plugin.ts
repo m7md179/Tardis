@@ -6,6 +6,7 @@ import { heading, error as errorStyle, success, warning } from '@tardis/shared';
 import { PluginManifestSchema } from '@tardis/shared';
 import type { PluginManifest } from '@tardis/shared';
 import { withSpinner } from '../ui';
+import { ServerClient } from '../api/client';
 
 const PLUGINS_DIR = join(TARDIS_DIR, 'plugins');
 
@@ -48,17 +49,60 @@ function getInstalledPlugins(): { name: string; manifest: PluginManifest }[] {
 
 /**
  * tardis plugin list
+ * Queries the server for plugins. Falls back to local filesystem if server is unavailable.
  */
 export async function pluginListCommand(): Promise<void> {
+  const client = new ServerClient();
+
+  if (client.isConfigured()) {
+    try {
+      const online = await client.isOnline();
+      if (online) {
+        const plugins = await client.listPlugins();
+
+        if (plugins.length === 0) {
+          console.log('No plugins installed on the server.');
+          console.log(`\nAdd plugins to the repo's plugins/ directory and deploy.`);
+          return;
+        }
+
+        console.log(heading(`\nServer Plugins (${plugins.length})`));
+        console.log('');
+
+        for (const plugin of plugins) {
+          const status = plugin.enabled
+            ? plugin.loaded
+              ? success('loaded')
+              : warning('enabled (not loaded)')
+            : warning('disabled');
+          const cmds = plugin.commands.map((c: any) => c.name).join(', ') || 'none';
+          const hooks = plugin.hooks.join(', ') || 'none';
+
+          console.log(`  ${plugin.displayName} v${plugin.version} [${status}]`);
+          console.log(`    ${plugin.description || ''}`);
+          console.log(`    Commands: ${cmds}`);
+          console.log(`    Hooks: ${hooks}`);
+          console.log('');
+        }
+        return;
+      }
+    } catch {
+      // Fall through to local
+    }
+  }
+
+  // Fallback: local filesystem
   const plugins = getInstalledPlugins();
 
   if (plugins.length === 0) {
-    console.log('No plugins installed.');
+    console.log('No plugins installed locally.');
     console.log(`\nInstall one with: tardis plugin install <git-url>`);
+    console.log(`Or deploy to the server with: ./scripts/deploy.sh`);
     return;
   }
 
-  console.log(heading(`\nInstalled Plugins (${plugins.length})`));
+  console.log(heading(`\nLocal Plugins (${plugins.length})`));
+  console.log(warning('(Showing local plugins — server not available)'));
   console.log('');
 
   for (const { manifest } of plugins) {
@@ -225,29 +269,28 @@ async function pluginUpdateSingle(name: string): Promise<void> {
 
 /**
  * tardis plugin run <name> <command> [...args]
+ * Executes the command on the server via API.
  */
 export async function pluginRunCommand(name: string, command: string, args: string[]): Promise<void> {
-  const pluginDir = join(PLUGINS_DIR, name);
+  const client = new ServerClient();
 
-  const manifest = loadManifest(pluginDir);
-  if (!manifest) {
-    console.log(errorStyle(`Plugin "${name}" is not installed or has an invalid manifest.`));
+  if (!client.isConfigured()) {
+    console.log(errorStyle('Server not configured. Run: tardis config --server-url <url>'));
     return;
   }
 
-  const cmdDef = manifest.commands.find((c) => c.name === command);
-  if (!cmdDef) {
-    const available = manifest.commands.map((c) => c.name).join(', ') || 'none';
-    console.log(errorStyle(`Command "${command}" not found in plugin "${name}".`));
-    console.log(`Available commands: ${available}`);
+  const online = await client.isOnline();
+  if (!online) {
+    console.log(errorStyle('Server is not running. Start it first.'));
     return;
   }
 
-  // Plugin commands need the server to be running since they use the PluginAPI
-  console.log(warning('Note: Plugin commands require the TARDIS server to be running.'));
-  console.log(`The plugin "${name}" command "${command}" should be run via:`);
-  console.log(`  - Telegram: plugin ${name} ${command} ${args.join(' ')}`);
-  console.log(`  - Or ensure the server is running and the plugin is loaded.`);
+  try {
+    await client.runPluginCommand(name, command, args);
+    console.log(success(`Ran ${name}:${command}`));
+  } catch (error: any) {
+    console.log(errorStyle(error.message));
+  }
 }
 
 /**

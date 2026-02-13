@@ -124,6 +124,21 @@ export class ServerClient {
   }
 
   /**
+   * List plugins on the server
+   */
+  async listPlugins(): Promise<any[]> {
+    const data = await this.request('GET', '/api/plugins');
+    return data.plugins;
+  }
+
+  /**
+   * Run a plugin command on the server
+   */
+  async runPluginCommand(pluginName: string, command: string, args: string[] = []): Promise<void> {
+    await this.request('POST', `/api/plugins/${pluginName}/run`, { command, args });
+  }
+
+  /**
    * Check if server is online
    */
   async isOnline(): Promise<boolean> {

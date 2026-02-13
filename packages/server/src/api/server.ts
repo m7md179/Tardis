@@ -13,6 +13,7 @@ import type { PluginManager } from '../plugins/manager';
 import healthRoutes from './routes/health';
 import authRoutes from './routes/auth';
 import { createSessionRoutes } from './routes/sessions';
+import { createPluginRoutes } from './routes/plugins';
 
 export interface ServerDeps {
   config: ServerConfig;
@@ -65,9 +66,10 @@ export function createServer(configOrDeps: ServerConfig | ServerDeps) {
     createSessionRoutes({ config, sessionManager, todoistClient, pluginManager })
   );
 
-  // Mount plugin routes under /api/plugins/<plugin-name>/
+  // Plugin management API + per-plugin custom routes
   if (pluginManager) {
     app.use('/api/plugins/*', authMiddleware);
+    app.route('/api/plugins', createPluginRoutes(pluginManager));
 
     for (const loaded of pluginManager.getAllPlugins()) {
       const routes = loaded.instance.routes;
