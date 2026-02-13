@@ -2,8 +2,9 @@ import { ServerConfig } from '../config';
 import { TodoistClient } from '../integrations/todoist/client';
 import { SessionManager } from './session-manager';
 import { NotificationService } from '../integrations/notifications/service';
-import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { parseTimeWindow } from '@tardis/shared';
+
+const TZ = 'Asia/Riyadh';
 
 interface TaskWithWindow {
   id: string;
@@ -13,6 +14,41 @@ interface TaskWithWindow {
     start: string;
     end: string;
   };
+}
+
+/** Get current date/time parts in the user's timezone */
+function getNowInTZ(): { hours: number; minutes: number; dateStr: string; timeStr: string } {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || '00';
+
+  const year = get('year');
+  const month = get('month');
+  const day = get('day');
+  const hours = parseInt(get('hour'));
+  const minutes = parseInt(get('minute'));
+
+  return {
+    hours,
+    minutes,
+    dateStr: `${year}-${month}-${day}`,
+    timeStr: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+  };
+}
+
+/** Parse "HH:MM" into total minutes since midnight */
+function toMinutes(timeStr: string): number {
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
 }
 
 /**
@@ -34,29 +70,26 @@ export class TimeWindowMonitor {
    * Check time windows and send notifications
    */
   async check() {
-    const now = new Date();
-    const currentTime = format(now, 'HH:mm');
-    const currentDate = format(now, 'yyyy-MM-dd');
+    const { hours, minutes, dateStr, timeStr } = getNowInTZ();
+    const nowMinutes = hours * 60 + minutes;
 
-    console.log(`[Monitor] Check started at ${currentTime} (${currentDate})`);
+    console.log(`[Monitor] Check at ${timeStr} ${TZ} (${dateStr})`);
 
     try {
-      // Get all tasks from Todoist
       const allTasks = await this.todoistClient.getTasks();
       console.log(`[Monitor] Fetched ${allTasks.length} tasks from Todoist`);
 
-      // Filter tasks with time windows for today
+      // Filter tasks with time windows that are due today
       const tasksWithWindows: TaskWithWindow[] = [];
 
       for (const task of allTasks) {
         if (!task.description) continue;
 
         // Only process tasks due today
-        if (!task.due?.date || task.due.date !== currentDate) {
+        if (!task.due?.date || task.due.date !== dateStr) {
           continue;
         }
 
-        // Extract time window from description
         const matches = task.description.match(/\[([^\]]+)\]/g);
         if (!matches) continue;
 
@@ -74,16 +107,14 @@ export class TimeWindowMonitor {
         }
       }
 
-      console.log(`[Monitor] Found ${tasksWithWindows.length} tasks with time windows`);
+      console.log(`[Monitor] Found ${tasksWithWindows.length} tasks with time windows due today`);
 
-      // Check each task
       for (const task of tasksWithWindows) {
         console.log(`[Monitor] Checking: "${task.content}" [${task.timeWindow.start}-${task.timeWindow.end}]`);
-        await this.checkTask(task, now, currentTime, currentDate);
+        await this.checkTask(task, nowMinutes, timeStr, dateStr);
       }
 
-      // Clean up old notifications
-      this.cleanupNotifications(currentDate);
+      this.cleanupNotifications(dateStr);
 
       console.log(`[Monitor] Check complete. Notified keys: ${this.notifiedTasks.size}`);
     } catch (error) {
@@ -92,26 +123,29 @@ export class TimeWindowMonitor {
   }
 
   /**
-   * Check individual task
+   * Check individual task using minutes-since-midnight arithmetic (timezone-safe)
    */
   private async checkTask(
     task: TaskWithWindow,
-    now: Date,
+    nowMinutes: number,
     currentTime: string,
     currentDate: string
   ) {
     const { start, end } = task.timeWindow;
+    const startMinutes = toMinutes(start);
+    const endMinutes = toMinutes(end);
 
-    // Check if time window is starting soon (5 minutes)
-    const startTime = parseISO(`${currentDate}T${start}:00`);
-    const minutesUntilStart = differenceInMinutes(startTime, now);
+    // Minutes until start/end
+    const minutesUntilStart = startMinutes - nowMinutes;
+    const minutesUntilEnd = endMinutes - nowMinutes;
+
+    // --- START notification (within 5 min before start) ---
     const startKey = `start_${currentDate}_${task.id}`;
-    const alreadyNotifiedStart = this.notifiedTasks.has(startKey);
+    const alreadyStart = this.notifiedTasks.has(startKey);
 
-    console.log(`[Monitor]   Start: ${start} | minutesUntil: ${minutesUntilStart} | notified: ${alreadyNotifiedStart}`);
+    console.log(`[Monitor]   Start: ${start} | minutesUntil: ${minutesUntilStart} | notified: ${alreadyStart}`);
 
-    if (minutesUntilStart > 0 && minutesUntilStart <= 5 && !alreadyNotifiedStart) {
-      // Check if task is already active
+    if (minutesUntilStart > 0 && minutesUntilStart <= 5 && !alreadyStart) {
       const activeSession = await this.sessionManager.getSessionByTask(task.content);
 
       if (!activeSession) {
@@ -123,15 +157,13 @@ export class TimeWindowMonitor {
       }
     }
 
-    // Check if time window is ending soon (5 minutes)
-    const endTime = parseISO(`${currentDate}T${end}:00`);
-    const minutesUntilEnd = differenceInMinutes(endTime, now);
+    // --- END notification (within 5 min before end) ---
     const endKey = `end_${currentDate}_${task.id}`;
-    const alreadyNotifiedEnd = this.notifiedTasks.has(endKey);
+    const alreadyEnd = this.notifiedTasks.has(endKey);
 
-    console.log(`[Monitor]   End: ${end} | minutesUntil: ${minutesUntilEnd} | notified: ${alreadyNotifiedEnd}`);
+    console.log(`[Monitor]   End: ${end} | minutesUntil: ${minutesUntilEnd} | notified: ${alreadyEnd}`);
 
-    if (minutesUntilEnd > 0 && minutesUntilEnd <= 5 && !alreadyNotifiedEnd) {
+    if (minutesUntilEnd > 0 && minutesUntilEnd <= 5 && !alreadyEnd) {
       const activeSession = await this.sessionManager.getSessionByTask(task.content);
 
       if (activeSession && activeSession.status === 'ACTIVE') {
@@ -143,15 +175,15 @@ export class TimeWindowMonitor {
       }
     }
 
-    // Check if working past time window
+    // --- OVERDUE notification (past end time, still working) ---
     const overdueKey = `overdue_${currentDate}_${task.id}`;
-    const alreadyNotifiedOverdue = this.notifiedTasks.has(overdueKey);
+    const alreadyOverdue = this.notifiedTasks.has(overdueKey);
 
-    if (currentTime > end && !alreadyNotifiedOverdue) {
+    if (currentTime > end && !alreadyOverdue) {
       const activeSession = await this.sessionManager.getSessionByTask(task.content);
 
       if (activeSession && activeSession.status === 'ACTIVE') {
-        const overage = differenceInMinutes(now, endTime);
+        const overage = nowMinutes - endMinutes;
         await this.notificationService.sendTaskOverdue(task, overage);
         this.notifiedTasks.add(overdueKey);
         console.log(`[Monitor]   -> Sent OVERDUE notification for: ${task.content} (${overage}m over)`);
@@ -166,7 +198,6 @@ export class TimeWindowMonitor {
     const toRemove: string[] = [];
 
     for (const key of this.notifiedTasks) {
-      // Notifications are valid only for today
       if (!key.includes(currentDate)) {
         toRemove.push(key);
       }
