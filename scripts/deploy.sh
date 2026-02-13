@@ -36,25 +36,23 @@ echo "  -> Installing dependencies..."
 bun install --frozen-lockfile 2>/dev/null || bun install
 
 echo "  -> Syncing plugins..."
-PLUGINS_DIR="/var/lib/tardis/plugins"
-mkdir -p ${PLUGINS_DIR}
+PDIR="/var/lib/tardis/plugins"
+mkdir -p \$PDIR
 if [ -d ${REMOTE_DIR}/plugins ]; then
-  for plugin_dir in ${REMOTE_DIR}/plugins/*/; do
-    plugin_name=$(basename "$plugin_dir")
-    # Preserve plugin storage data during sync
-    if [ -d "${PLUGINS_DIR}/${plugin_name}/storage" ]; then
-      cp -r "${PLUGINS_DIR}/${plugin_name}/storage" "/tmp/tardis-plugin-storage-${plugin_name}"
+  for pdir in ${REMOTE_DIR}/plugins/*/; do
+    pname=\$(basename "\$pdir")
+    if [ -d "\$PDIR/\$pname/storage" ]; then
+      cp -r "\$PDIR/\$pname/storage" "/tmp/tardis-pstor-\$pname"
     fi
-    cp -r "$plugin_dir" "${PLUGINS_DIR}/${plugin_name}"
-    if [ -d "/tmp/tardis-plugin-storage-${plugin_name}" ]; then
-      cp -r "/tmp/tardis-plugin-storage-${plugin_name}" "${PLUGINS_DIR}/${plugin_name}/storage"
-      rm -rf "/tmp/tardis-plugin-storage-${plugin_name}"
+    cp -r "\$pdir" "\$PDIR/\$pname"
+    if [ -d "/tmp/tardis-pstor-\$pname" ]; then
+      cp -r "/tmp/tardis-pstor-\$pname" "\$PDIR/\$pname/storage"
+      rm -rf "/tmp/tardis-pstor-\$pname"
     fi
-    # Install plugin dependencies if needed
-    if [ -f "${PLUGINS_DIR}/${plugin_name}/package.json" ]; then
-      (cd "${PLUGINS_DIR}/${plugin_name}" && bun install --frozen-lockfile 2>/dev/null || bun install)
+    if [ -f "\$PDIR/\$pname/package.json" ]; then
+      (cd "\$PDIR/\$pname" && bun install --frozen-lockfile 2>/dev/null || bun install)
     fi
-    echo "    Synced plugin: ${plugin_name}"
+    echo "    Synced plugin: \$pname"
   done
 fi
 
