@@ -93,13 +93,13 @@ export class TimeWindowMonitor {
     const startTime = parseISO(`${currentDate}T${start}:00`);
     const minutesUntilStart = differenceInMinutes(startTime, now);
 
-    if (minutesUntilStart === 5 && !this.notifiedTasks.has(`start_${task.id}`)) {
+    if (minutesUntilStart > 0 && minutesUntilStart <= 5 && !this.notifiedTasks.has(`start_${currentDate}_${task.id}`)) {
       // Check if task is already active
       const activeSession = await this.sessionManager.getSessionByTask(task.content);
 
       if (!activeSession) {
         await this.notificationService.sendTimeWindowStarting(task);
-        this.notifiedTasks.add(`start_${task.id}`);
+        this.notifiedTasks.add(`start_${currentDate}_${task.id}`);
         console.log(`Sent time window starting notification for: ${task.content}`);
       }
     }
@@ -108,24 +108,24 @@ export class TimeWindowMonitor {
     const endTime = parseISO(`${currentDate}T${end}:00`);
     const minutesUntilEnd = differenceInMinutes(endTime, now);
 
-    if (minutesUntilEnd === 5 && !this.notifiedTasks.has(`end_${task.id}`)) {
+    if (minutesUntilEnd > 0 && minutesUntilEnd <= 5 && !this.notifiedTasks.has(`end_${currentDate}_${task.id}`)) {
       const activeSession = await this.sessionManager.getSessionByTask(task.content);
 
       if (activeSession && activeSession.status === 'ACTIVE') {
         await this.notificationService.sendTimeWindowEnding(task);
-        this.notifiedTasks.add(`end_${task.id}`);
+        this.notifiedTasks.add(`end_${currentDate}_${task.id}`);
         console.log(`Sent time window ending notification for: ${task.content}`);
       }
     }
 
     // Check if working past time window
-    if (currentTime > end && !this.notifiedTasks.has(`overdue_${task.id}`)) {
+    if (currentTime > end && !this.notifiedTasks.has(`overdue_${currentDate}_${task.id}`)) {
       const activeSession = await this.sessionManager.getSessionByTask(task.content);
 
       if (activeSession && activeSession.status === 'ACTIVE') {
         const overage = differenceInMinutes(now, endTime);
         await this.notificationService.sendTaskOverdue(task, overage);
-        this.notifiedTasks.add(`overdue_${task.id}`);
+        this.notifiedTasks.add(`overdue_${currentDate}_${task.id}`);
         console.log(`Sent task overdue notification for: ${task.content}`);
       }
     }

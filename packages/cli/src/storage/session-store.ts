@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { join, basename } from 'path';
 import { randomUUID } from 'crypto';
 import {
@@ -466,6 +466,61 @@ export class SessionStore {
     return this.getArchivedSessions().filter(
       (s) => s.status === 'COMPLETED' && !s.todoistSynced && s.taskId
     );
+  }
+
+  /**
+   * Alias for getArchivedSessions
+   */
+  getAllArchivedSessions(): Session[] {
+    return this.getArchivedSessions();
+  }
+
+  /**
+   * Delete all sessions matching a task name
+   */
+  deleteSessionByTask(taskQuery: string): boolean {
+    const sessions = this.getArchivedSessions().filter(
+      (s) => s.taskName.toLowerCase() === taskQuery.toLowerCase()
+    );
+
+    if (sessions.length === 0) return false;
+
+    let deleted = false;
+    for (const session of sessions) {
+      if (this.deleteSession(session.id)) {
+        deleted = true;
+      }
+    }
+    return deleted;
+  }
+
+  /**
+   * Delete all sessions (active and archived)
+   */
+  wipeAllSessions(): number {
+    let count = 0;
+
+    // Delete active sessions
+    const activeDir = this.getActiveDir();
+    if (existsSync(activeDir)) {
+      const files = this.getJsonFiles(activeDir);
+      count += files.length;
+      rmSync(activeDir, { recursive: true, force: true });
+    }
+
+    // Delete archived sessions
+    const sessionsDir = this.getSessionsDir();
+    if (existsSync(sessionsDir)) {
+      const dateDirs = readdirSync(sessionsDir, { withFileTypes: true })
+        .filter((dirent) => dirent.isDirectory());
+      for (const dir of dateDirs) {
+        const files = this.getJsonFiles(join(sessionsDir, dir.name));
+        count += files.length;
+      }
+      rmSync(sessionsDir, { recursive: true, force: true });
+    }
+
+    return count;
   }
 
   /**

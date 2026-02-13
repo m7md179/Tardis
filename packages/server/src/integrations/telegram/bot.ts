@@ -15,8 +15,8 @@ export async function startTelegramBot(config: ServerConfig) {
 
   const bot = new Telegraf(telegram.botToken);
 
-  // Register all commands
-  registerCommands(bot);
+  // Register all commands with access to config
+  registerCommands(bot, config);
 
   // Error handling
   bot.catch((err, ctx) => {
