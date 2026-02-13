@@ -83,6 +83,7 @@ export interface PluginAPI {
   tasks: {
     getAll(): Promise<any[]>;
     complete(taskId: string): Promise<void>;
+    create(content: string, description?: string, dueString?: string): Promise<any>;
   };
 
   /** Plugin-specific persistent storage */

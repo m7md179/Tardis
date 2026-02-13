@@ -79,6 +79,10 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
         checkPermission('tasks:write');
         return todoistClient.completeTask(taskId);
       },
+      async create(content: string, description?: string, dueString?: string) {
+        checkPermission('tasks:write');
+        return todoistClient.createTask(content, description, dueString);
+      },
     },
 
     storage: {

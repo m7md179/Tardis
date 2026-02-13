@@ -58,7 +58,15 @@ function buildSystemPrompt(api: PluginAPI, capabilities: Capability[]): string {
         .join('\n')
     : 'None registered';
 
-  return `You are TARDIS Assistant, a natural language interface for the TARDIS time-tracking system. You translate human language into TARDIS commands.
+  return `You are TARDIS, Mohammad's personal time-tracking assistant. You talk to Mohammad directly — he's a software developer who uses TARDIS to track his work, manage Todoist tasks, and stay productive.
+
+PERSONALITY:
+- You're Mohammad's assistant, talk to him like a helpful teammate
+- Be casual, concise, and direct — no corporate speak
+- Use his name occasionally but don't overdo it
+- When he starts a task, be encouraging. When he stops, acknowledge the work done.
+- If he seems to be working long hours, gently suggest a break
+- You know his timezone is Asia/Riyadh (AST/GMT+3)
 
 CORE COMMANDS:
 1. start <task> — Start tracking a task. Example: "start Write documentation"
@@ -68,8 +76,7 @@ CORE COMMANDS:
 5. status — Show current session status
 6. list — List all active sessions
 7. tasks — Show Todoist tasks
-8. add <content> [due:date] [p:priority] [[time-window]] — Add a Todoist task
-   Example: "add Meeting [2pm-3pm] due:tomorrow p:4"
+8. add <content> — Add a Todoist task. Args format: "task name" or "task name due:tomorrow" or "task name [2pm-3pm] p:4"
 9. help — Show available commands
 
 ${pluginSection ? `INSTALLED PLUGINS:\n${pluginSection}` : 'No plugins installed.'}
@@ -86,18 +93,21 @@ Return a JSON object with these fields:
 
 ACTION TYPES:
 - "execute": You've identified a clear command. Set command + args + message (confirmation text).
-- "question": You need more information from the user. Set message to your question.
+- "question": You need more information. ONLY use this if the user's intent is truly unclear.
 - "notify": User wants a reminder/notification. Set schedule with message and delay in minutes.
 - "conversation": General chat, no command needed. Set message to your response.
 
-RULES:
-- Synonyms: "begin"/"go" = start, "finish"/"done"/"I'm done" = stop, "halt"/"break" = pause, "continue"/"back" = resume
-- If the user says something like "stop this" or "I'm done", use the stop command
-- If the request is ambiguous (e.g. "start" with no task), use "question" to ask for clarification
+CRITICAL RULES:
+- BIAS TOWARD ACTION. If the user mentions a task name, START IT. Don't ask for confirmation.
+- "start working on API" → execute start with args "API". Do NOT ask "which task?"
+- "start docs" → execute start with args "docs". Do NOT ask "what do you want to document?"
+- "add buy groceries" → execute add with args "buy groceries". Do NOT ask for more details.
+- ONLY use "question" if the user literally says "start" with zero context about what task.
+- Synonyms: "begin"/"go"/"working on" = start, "finish"/"done"/"I'm done"/"stop this" = stop, "halt"/"break"/"taking a break" = pause, "continue"/"back"/"back at it" = resume
+- "add X due:tomorrow" → command: "add", args: "X due:tomorrow" — pass the full string as args
 - For reminders like "remind me in 30 minutes to take a break", use the "notify" action
 - When the user mentions a plugin by name or functionality, route to that plugin's commands
-- Keep messages concise and friendly
-- Use the current context (active sessions, tasks) to make smart decisions
+- Each message is INDEPENDENT. Treat every message as a fresh request. Do NOT assume the user is answering a previous question unless they explicitly reference it.
 - If a user says "actually" or corrects themselves, handle it by stopping/changing the current action
 
 Return ONLY valid JSON. No markdown, no code fences.`;
@@ -151,13 +161,13 @@ async function callGemini(
     throw new Error('Gemini API key not configured. Set it with: plugin gemini-assistant config apiKey YOUR_KEY');
   }
 
-  const model = api.config.get<string>('model') || 'gemini-2.0-flash';
+  const model = api.config.get<string>('model') || 'gemini-2.5-flash';
   const systemPrompt = buildSystemPrompt(api, capabilities);
   const context = await buildContext(api);
 
-  // Build conversation contents with history
+  // Build conversation contents with history (only keep last 6 for context, not too much)
   const contents: any[] = [];
-  for (const entry of history.slice(-10)) {
+  for (const entry of history.slice(-6)) {
     contents.push({
       role: entry.role === 'user' ? 'user' : 'model',
       parts: [{ text: entry.text }],
@@ -288,6 +298,41 @@ async function executeAction(result: GeminiResult, api: PluginAPI): Promise<stri
               .join('\n');
             return `*Your Tasks:*\n${list}`;
           }
+          case 'add': {
+            const argsText = result.args || '';
+            if (!argsText) return '❓ What task do you want to add?';
+
+            // Parse inline flags: due:value, p:1-4, [time-window]
+            let text = argsText;
+            let description: string | undefined;
+            let dueString: string | undefined;
+
+            // Extract time window [5pm-6pm]
+            const twMatch = text.match(/\[([^\]]+)\]/);
+            if (twMatch) {
+              description = twMatch[0];
+              text = text.replace(twMatch[0], '').trim();
+            }
+
+            // Extract due:value
+            const dueMatch = text.match(/\bdue:(\S+)/i);
+            if (dueMatch) {
+              dueString = dueMatch[1];
+              text = text.replace(dueMatch[0], '').trim();
+            }
+
+            // Extract p:value (strip it, Todoist API handles priority differently)
+            const pMatch = text.match(/\bp:([1-4])/i);
+            if (pMatch) {
+              text = text.replace(pMatch[0], '').trim();
+            }
+
+            const task = await api.tasks.create(text, description, dueString);
+            let reply = `✅ Added to Todoist: *${task.content}*`;
+            if (description) reply += `\n⏰ ${description}`;
+            if (dueString) reply += `\n📅 Due: ${dueString}`;
+            return reply;
+          }
           case 'help':
             return result.message;
           default:
@@ -401,10 +446,16 @@ const plugin: TardisPlugin = {
         // Send response
         await api.notifications.send(response);
 
-        // Save conversation history (keep last 10 entries)
-        history.push({ role: 'user', text: input }, { role: 'assistant', text: response });
-        if (history.length > 10) history.splice(0, history.length - 10);
-        await api.storage.set('conversation', history);
+        // Save conversation history
+        // On successful command execution, clear history to prevent stale context loops
+        if (result.action === 'execute') {
+          await api.storage.set('conversation', []);
+        } else {
+          // For questions/conversation, keep history for follow-ups
+          history.push({ role: 'user', text: input }, { role: 'assistant', text: response });
+          if (history.length > 10) history.splice(0, history.length - 10);
+          await api.storage.set('conversation', history);
+        }
       } catch (error: any) {
         api.logger.error('Gemini processing failed:', error);
         await api.notifications.send(`❌ ${error.message}`);
@@ -417,7 +468,7 @@ const plugin: TardisPlugin = {
         const msg =
           '*Gemini Assistant Config:*\n\n' +
           `API Key: ${cfg.apiKey ? '✅ Set' : '❌ Not set'}\n` +
-          `Model: ${cfg.model || 'gemini-2.0-flash'}`;
+          `Model: ${cfg.model || 'gemini-2.5-flash'}`;
         await api.notifications.send(msg);
         return;
       }
@@ -435,6 +486,11 @@ const plugin: TardisPlugin = {
       // Mask API key in response
       const display = key === 'apiKey' ? `${value.slice(0, 8)}...` : value;
       await api.notifications.send(`✅ Set ${key} = ${display}`);
+    },
+
+    async clear(_args: string[], api: PluginAPI) {
+      await api.storage.set('conversation', []);
+      await api.notifications.send('🧹 Conversation history cleared.');
     },
   },
 };

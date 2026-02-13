@@ -332,5 +332,23 @@ pluginCmd
     }
   });
 
+// Catch-all: `tardis plugin <name> <command> [args...]` → delegates to `plugin run`
+// This allows `tardis plugin gemini-assistant config apiKey X` as shorthand
+pluginCmd.on('command:*', async (operands: string[]) => {
+  const [name, command, ...args] = operands;
+  if (name && command) {
+    try {
+      await pluginRunCommand(name, command, args);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  } else {
+    console.error(`Usage: tardis plugin <name> <command> [args...]`);
+    console.error(`Or:    tardis plugin run <name> <command> [args...]`);
+    process.exit(1);
+  }
+});
+
 // Parse command line arguments
 program.parse();

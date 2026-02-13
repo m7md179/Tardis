@@ -26,6 +26,10 @@
     {
       "name": "config",
       "description": "Configure API key, model, and settings"
+    },
+    {
+      "name": "clear",
+      "description": "Clear conversation history"
     }
   ],
   "config": {
