@@ -8,7 +8,7 @@ User=root
 WorkingDirectory=/var/lib/tardis
 Environment=TARDIS_CONFIG=/var/lib/tardis/config.json
 Environment=NODE_ENV=production
-ExecStart=/usr/local/bin/bun /opt/tardis/packages/server/src/index.ts
+ExecStart=/usr/local/bin/bun /opt/Tardis/packages/server/src/index.ts
 Restart=always
 RestartSec=10
 

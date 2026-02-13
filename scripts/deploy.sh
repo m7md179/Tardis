@@ -2,25 +2,29 @@
 set -euo pipefail
 
 # TARDIS Deploy Script
-# Deploys latest changes to the Proxmox server
+# Deploys latest changes to the Proxmox LXC container (PCT 106)
 
-SERVER="root@192.168.100.9"
-REMOTE_DIR="/opt/tardis"
+PROXMOX_HOST="root@192.168.100.9"
+PCT_ID="106"
+REMOTE_DIR="/opt/Tardis"
 SERVICE="tardis"
 
-echo "==> Deploying TARDIS to ${SERVER}..."
+echo "==> Deploying TARDIS to PCT ${PCT_ID} via ${PROXMOX_HOST}..."
 
 # Push local changes to git first
 echo "==> Pushing local changes..."
 cd "$(dirname "$0")/.."
 git push origin main
 
-# SSH into server and update
-echo "==> Updating server..."
-ssh "${SERVER}" bash -s <<'REMOTE'
+# SSH into Proxmox host, then exec into the LXC container
+echo "==> Updating server inside container PCT ${PCT_ID}..."
+ssh "${PROXMOX_HOST}" bash -s <<REMOTE
 set -euo pipefail
 
-cd /opt/tardis
+pct exec ${PCT_ID} -- bash -c '
+set -euo pipefail
+
+cd ${REMOTE_DIR}
 
 echo "  -> Pulling latest code..."
 git pull origin main
@@ -29,16 +33,17 @@ echo "  -> Installing dependencies..."
 bun install --frozen-lockfile 2>/dev/null || bun install
 
 echo "  -> Restarting service..."
-systemctl restart tardis
+systemctl restart ${SERVICE}
 
 echo "  -> Checking service status..."
 sleep 2
-systemctl status tardis --no-pager -l
+systemctl status ${SERVICE} --no-pager -l
 
 echo ""
 echo "  -> Recent logs:"
-journalctl -u tardis -n 20 --no-pager
+journalctl -u ${SERVICE} -n 20 --no-pager
 
 echo ""
 echo "==> Deploy complete!"
+'
 REMOTE
