@@ -1,5 +1,5 @@
 import { ServerConfig } from '../../config';
-import { logger } from '@tardis/shared/utils/logger';
+
 
 export class EmailNotifier {
   private smtpConfig: any;
@@ -22,7 +22,7 @@ export class EmailNotifier {
     try {
       // Basic implementation - would need a proper SMTP library like nodemailer
       // For now, this is a placeholder that logs the email
-      logger.info('Email notification (placeholder):', {
+      console.info('Email notification (placeholder):', {
         from: this.from,
         to: this.to,
         subject,
@@ -39,9 +39,9 @@ export class EmailNotifier {
       //   text: message,
       // });
 
-      logger.info('Email notification sent (placeholder)');
+      console.info('Email notification sent (placeholder)');
     } catch (error) {
-      logger.error('Failed to send email notification:', error);
+      console.error('Failed to send email notification:', error);
       throw error;
     }
   }

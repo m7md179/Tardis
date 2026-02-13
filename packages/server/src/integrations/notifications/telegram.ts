@@ -1,6 +1,4 @@
 import { ServerConfig } from '../../config';
-import { logger } from '@tardis/shared/utils/logger';
-
 export class TelegramNotifier {
   private botToken: string;
   private chatId: string;
@@ -32,9 +30,9 @@ export class TelegramNotifier {
         throw new Error(`Telegram API error: ${response.statusText}`);
       }
 
-      logger.info('Telegram notification sent');
+      console.log('Telegram notification sent');
     } catch (error) {
-      logger.error('Failed to send Telegram notification:', error);
+      console.error('Failed to send Telegram notification:', error);
       throw error;
     }
   }

@@ -1,7 +1,7 @@
 import { ServerConfig } from '../../config';
 import { TelegramNotifier } from './telegram';
 import { EmailNotifier } from './email';
-import { logger } from '@tardis/shared/utils/logger';
+
 
 export class NotificationService {
   private telegram?: TelegramNotifier;
@@ -51,7 +51,7 @@ export class NotificationService {
     try {
       await Promise.all(promises);
     } catch (error) {
-      logger.error('Failed to send notification:', error);
+      console.error('Failed to send notification:', error);
     }
   }
 

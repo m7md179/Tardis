@@ -37,9 +37,22 @@ function parseMessage(text: string): { command: string; args: string } {
  * Parse inline flags from add command args.
  * Extracts due:<value> and p:<1-4> from the text.
  */
-function parseAddFlags(text: string): { content: string; dueString?: string; priority?: number } {
+function parseAddFlags(text: string): {
+  content: string;
+  description?: string;
+  dueString?: string;
+  priority?: number;
+} {
   let dueString: string | undefined;
   let priority: number | undefined;
+  let description: string | undefined;
+
+  // Extract time window [5pm-6pm] → goes into description
+  const twMatch = text.match(/\[([^\]]+)\]/);
+  if (twMatch) {
+    description = twMatch[0]; // Keep brackets e.g. "[5pm-6pm]"
+    text = text.replace(twMatch[0], '').trim();
+  }
 
   // Extract due:value
   const dueMatch = text.match(/\bdue:(\S+)/i);
@@ -55,7 +68,7 @@ function parseAddFlags(text: string): { content: string; dueString?: string; pri
     text = text.replace(pMatch[0], '').trim();
   }
 
-  return { content: text, dueString, priority };
+  return { content: text, description, dueString, priority };
 }
 
 /**
@@ -127,11 +140,11 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
       case 'add':
         if (!args) {
           return ctx.reply(
-            'Usage: add <task name> [due:tomorrow] [p:1-4]\n\n' +
+            'Usage: add <task name> [time window] [due:value] [p:1-4]\n\n' +
               'Examples:\n' +
               '  add Buy groceries\n' +
-              '  add Write report due:tomorrow\n' +
-              '  add Urgent fix due:today p:4'
+              '  add Meeting [2pm-3pm] due:tomorrow\n' +
+              '  add Urgent fix [14:00-16:00] p:4'
           );
         }
         return handleAdd(ctx, todoist, args);
@@ -343,19 +356,23 @@ async function handleTasks(ctx: Context, todoist: TodoistClient) {
 
 async function handleAdd(ctx: Context, todoist: TodoistClient, argsText: string) {
   try {
-    const { content, dueString, priority } = parseAddFlags(argsText);
+    const { content, description, dueString, priority } = parseAddFlags(argsText);
 
     if (!content) {
-      return ctx.reply('❌ Task name is required.\n\nUsage: add <task name> [due:tomorrow] [p:1-4]');
+      return ctx.reply(
+        '❌ Task name is required.\n\n' +
+          'Usage: add <task name> [time window] [due:value] [p:1-4]\n\n' +
+          'Examples:\n' +
+          '  add Buy groceries\n' +
+          '  add Meeting [2pm-3pm] due:tomorrow\n' +
+          '  add Urgent fix [14:00-16:00] p:4'
+      );
     }
 
-    const body: any = { content };
-    if (dueString) body.due_string = dueString;
-    if (priority) body.priority = priority;
-
-    const task = await todoist.createTask(content, undefined, dueString);
+    const task = await todoist.createTask(content, description, dueString);
 
     let reply = `✅ Task created: *${task.content}*`;
+    if (description) reply += `\n⏰ Time window: ${description}`;
     if (dueString) reply += `\n📅 Due: ${dueString}`;
     if (priority) reply += `\n🔴 Priority: ${priority}`;
 
@@ -376,11 +393,11 @@ async function handleHelp(ctx: Context) {
       'status - Show current status\n' +
       'list - List active sessions\n' +
       'tasks - List Todoist tasks\n' +
-      'add <task> - Create a new task\n' +
+      'add <task> [time] - Create a new task\n' +
       'help - Show this help\n\n' +
       '*Examples:*\n' +
       'start Write documentation\n' +
-      'add Buy groceries due:tomorrow p:2\n' +
+      'add Meeting [2pm-3pm] due:tomorrow\n' +
       'tasks\n\n' +
       '_No / prefix needed — just type the command._',
     { parse_mode: 'Markdown' }
