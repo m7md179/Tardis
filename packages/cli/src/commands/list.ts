@@ -1,14 +1,28 @@
 import { calculateDuration, formatDurationHuman, formatTime } from '@tardis/shared';
-import { error, heading } from '@tardis/shared';
+import { error, heading, warning } from '@tardis/shared';
 import { SessionStore } from '../storage/session-store';
 import { sessionTable } from '../ui';
+import { resolveBackend } from '../session-client';
 
 /**
  * List all active sessions
  */
 export async function listCommand(): Promise<void> {
-  const store = new SessionStore();
-  const activeSessions = store.getActiveSessions();
+  const backend = await resolveBackend();
+
+  let activeSessions;
+
+  if (backend.type === 'server') {
+    try {
+      activeSessions = await backend.client.getActiveSessions();
+    } catch (err) {
+      console.log(warning('Server error, falling back to local...'));
+      const store = new SessionStore();
+      activeSessions = store.getActiveSessions();
+    }
+  } else {
+    activeSessions = backend.store.getActiveSessions();
+  }
 
   if (activeSessions.length === 0) {
     console.log(error('No active sessions.'));
@@ -16,7 +30,8 @@ export async function listCommand(): Promise<void> {
     process.exit(0);
   }
 
-  console.log(heading(`\nActive Sessions (${activeSessions.length})`));
+  const source = backend.type === 'server' ? ' (server)' : '';
+  console.log(heading(`\nActive Sessions (${activeSessions.length})${source}`));
 
   const table = sessionTable();
 
@@ -26,10 +41,8 @@ export async function listCommand(): Promise<void> {
     let duration: number;
 
     if (session.status === 'PAUSED' && session.pausedAt) {
-      // Show duration up to pause time
       duration = calculateDuration(session.startTime, session.pausedAt);
     } else {
-      // Show current duration
       duration = calculateDuration(session.startTime, now);
     }
 

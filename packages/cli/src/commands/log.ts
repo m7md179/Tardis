@@ -1,17 +1,40 @@
 import { formatDurationHuman, formatDate, formatTime } from '@tardis/shared';
-import { error, heading, dim } from '@tardis/shared';
+import { error, heading, dim, warning } from '@tardis/shared';
 import { SessionStore } from '../storage/session-store';
 import { sessionTable } from '../ui';
+import { resolveBackend } from '../session-client';
+import { Session } from '@tardis/shared';
 
 /**
  * View session logs
  * @param dateOrAll - Date in YYYY-MM-DD format, "all" for all history, or undefined for today
  */
 export async function logCommand(dateOrAll?: string): Promise<void> {
-  const store = new SessionStore();
+  const backend = await resolveBackend();
+
+  if (backend.type === 'server') {
+    try {
+      const date = dateOrAll === 'all' ? undefined : dateOrAll;
+      const sessions = await backend.client.getHistory(date);
+
+      if (!sessions || sessions.length === 0) {
+        const label = dateOrAll === 'all' ? '' : ` for ${dateOrAll || 'today'}`;
+        console.log(error(`No session history found${label}.`));
+        process.exit(0);
+      }
+
+      printSessionLog(sessions, dateOrAll, '(server)');
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      console.log(warning(`Server error: ${msg}. Trying local...`));
+    }
+  }
+
+  // Local fallback
+  const store = backend.type === 'local' ? backend.store : new SessionStore();
 
   if (dateOrAll === 'all') {
-    // Show all archived sessions
     const allSessions = store.getAllArchivedSessions();
 
     if (allSessions.length === 0) {
@@ -20,49 +43,10 @@ export async function logCommand(dateOrAll?: string): Promise<void> {
       process.exit(0);
     }
 
-    console.log(heading(`\nAll Sessions (${allSessions.length} total)`));
-
-    // Group by date
-    const byDate = new Map<string, typeof allSessions>();
-
-    for (const session of allSessions) {
-      const date = formatDate(session.startTime);
-      if (!byDate.has(date)) {
-        byDate.set(date, []);
-      }
-      byDate.get(date)!.push(session);
-    }
-
-    // Sort dates (newest first)
-    const sortedDates = Array.from(byDate.keys()).sort((a, b) => b.localeCompare(a));
-
-    for (const date of sortedDates) {
-      const sessions = byDate.get(date)!;
-      const totalDuration = sessions.reduce((sum, s) => sum + s.duration, 0);
-
-      console.log(`\n${heading(date)} (${formatDurationHuman(totalDuration)})`);
-
-      const table = sessionTable();
-      for (const session of sessions) {
-        table.addRow({
-          taskName: session.taskName,
-          status: session.status,
-          duration: formatDurationHuman(session.duration),
-          startTime: formatTime(session.startTime),
-        });
-      }
-      table.print();
-    }
-
-    // Show summary
-    const totalDuration = allSessions.reduce((sum, s) => sum + s.duration, 0);
-    const totalDays = byDate.size;
-    console.log(`\nTotal: ${formatDurationHuman(totalDuration)} across ${totalDays} days\n`);
+    printSessionLog(allSessions, dateOrAll);
   } else {
-    // Show specific date or today
     const date = dateOrAll ? new Date(dateOrAll) : new Date();
 
-    // Validate date
     if (isNaN(date.getTime())) {
       console.log(error(`Invalid date: "${dateOrAll}"`));
       console.log(`\nUse format: YYYY-MM-DD (e.g., 2024-01-15)`);
@@ -97,4 +81,44 @@ export async function logCommand(dateOrAll?: string): Promise<void> {
 
     console.log(dim(`Total duration: ${formatDurationHuman(totalDuration)}\n`));
   }
+}
+
+function printSessionLog(sessions: Session[], dateOrAll?: string, suffix = '') {
+  // Group by date
+  const byDate = new Map<string, Session[]>();
+
+  for (const session of sessions) {
+    const date = formatDate(session.startTime);
+    if (!byDate.has(date)) {
+      byDate.set(date, []);
+    }
+    byDate.get(date)!.push(session);
+  }
+
+  const sortedDates = Array.from(byDate.keys()).sort((a, b) => b.localeCompare(a));
+
+  const label = dateOrAll === 'all' ? 'All Sessions' : `Sessions`;
+  console.log(heading(`\n${label} (${sessions.length} total) ${suffix}`));
+
+  for (const date of sortedDates) {
+    const dateSessions = byDate.get(date)!;
+    const totalDuration = dateSessions.reduce((sum, s) => sum + s.duration, 0);
+
+    console.log(`\n${heading(date)} (${formatDurationHuman(totalDuration)})`);
+
+    const table = sessionTable();
+    for (const session of dateSessions) {
+      table.addRow({
+        taskName: session.taskName,
+        status: session.status,
+        duration: formatDurationHuman(session.duration),
+        startTime: formatTime(session.startTime),
+      });
+    }
+    table.print();
+  }
+
+  const totalDuration = sessions.reduce((sum, s) => sum + s.duration, 0);
+  const totalDays = byDate.size;
+  console.log(`\nTotal: ${formatDurationHuman(totalDuration)} across ${totalDays} days\n`);
 }

@@ -5,6 +5,7 @@ import { SessionStore } from '../storage/session-store';
 import { ConfigStore } from '../storage/config-store';
 import { TodoistClient, matchTask, parseTask } from '../todoist';
 import { spinner, selectTask } from '../ui';
+import { resolveBackend } from '../session-client';
 
 interface StartOptions {
   timeWindow?: string;
@@ -14,25 +15,43 @@ interface StartOptions {
  * Start a new tracking session
  */
 export async function startCommand(taskQuery: string, options: StartOptions = {}): Promise<void> {
-  const store = new SessionStore();
+  const backend = await resolveBackend();
 
-  // Check for duplicate active session with same task name
-  try {
-    const existing = store.getActiveSessionByTask(taskQuery);
-    if (existing) {
-      console.log(error(`Session for "${existing.taskName}" is already active.`));
-      console.log(`Started: ${new Date(existing.startTime).toLocaleString()}`);
-      console.log(
-        `\nUse 'tardis stop "${existing.taskName}"' to end it first, or choose a different name.`
+  // Check for duplicate active session
+  if (backend.type === 'server') {
+    try {
+      const activeSessions = await backend.client.getActiveSessions();
+      const existing = activeSessions.find(
+        (s) => s.taskName.toLowerCase() === taskQuery.toLowerCase()
       );
-      process.exit(1);
+      if (existing) {
+        console.log(error(`Session for "${existing.taskName}" is already active.`));
+        console.log(`Started: ${new Date(existing.startTime).toLocaleString()}`);
+        console.log(
+          `\nUse 'tardis stop "${existing.taskName}"' to end it first, or choose a different name.`
+        );
+        process.exit(1);
+      }
+    } catch (err) {
+      console.log(warning('Could not check server for existing sessions, continuing...'));
     }
-  } catch (err) {
-    // Multiple matches error - let them know
-    if (err instanceof Error && err.message.includes('Multiple sessions')) {
-      console.log(error(err.message));
-      console.log('\nPlease stop one of these sessions or use a more specific name.');
-      process.exit(1);
+  } else {
+    try {
+      const existing = backend.store.getActiveSessionByTask(taskQuery);
+      if (existing) {
+        console.log(error(`Session for "${existing.taskName}" is already active.`));
+        console.log(`Started: ${new Date(existing.startTime).toLocaleString()}`);
+        console.log(
+          `\nUse 'tardis stop "${existing.taskName}"' to end it first, or choose a different name.`
+        );
+        process.exit(1);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('Multiple sessions')) {
+        console.log(error(err.message));
+        console.log('\nPlease stop one of these sessions or use a more specific name.');
+        process.exit(1);
+      }
     }
   }
 
@@ -66,7 +85,6 @@ export async function startCommand(taskQuery: string, options: StartOptions = {}
         spin.stop();
         console.log(warning(`Found ${matches.length} matching tasks in Todoist:`));
 
-        // Show task picker
         const taskList = matches.map((m) => {
           const parsed = parseTask(m.task);
           return {
@@ -95,6 +113,24 @@ export async function startCommand(taskQuery: string, options: StartOptions = {}
   }
 
   // Create session
+  if (backend.type === 'server') {
+    try {
+      const session = await backend.client.startSession(taskName, taskId);
+      console.log('\n' + success('Session started! (server)'));
+      console.log(`Task: ${formatTaskName(session.taskName)}`);
+      console.log(`Started: ${new Date(session.startTime).toLocaleString()}`);
+      if (session.timeWindow) {
+        console.log(`Time window: ${session.timeWindow.start} - ${session.timeWindow.end}`);
+      }
+      console.log(`\nUse 'tardis stop' to end this session.`);
+      return;
+    } catch (err) {
+      console.log(warning('Server error, saving locally as fallback.'));
+    }
+  }
+
+  // Local fallback
+  const store = backend.type === 'local' ? backend.store : new SessionStore();
   const now = new Date().toISOString();
   const session: Session = {
     id: uuidv4(),

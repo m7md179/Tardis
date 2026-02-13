@@ -4,6 +4,7 @@ import { SessionStore } from '../storage/session-store';
 import { ConfigStore } from '../storage/config-store';
 import { TodoistClient } from '../todoist/client';
 import { spinner, selectTask } from '../ui';
+import { resolveBackend } from '../session-client';
 
 interface StopOptions {
   sync?: boolean;
@@ -13,8 +14,37 @@ interface StopOptions {
  * Stop a tracking session
  */
 export async function stopCommand(taskQuery?: string, options: StopOptions = {}): Promise<void> {
-  const store = new SessionStore();
+  const backend = await resolveBackend();
   const { sync = true } = options;
+
+  if (backend.type === 'server') {
+    try {
+      const noSync = !sync;
+      const session = await backend.client.stopSession(undefined, taskQuery || undefined, noSync);
+
+      console.log('\n' + success('Session stopped! (server)'));
+      console.log(`Task: ${formatTaskName(session.taskName)}`);
+      console.log(`Duration: ${formatDurationHuman(session.duration)}`);
+      if (session.endTime) {
+        console.log(`Ended: ${new Date(session.endTime).toLocaleString()}`);
+      }
+      if (session.todoistSynced) {
+        console.log(success('Completed in Todoist'));
+      }
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      // If server says no active sessions, don't fall back to local
+      if (msg.includes('No active session') || msg.includes('not found')) {
+        console.log(error(msg));
+        process.exit(1);
+      }
+      console.log(warning(`Server error: ${msg}. Trying local...`));
+    }
+  }
+
+  // Local fallback
+  const store = backend.type === 'local' ? backend.store : new SessionStore();
 
   // Find session to stop
   let session;
@@ -40,7 +70,6 @@ export async function stopCommand(taskQuery?: string, options: StopOptions = {})
       throw err;
     }
   } else {
-    // No task specified - use most recent or show picker if multiple
     const activeSessions = store.getActiveSessions();
 
     if (activeSessions.length === 0) {
@@ -52,7 +81,6 @@ export async function stopCommand(taskQuery?: string, options: StopOptions = {})
     if (activeSessions.length === 1) {
       session = activeSessions[0];
     } else {
-      // Multiple sessions - show picker
       console.log(`Found ${activeSessions.length} active sessions:\n`);
 
       const taskList = activeSessions.map((s) => ({
@@ -108,6 +136,6 @@ export async function stopCommand(taskQuery?: string, options: StopOptions = {})
   console.log(`Duration: ${formatDurationHuman(duration)}`);
   console.log(`Ended: ${new Date(now).toLocaleString()}`);
   if (synced) {
-    console.log(success('✓ Completed in Todoist'));
+    console.log(success('Completed in Todoist'));
   }
 }

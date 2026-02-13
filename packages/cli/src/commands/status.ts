@@ -2,6 +2,7 @@ import { calculateDuration, formatDurationHuman, formatDateTime } from '@tardis/
 import {
   success,
   error,
+  warning,
   formatStatus,
   formatTaskName,
   heading,
@@ -9,15 +10,48 @@ import {
   dim,
 } from '@tardis/shared';
 import { SessionStore } from '../storage/session-store';
+import { resolveBackend } from '../session-client';
 
 /**
  * Show status of current or specific session
  */
 export async function statusCommand(taskQuery?: string): Promise<void> {
-  const store = new SessionStore();
+  const backend = await resolveBackend();
+
+  if (backend.type === 'server') {
+    try {
+      if (taskQuery) {
+        const session = await backend.client.getStatus(taskQuery);
+        printSessionStatus(session);
+      } else {
+        const activeSessions = await backend.client.getActiveSessions();
+        if (activeSessions.length === 0) {
+          console.log(error('No active sessions.'));
+          console.log(`\nStart a session with: tardis start "task name"`);
+          process.exit(0);
+        }
+
+        console.log(heading(`\nActive Sessions (${activeSessions.length}) (server)`));
+        for (const session of activeSessions) {
+          console.log();
+          printSessionStatus(session);
+        }
+      }
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (msg.includes('not found') || msg.includes('No active')) {
+        console.log(error(msg));
+        process.exit(1);
+      }
+      console.log(warning(`Server error: ${msg}. Trying local...`));
+    }
+  }
+
+  // Local fallback
+  const store = backend.type === 'local' ? backend.store : new SessionStore();
 
   if (taskQuery) {
-    // Show specific task status
     try {
       const session = store.getActiveSessionByTask(taskQuery);
       if (!session) {
@@ -35,7 +69,6 @@ export async function statusCommand(taskQuery?: string): Promise<void> {
       throw err;
     }
   } else {
-    // Show all active sessions
     const activeSessions = store.getActiveSessions();
 
     if (activeSessions.length === 0) {

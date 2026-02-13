@@ -2,14 +2,37 @@ import { calculateDuration } from '@tardis/shared';
 import { success, error, warning, formatTaskName } from '@tardis/shared';
 import { SessionStore } from '../storage/session-store';
 import { selectTask } from '../ui';
+import { resolveBackend } from '../session-client';
 
 /**
  * Resume a paused tracking session
  */
 export async function resumeCommand(taskQuery?: string): Promise<void> {
-  const store = new SessionStore();
+  const backend = await resolveBackend();
 
-  // Find session to resume
+  if (backend.type === 'server') {
+    try {
+      const session = await backend.client.resumeSession(undefined, taskQuery || undefined);
+      console.log(success('Session resumed! (server)'));
+      console.log(`Task: ${formatTaskName(session.taskName)}`);
+      if (session.resumedAt) {
+        console.log(`Resumed at: ${new Date(session.resumedAt).toLocaleString()}`);
+      }
+      console.log(`\nUse 'tardis stop' to end this session.`);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (msg.includes('No paused session') || msg.includes('not found') || msg.includes('not paused')) {
+        console.log(error(msg));
+        process.exit(1);
+      }
+      console.log(warning(`Server error: ${msg}. Trying local...`));
+    }
+  }
+
+  // Local fallback
+  const store = backend.type === 'local' ? backend.store : new SessionStore();
+
   let session;
 
   if (taskQuery) {
@@ -28,7 +51,6 @@ export async function resumeCommand(taskQuery?: string): Promise<void> {
       throw err;
     }
   } else {
-    // No task specified - find paused sessions
     const pausedSessions = store.getActiveSessions().filter((s) => s.status === 'PAUSED');
 
     if (pausedSessions.length === 0) {
@@ -56,7 +78,6 @@ export async function resumeCommand(taskQuery?: string): Promise<void> {
     }
   }
 
-  // Check if not paused
   if (session.status !== 'PAUSED') {
     if (session.status === 'ACTIVE') {
       console.log(warning(`Session "${session.taskName}" is already active.`));
@@ -66,21 +87,16 @@ export async function resumeCommand(taskQuery?: string): Promise<void> {
     process.exit(0);
   }
 
-  // Calculate pause duration
   const now = new Date().toISOString();
   let pauseDuration = 0;
   if (session.pausedAt) {
     pauseDuration = calculateDuration(session.pausedAt, now);
   }
 
-  // Resume session
   session.status = 'ACTIVE';
   session.resumedAt = now;
   session.pausedAt = undefined;
   session.updatedAt = now;
-
-  // Note: pause duration is subtracted from total duration when stopping
-  // For now we just track the resume time
 
   store.saveActiveSession(session);
 
