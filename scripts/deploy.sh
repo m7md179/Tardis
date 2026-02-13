@@ -24,6 +24,8 @@ set -euo pipefail
 pct exec ${PCT_ID} -- bash -c '
 set -euo pipefail
 
+export PATH="/root/.bun/bin:/usr/local/bin:$PATH"
+
 cd ${REMOTE_DIR}
 
 echo "  -> Resetting local changes..."
