@@ -1,6 +1,7 @@
 import { Telegraf, Context } from 'telegraf';
 import { SessionManager } from '../../core/session-manager';
 import { TodoistClient } from '../todoist/client';
+import { NotificationService } from '../notifications/service';
 import { ServerConfig } from '../../config';
 import { formatDurationHuman } from '@tardis/shared';
 import { parseTimeWindow } from '@tardis/shared';
@@ -148,6 +149,9 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
           );
         }
         return handleAdd(ctx, todoist, args);
+
+      case 'test':
+        return handleTest(ctx, todoist, config);
 
       case 'help':
         return handleHelp(ctx);
@@ -383,6 +387,100 @@ async function handleAdd(ctx: Context, todoist: TodoistClient, argsText: string)
   }
 }
 
+async function handleTest(ctx: Context, todoist: TodoistClient, config: ServerConfig) {
+  const logs: string[] = [];
+  const log = (msg: string) => {
+    console.log(`[TEST] ${msg}`);
+    logs.push(msg);
+  };
+
+  try {
+    log('1. Starting notification pipeline test...');
+
+    // Step 1: Fetch tasks from Todoist
+    log('2. Fetching tasks from Todoist...');
+    let tasks;
+    try {
+      tasks = await todoist.getTasks();
+      log(`   ✅ Got ${tasks.length} tasks`);
+    } catch (err: any) {
+      log(`   ❌ Todoist API failed: ${err.message}`);
+      return ctx.reply(`Test failed at step 2:\n\n${logs.join('\n')}`);
+    }
+
+    // Step 2: Find tasks with time windows
+    log('3. Looking for tasks with time windows...');
+    let testTask: any = null;
+    for (const task of tasks) {
+      if (!task.description) continue;
+      const matches = task.description.match(/\[([^\]]+)\]/g);
+      if (!matches) continue;
+      for (const match of matches) {
+        const tw = parseTimeWindow(match);
+        if (tw) {
+          testTask = { id: task.id, content: task.content, description: task.description, timeWindow: tw };
+          break;
+        }
+      }
+      if (testTask) break;
+    }
+
+    if (!testTask) {
+      log('   ⚠️ No tasks with time windows found. Creating a fake one for testing...');
+      testTask = {
+        id: 'test-000',
+        content: 'Test Notification Task',
+        description: '[12:00-13:00]',
+        timeWindow: { start: '12:00', end: '13:00' },
+      };
+    } else {
+      log(`   ✅ Found: "${testTask.content}" [${testTask.timeWindow.start}-${testTask.timeWindow.end}]`);
+    }
+
+    // Step 3: Create NotificationService
+    log('4. Creating NotificationService...');
+    let notifService;
+    try {
+      notifService = new NotificationService(config);
+      log('   ✅ NotificationService created');
+    } catch (err: any) {
+      log(`   ❌ NotificationService failed: ${err.message}`);
+      return ctx.reply(`Test failed at step 4:\n\n${logs.join('\n')}`);
+    }
+
+    // Step 4: Check if Telegram channel is configured
+    log('5. Checking Telegram config...');
+    const tgConfig = config.notifications?.channels?.telegram;
+    if (!tgConfig?.enabled) {
+      log(`   ❌ Telegram not enabled in config (enabled=${tgConfig?.enabled})`);
+      log(`   Fix: Set notifications.channels.telegram.enabled = true in config.json`);
+      return ctx.reply(`Test failed at step 5:\n\n${logs.join('\n')}`);
+    }
+    if (!tgConfig.botToken || !tgConfig.chatId) {
+      log(`   ❌ Missing botToken or chatId`);
+      return ctx.reply(`Test failed at step 5:\n\n${logs.join('\n')}`);
+    }
+    log(`   ✅ Telegram enabled, chatId: ${tgConfig.chatId}`);
+
+    // Step 5: Send test notification through the full pipeline
+    log('6. Sending test notification via NotificationService.sendTimeWindowStarting()...');
+    try {
+      await notifService.sendTimeWindowStarting(testTask);
+      log('   ✅ Notification sent successfully!');
+    } catch (err: any) {
+      log(`   ❌ Send failed: ${err.message}`);
+      return ctx.reply(`Test failed at step 6:\n\n${logs.join('\n')}`);
+    }
+
+    log('7. ✅ Full pipeline test PASSED!');
+    return ctx.reply(`🧪 Notification test results:\n\n${logs.join('\n')}\n\nYou should have received a separate notification message above.`);
+  } catch (error: any) {
+    log(`❌ Unexpected error: ${error.message}`);
+    console.error('[TEST] Unexpected error:', error);
+    return ctx.reply(`Test failed:\n\n${logs.join('\n')}`);
+  }
+}
+
 async function handleHelp(ctx: Context) {
   return ctx.reply(
     '*TARDIS Bot Commands:*\n\n' +
@@ -394,6 +492,7 @@ async function handleHelp(ctx: Context) {
       'list - List active sessions\n' +
       'tasks - List Todoist tasks\n' +
       'add <task> [time] - Create a new task\n' +
+      'test - Test notification pipeline\n' +
       'help - Show this help\n\n' +
       '*Examples:*\n' +
       'start Write documentation\n' +
