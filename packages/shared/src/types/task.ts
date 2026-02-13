@@ -1,14 +1,15 @@
 import { z } from 'zod';
 
 /**
- * Todoist task due date schema
+ * Todoist task due date schema (API v1)
  */
 export const TodoistDueDateSchema = z.object({
   date: z.string(), // YYYY-MM-DD format
   string: z.string(), // Human-readable format (e.g., "tomorrow", "next Monday")
-  datetime: z.string().optional(), // ISO 8601 datetime if time is specified
-  timezone: z.string().optional(),
-  recurring: z.boolean().default(false),
+  datetime: z.string().nullish(), // ISO 8601 datetime if time is specified
+  timezone: z.string().nullish(),
+  is_recurring: z.boolean().default(false),
+  lang: z.string().optional(),
 });
 export type TodoistDueDate = z.infer<typeof TodoistDueDateSchema>;
 
@@ -24,7 +25,7 @@ export type TodoistPriority = z.infer<typeof TodoistPrioritySchema>;
 
 /**
  * Todoist task schema
- * Based on Todoist REST API v2
+ * Based on Todoist API v1
  */
 export const TodoistTaskSchema = z.object({
   id: z.string(),
@@ -36,15 +37,19 @@ export const TodoistTaskSchema = z.object({
   project_id: z.string(),
   section_id: z.string().nullish(),
   parent_id: z.string().nullish(),
-  order: z.number().int().default(0),
-  url: z.string().url(),
-  created_at: z.string().datetime(),
-  creator_id: z.string().nullish(),
-  assignee_id: z.string().nullish(),
-  assigner_id: z.string().nullish(),
-  comment_count: z.number().int().default(0),
-  is_completed: z.boolean().default(false),
-  completed_at: z.string().datetime().nullish(),
+  child_order: z.number().int().optional(),
+  added_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  checked: z.boolean().default(false),
+  is_deleted: z.boolean().default(false),
+  completed_at: z.string().nullish(),
+  user_id: z.string().optional(),
+  added_by_uid: z.string().nullish(),
+  assigned_by_uid: z.string().nullish(),
+  responsible_uid: z.string().nullish(),
+  note_count: z.number().int().default(0),
+  deadline: z.any().nullish(),
+  duration: z.any().nullish(),
 });
 export type TodoistTask = z.infer<typeof TodoistTaskSchema>;
 
@@ -57,14 +62,12 @@ export const CreateTodoistTaskSchema = z.object({
   project_id: z.string().optional(),
   section_id: z.string().optional(),
   parent_id: z.string().optional(),
-  order: z.number().int().optional(),
   labels: z.array(z.string()).optional(),
   priority: TodoistPrioritySchema.optional(),
   due_string: z.string().optional(),
   due_date: z.string().optional(),
   due_datetime: z.string().optional(),
   due_lang: z.string().optional(),
-  assignee_id: z.string().optional(),
 });
 export type CreateTodoistTask = z.infer<typeof CreateTodoistTaskSchema>;
 

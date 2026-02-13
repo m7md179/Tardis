@@ -17,7 +17,7 @@ export interface TodoistTask {
  */
 export class TodoistClient {
   private apiToken: string;
-  private readonly baseUrl = 'https://api.todoist.com/rest/v2';
+  private readonly baseUrl = 'https://api.todoist.com/api/v1';
 
   constructor(config: ServerConfig) {
     this.apiToken = config.todoist.apiToken;
@@ -37,7 +37,8 @@ export class TodoistClient {
       throw new Error(`Todoist API error: ${response.status}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    return Array.isArray(data) ? data : data.results ?? [];
   }
 
   /**

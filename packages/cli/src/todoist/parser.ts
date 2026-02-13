@@ -13,8 +13,7 @@ export interface ParsedTask {
   labels: string[];
   priority: number;
   projectId: string;
-  url: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 /**
@@ -57,8 +56,7 @@ export function parseTask(task: TodoistTask): ParsedTask {
     labels: task.labels,
     priority: task.priority,
     projectId: task.project_id,
-    url: task.url,
-    createdAt: task.created_at,
+    createdAt: task.added_at,
   };
 }
 

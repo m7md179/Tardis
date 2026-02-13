@@ -7,12 +7,12 @@ import {
 import { ConfigStore } from '../storage/config-store';
 
 /**
- * Todoist REST API v2 client
- * https://developer.todoist.com/rest/v2/
+ * Todoist API v1 client
+ * https://developer.todoist.com/api/v1/
  */
 export class TodoistClient {
   private apiToken: string;
-  private readonly baseUrl = 'https://api.todoist.com/rest/v2';
+  private readonly baseUrl = 'https://api.todoist.com/api/v1';
 
   constructor(apiToken?: string) {
     if (apiToken) {
@@ -45,13 +45,9 @@ export class TodoistClient {
     }
 
     const data = await response.json();
+    const tasks = Array.isArray(data) ? data : data.results ?? [];
 
-    // Validate response data
-    if (!Array.isArray(data)) {
-      throw new Error('Invalid response from Todoist API: expected array of tasks');
-    }
-
-    return data.map((task) => TodoistTaskSchema.parse(task));
+    return tasks.map((task: any) => TodoistTaskSchema.parse(task));
   }
 
   /**

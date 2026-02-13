@@ -198,7 +198,7 @@ tardis sync
 ```bash
 # Test token directly
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  https://api.todoist.com/rest/v2/tasks
+  https://api.todoist.com/api/v1/tasks
 ```
 
 ### No Tasks Found
@@ -390,7 +390,7 @@ Todoist API has rate limits:
 If you're still having issues:
 
 1. Check [Todoist API Status](https://status.todoist.com/)
-2. Review [Todoist API Documentation](https://developer.todoist.com/rest/v2/)
+2. Review [Todoist API Documentation](https://developer.todoist.com/api/v1/)
 3. Search [TARDIS Issues](https://github.com/yourusername/tardis/issues)
 4. Ask in [Discussions](https://github.com/yourusername/tardis/discussions)
 
