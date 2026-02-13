@@ -51,6 +51,11 @@ export class TimeWindowMonitor {
       for (const task of allTasks) {
         if (!task.description) continue;
 
+        // Only process tasks due today
+        if (!task.due?.date || task.due.date !== currentDate) {
+          continue;
+        }
+
         // Extract time window from description
         const matches = task.description.match(/\[([^\]]+)\]/g);
         if (!matches) continue;

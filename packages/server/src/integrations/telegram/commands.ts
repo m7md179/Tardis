@@ -9,6 +9,16 @@ import { createSessionKeyboard } from './keyboards';
 
 const manager = new SessionManager();
 
+/** Format ISO timestamp in user's timezone */
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Riyadh',
+  });
+}
+
 /**
  * Parse a message into command + args.
  * Supports both "/command args" and plain "command args".
@@ -83,7 +93,7 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
     const args = ctx.message.text.split(' ').slice(1).join(' ');
     if (args) {
       // If they typed "/start taskname", handle as task start
-      await handleStart(ctx, args);
+      await handleStart(ctx, args, todoist);
       return;
     }
     await handleHelp(ctx);
@@ -98,7 +108,7 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
 
       let reply = `✅ Stopped tracking: *${stopped.taskName}*\n`;
       reply += `📊 Duration: ${formatDurationHuman(stopped.duration)}\n`;
-      reply += `🕐 Ended at: ${new Date(stopped.endTime!).toLocaleTimeString()}`;
+      reply += `🕐 Ended at: ${fmtTime(stopped.endTime!)}`;
 
       await ctx.answerCbQuery();
       await ctx.editMessageText(reply, { parse_mode: 'Markdown' });
@@ -118,7 +128,7 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
         if (!args) {
           return ctx.reply('Usage: start <task name>\n\nExample: start Write documentation');
         }
-        return handleStart(ctx, args);
+        return handleStart(ctx, args, todoist);
 
       case 'stop':
         return handleStop(ctx);
@@ -166,21 +176,71 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
 
 // --- Command Handlers ---
 
-async function handleStart(ctx: Context, taskName: string) {
+async function handleStart(ctx: Context, taskName: string, todoist: TodoistClient) {
   try {
-    const existing = await manager.getSessionByTask(taskName);
+    // Fuzzy match against Todoist tasks (exact → prefix → contains)
+    let resolvedName = taskName;
+    let taskId: string | undefined;
+    let timeWindow: { start: string; end: string } | undefined;
+
+    try {
+      const tasks = await todoist.getTasks();
+      const query = taskName.toLowerCase().trim();
+
+      let matches = tasks.filter((t) => t.content.toLowerCase() === query);
+      if (!matches.length) matches = tasks.filter((t) => t.content.toLowerCase().startsWith(query));
+      if (!matches.length) matches = tasks.filter((t) => t.content.toLowerCase().includes(query));
+
+      if (matches.length === 1) {
+        const matched = matches[0]!;
+        resolvedName = matched.content;
+        taskId = matched.id;
+
+        // Extract time window from description
+        if (matched.description) {
+          const twMatches = matched.description.match(/\[([^\]]+)\]/g);
+          if (twMatches) {
+            for (const m of twMatches) {
+              const tw = parseTimeWindow(m);
+              if (tw) {
+                timeWindow = tw;
+                break;
+              }
+            }
+          }
+        }
+      } else if (matches.length > 1) {
+        // Show choices to user
+        let reply = `Found ${matches.length} matching tasks:\n\n`;
+        matches.forEach((t, i) => {
+          reply += `${i + 1}. ${t.content}\n`;
+        });
+        reply += `\nPlease be more specific, e.g.:\nstart ${matches[0]!.content}`;
+        return ctx.reply(reply);
+      }
+      // 0 matches: use literal taskName (no Todoist link)
+    } catch (err) {
+      // Todoist fetch failed, continue with literal name
+      console.error('Todoist match failed, using literal name:', err);
+    }
+
+    // Check for existing active session
+    const existing = await manager.getSessionByTask(resolvedName);
     if (existing) {
       return ctx.reply(
         `⚠️ Task '${existing.taskName}' is already active.\n` +
-          `Started: ${new Date(existing.startTime).toLocaleString()}\n\n` +
+          `Started: ${fmtTime(existing.startTime)}\n\n` +
           `Use stop to end it first.`
       );
     }
 
-    const session = await manager.startSession({ taskName });
+    const session = await manager.startSession({ taskName: resolvedName, taskId, timeWindow });
 
     let reply = `✅ Started tracking: *${session.taskName}*\n`;
-    reply += `⏰ Started at: ${new Date(session.startTime).toLocaleTimeString()}\n`;
+    reply += `⏰ Started at: ${fmtTime(session.startTime)}\n`;
+    if (timeWindow) {
+      reply += `📅 Window: ${timeWindow.start} - ${timeWindow.end}\n`;
+    }
     reply += `📊 Duration: 0h 0m`;
 
     return ctx.reply(reply, { parse_mode: 'Markdown' });
@@ -210,7 +270,7 @@ async function handleStop(ctx: Context) {
 
     let reply = `✅ Stopped tracking: *${stopped.taskName}*\n`;
     reply += `📊 Duration: ${formatDurationHuman(stopped.duration)}\n`;
-    reply += `🕐 Ended at: ${new Date(stopped.endTime!).toLocaleTimeString()}`;
+    reply += `🕐 Ended at: ${fmtTime(stopped.endTime!)}`;
 
     return ctx.reply(reply, { parse_mode: 'Markdown' });
   } catch (error) {
@@ -279,7 +339,7 @@ async function handleStatus(ctx: Context) {
 
     let reply = `📊 *Status: ${session.status}*\n`;
     reply += `📝 Task: ${session.taskName}\n`;
-    reply += `⏰ Started: ${new Date(session.startTime).toLocaleTimeString()}\n`;
+    reply += `⏰ Started: ${fmtTime(session.startTime)}\n`;
     reply += `⌛ Duration: ${formatDurationHuman(duration)}`;
 
     if (session.timeWindow) {
@@ -307,7 +367,7 @@ async function handleList(ctx: Context) {
       const duration = Math.floor((Date.now() - new Date(session.startTime).getTime()) / 1000);
       reply += `📝 ${session.taskName}\n`;
       reply += `   Status: ${session.status}\n`;
-      reply += `   Started: ${new Date(session.startTime).toLocaleTimeString()}\n`;
+      reply += `   Started: ${fmtTime(session.startTime)}\n`;
       reply += `   Duration: ${formatDurationHuman(duration)}\n\n`;
     }
 
