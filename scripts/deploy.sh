@@ -35,6 +35,29 @@ git reset --hard origin/main
 echo "  -> Installing dependencies..."
 bun install --frozen-lockfile 2>/dev/null || bun install
 
+echo "  -> Syncing plugins..."
+PLUGINS_DIR="/var/lib/tardis/plugins"
+mkdir -p ${PLUGINS_DIR}
+if [ -d ${REMOTE_DIR}/plugins ]; then
+  for plugin_dir in ${REMOTE_DIR}/plugins/*/; do
+    plugin_name=$(basename "$plugin_dir")
+    # Preserve plugin storage data during sync
+    if [ -d "${PLUGINS_DIR}/${plugin_name}/storage" ]; then
+      cp -r "${PLUGINS_DIR}/${plugin_name}/storage" "/tmp/tardis-plugin-storage-${plugin_name}"
+    fi
+    cp -r "$plugin_dir" "${PLUGINS_DIR}/${plugin_name}"
+    if [ -d "/tmp/tardis-plugin-storage-${plugin_name}" ]; then
+      cp -r "/tmp/tardis-plugin-storage-${plugin_name}" "${PLUGINS_DIR}/${plugin_name}/storage"
+      rm -rf "/tmp/tardis-plugin-storage-${plugin_name}"
+    fi
+    # Install plugin dependencies if needed
+    if [ -f "${PLUGINS_DIR}/${plugin_name}/package.json" ]; then
+      (cd "${PLUGINS_DIR}/${plugin_name}" && bun install --frozen-lockfile 2>/dev/null || bun install)
+    fi
+    echo "    Synced plugin: ${plugin_name}"
+  done
+fi
+
 echo "  -> Restarting service..."
 systemctl restart ${SERVICE}
 

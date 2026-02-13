@@ -2,7 +2,45 @@
 
 TARDIS supports plugins that extend time tracking with custom behavior — session hooks, commands, notifications, and external integrations.
 
-Plugins are installed to `~/.tardis/plugins/` and auto-discovered by the server on startup.
+Plugins live on the **server** (the machine running the TARDIS server process). The server loads them from `/var/lib/tardis/plugins/` on startup.
+
+## Where Plugins Run
+
+Plugins are loaded and executed by the TARDIS server, not the CLI. All plugin management happens on the server:
+
+- The server discovers plugins in its `plugins/` directory (default: `/var/lib/tardis/plugins/`)
+- Plugin commands are executed server-side via the CLI or Telegram
+- Plugin storage is persisted on the server filesystem
+
+## Installing Plugins
+
+### Option 1: Deploy with the repo (recommended)
+
+The included plugins live in the `plugins/` directory of the TARDIS repo. The deploy script automatically syncs them to the server:
+
+```bash
+./scripts/deploy.sh
+```
+
+This pushes your code, copies all plugins from `plugins/` to `/var/lib/tardis/plugins/` on the server, installs their dependencies, and restarts the service. Plugin storage data is preserved across deploys.
+
+To add a new plugin this way, just place it in `plugins/<name>/` in the repo and deploy.
+
+### Option 2: Install from git on the server
+
+SSH into the server and use the CLI:
+
+```bash
+tardis plugin install <git-url>
+```
+
+Clones the repo into the plugins directory, validates the manifest, and installs dependencies with `bun install`. Requires a server restart.
+
+### Option 3: Manual copy on the server
+
+```bash
+cp -r /path/to/my-plugin /var/lib/tardis/plugins/my-plugin
+```
 
 ## Managing Plugins
 
@@ -13,14 +51,6 @@ tardis plugin list
 ```
 
 Shows all plugins with their status (enabled/disabled), commands, and hooks.
-
-### Install a plugin from git
-
-```bash
-tardis plugin install <git-url>
-```
-
-Clones the repo into `~/.tardis/plugins/`, validates the manifest, and installs any npm dependencies with `bun install`. Restart the server after installing.
 
 ### Uninstall a plugin
 
@@ -44,7 +74,7 @@ tardis plugin update <name>       # Update a single plugin
 tardis plugin update --all        # Update all plugins
 ```
 
-Pulls latest from git and reinstalls dependencies.
+Pulls latest from git and reinstalls dependencies. Only works for git-installed plugins.
 
 ### Run a plugin command
 
@@ -66,13 +96,13 @@ plugin <name> <command> [args...]
 tardis plugin create <name>
 ```
 
-Scaffolds a new plugin in `~/.tardis/plugins/<name>/` with a starter `plugin.json` and `index.ts`.
+Scaffolds a new plugin with a starter `plugin.json` and `index.ts`. If you want it deployed with the repo, create it in `plugins/` instead of `~/.tardis/plugins/`.
 
 ---
 
 ## Included Plugins
 
-TARDIS ships with two ready-to-use plugins in the `plugins/` directory of the repo. Copy them to `~/.tardis/plugins/` to use them.
+TARDIS ships with two ready-to-use plugins. They're deployed automatically when you run `./scripts/deploy.sh`.
 
 ### Pomodoro Timer
 
@@ -80,15 +110,11 @@ Sends break reminders after a configurable work interval when you start a sessio
 
 #### Setup
 
-```bash
-# Copy to plugins directory
-cp -r plugins/pomodoro-timer ~/.tardis/plugins/
+No setup needed — the plugin activates automatically after deploy. Verify with:
 
-# Verify it's detected
+```bash
 tardis plugin list
 ```
-
-Restart the TARDIS server. The plugin activates automatically.
 
 #### How it works
 
@@ -143,6 +169,8 @@ Automatically creates Google Calendar events for completed TARDIS sessions.
 
 #### Setup
 
+The plugin files are deployed automatically, but you need to configure Google OAuth credentials.
+
 **1. Create Google OAuth credentials:**
 
 1. Go to [Google Cloud Console — Credentials](https://console.cloud.google.com/apis/credentials)
@@ -151,32 +179,20 @@ Automatically creates Google Calendar events for completed TARDIS sessions.
 4. Create an **OAuth 2.0 Client ID** with application type **Desktop**
 5. Copy the Client ID and Client Secret
 
-**2. Install the plugin:**
+**2. Configure credentials:**
 
-```bash
-# Copy to plugins directory
-cp -r plugins/google-calendar-sync ~/.tardis/plugins/
-
-# Install dependencies
-cd ~/.tardis/plugins/google-calendar-sync
-bun install
-```
-
-Restart the TARDIS server.
-
-**3. Configure credentials:**
+After deploying, run via CLI or Telegram:
 
 ```bash
 tardis plugin run google-calendar-sync setup <client_id> <client_secret>
 ```
-Or via Telegram:
 ```
 plugin google-calendar-sync setup <client_id> <client_secret>
 ```
 
 This stores the credentials and gives you an authorization URL.
 
-**4. Complete the OAuth flow:**
+**3. Complete the OAuth flow:**
 
 1. Open the authorization URL from the previous step in your browser
 2. Sign in and grant calendar access
