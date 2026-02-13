@@ -6,6 +6,7 @@ import { ServerConfig } from '../../config';
 import { formatDurationHuman } from '@tardis/shared';
 import { parseTimeWindow } from '@tardis/shared';
 import { createSessionKeyboard } from './keyboards';
+import type { PluginManager } from '../../plugins/manager';
 
 const manager = new SessionManager();
 
@@ -85,7 +86,7 @@ function parseAddFlags(text: string): {
 /**
  * Register all bot commands
  */
-export function registerCommands(bot: Telegraf, config: ServerConfig) {
+export function registerCommands(bot: Telegraf, config: ServerConfig, pluginManager?: PluginManager) {
   const todoist = new TodoistClient(config);
 
   // Telegram's built-in /start — welcome message
@@ -173,6 +174,9 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
 
       case 'test':
         return handleTest(ctx, todoist, config);
+
+      case 'plugin':
+        return handlePlugin(ctx, args, pluginManager);
 
       case 'help':
         return handleHelp(ctx);
@@ -564,6 +568,51 @@ async function handleTest(ctx: Context, todoist: TodoistClient, config: ServerCo
   }
 }
 
+async function handlePlugin(ctx: Context, args: string, pluginManager?: PluginManager) {
+  if (!pluginManager) {
+    return ctx.reply('Plugin system not available.');
+  }
+
+  if (!args) {
+    // List plugins
+    const plugins = pluginManager.getAllPlugins();
+    if (plugins.length === 0) {
+      return ctx.reply('No plugins loaded.');
+    }
+
+    let reply = `*Loaded Plugins (${plugins.length}):*\n\n`;
+    for (const p of plugins) {
+      const cmds = p.manifest.commands.map((c) => c.name).join(', ') || 'none';
+      reply += `• ${p.manifest.displayName} v${p.manifest.version}\n`;
+      reply += `  Commands: ${cmds}\n`;
+    }
+    reply += '\nUsage: plugin <name> <command> [args]';
+    return ctx.reply(reply, { parse_mode: 'Markdown' });
+  }
+
+  // Parse: plugin <name> <command> [args...]
+  const parts = args.split(' ');
+  const pluginName = parts[0]!;
+  const command = parts[1];
+  const commandArgs = parts.slice(2);
+
+  if (!command) {
+    const loaded = pluginManager.getPlugin(pluginName);
+    if (!loaded) {
+      return ctx.reply(`Plugin not found: ${pluginName}`);
+    }
+    const cmds = loaded.manifest.commands.map((c) => `  • ${c.name} - ${c.description || ''}`).join('\n');
+    return ctx.reply(`*${loaded.manifest.displayName}*\n\nCommands:\n${cmds || '  (none)'}`, { parse_mode: 'Markdown' });
+  }
+
+  try {
+    await pluginManager.runCommand(pluginName, command, commandArgs);
+    return ctx.reply(`✅ Ran ${pluginName}:${command}`);
+  } catch (error: any) {
+    return ctx.reply(`❌ ${error.message}`);
+  }
+}
+
 async function handleHelp(ctx: Context) {
   return ctx.reply(
     '*TARDIS Bot Commands:*\n\n' +
@@ -575,6 +624,7 @@ async function handleHelp(ctx: Context) {
       'list - List active sessions\n' +
       'tasks - List Todoist tasks\n' +
       'add <task> [time] - Create a new task\n' +
+      'plugin [name] [cmd] - Run plugin commands\n' +
       'test - Test notification pipeline\n' +
       'help - Show this help\n\n' +
       '*Examples:*\n' +

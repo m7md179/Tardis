@@ -37,7 +37,7 @@ export class NotificationService {
     await this.send(message);
   }
 
-  private async send(message: string) {
+  async send(message: string) {
     const promises: Promise<void>[] = [];
 
     if (this.telegram) {

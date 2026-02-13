@@ -9,3 +9,6 @@ export * from './task';
 
 // API types
 export * from './api';
+
+// Plugin types
+export * from './plugin';

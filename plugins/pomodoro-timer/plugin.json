@@ -1,0 +1,41 @@
+{
+  "name": "pomodoro-timer",
+  "version": "1.0.0",
+  "displayName": "Pomodoro Timer",
+  "description": "Sends break notifications after a configurable work interval when sessions start",
+  "author": "Mohammad <mohammad@weborbit.dev>",
+  "license": "MIT",
+  "tardisVersion": ">=2.0.0",
+  "main": "index.ts",
+  "permissions": [
+    "sessions:read",
+    "sessions:write",
+    "storage:read",
+    "storage:write",
+    "notifications:send"
+  ],
+  "hooks": [
+    "session:start",
+    "session:stop"
+  ],
+  "commands": [
+    {
+      "name": "start",
+      "description": "Start a Pomodoro session for a task"
+    },
+    {
+      "name": "config",
+      "description": "View or update Pomodoro settings (workDuration, breakDuration)"
+    },
+    {
+      "name": "stats",
+      "description": "Show Pomodoro completion stats"
+    }
+  ],
+  "config": {
+    "enabled": true,
+    "workDuration": 25,
+    "breakDuration": 5,
+    "autoNotify": true
+  }
+}

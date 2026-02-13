@@ -16,6 +16,14 @@ import {
   addCommand,
   setupCommand,
   configCommand,
+  pluginListCommand,
+  pluginInstallCommand,
+  pluginUninstallCommand,
+  pluginEnableCommand,
+  pluginDisableCommand,
+  pluginUpdateCommand,
+  pluginRunCommand,
+  pluginCreateCommand,
 } from '../src/commands';
 
 const program = new Command();
@@ -217,6 +225,107 @@ program
   .action(async (options) => {
     try {
       await configCommand(options);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+// Plugin management
+const pluginCmd = program
+  .command('plugin')
+  .description('Manage TARDIS plugins');
+
+pluginCmd
+  .command('list')
+  .description('List installed plugins')
+  .action(async () => {
+    try {
+      await pluginListCommand();
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('install <git-url>')
+  .description('Install a plugin from a git repository')
+  .action(async (gitUrl) => {
+    try {
+      await pluginInstallCommand(gitUrl);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('uninstall <name>')
+  .description('Uninstall a plugin')
+  .action(async (name) => {
+    try {
+      await pluginUninstallCommand(name);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('enable <name>')
+  .description('Enable a plugin')
+  .action(async (name) => {
+    try {
+      await pluginEnableCommand(name);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('disable <name>')
+  .description('Disable a plugin')
+  .action(async (name) => {
+    try {
+      await pluginDisableCommand(name);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('update <name>')
+  .description('Update a plugin (use --all to update all)')
+  .action(async (name) => {
+    try {
+      await pluginUpdateCommand(name);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('run <name> <command> [args...]')
+  .description('Run a plugin command')
+  .action(async (name, command, args) => {
+    try {
+      await pluginRunCommand(name, command, args);
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('create <name>')
+  .description('Scaffold a new plugin from template')
+  .action(async (name) => {
+    try {
+      await pluginCreateCommand(name);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : error);
       process.exit(1);

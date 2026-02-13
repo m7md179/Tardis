@@ -18,3 +18,15 @@ export { completeCommand } from './complete';
 export { addCommand } from './add';
 export { setupCommand } from './setup';
 export { configCommand } from './config';
+
+// Plugin commands
+export {
+  pluginListCommand,
+  pluginInstallCommand,
+  pluginUninstallCommand,
+  pluginEnableCommand,
+  pluginDisableCommand,
+  pluginUpdateCommand,
+  pluginRunCommand,
+  pluginCreateCommand,
+} from './plugin';

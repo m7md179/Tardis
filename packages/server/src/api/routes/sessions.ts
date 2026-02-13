@@ -2,11 +2,31 @@ import { Hono } from 'hono';
 import { SessionManager } from '../../core/session-manager';
 import { TodoistClient } from '../../integrations/todoist/client';
 import { ServerConfig } from '../../config';
+import type { PluginManager } from '../../plugins/manager';
 
-export function createSessionRoutes(config: ServerConfig) {
+export interface SessionRouteDeps {
+  config: ServerConfig;
+  sessionManager: SessionManager;
+  todoistClient: TodoistClient;
+  pluginManager?: PluginManager;
+}
+
+export function createSessionRoutes(configOrDeps: ServerConfig | SessionRouteDeps) {
   const sessions = new Hono();
-  const manager = new SessionManager();
-  const todoist = new TodoistClient(config);
+
+  // Support both old (config-only) and new (deps) signatures
+  let manager: SessionManager;
+  let todoist: TodoistClient;
+  let pluginManager: PluginManager | undefined;
+
+  if ('sessionManager' in configOrDeps) {
+    manager = configOrDeps.sessionManager;
+    todoist = configOrDeps.todoistClient;
+    pluginManager = configOrDeps.pluginManager;
+  } else {
+    manager = new SessionManager();
+    todoist = new TodoistClient(configOrDeps);
+  }
 
   sessions.get('/active', async (c) => {
     const activeSessions = await manager.getActiveSessions();
@@ -53,6 +73,9 @@ export function createSessionRoutes(config: ServerConfig) {
       timeWindow,
     });
 
+    // Emit plugin event (fire-and-forget)
+    pluginManager?.emitEvent('session:start', session).catch(() => {});
+
     return c.json(session, 201);
   });
 
@@ -82,6 +105,9 @@ export function createSessionRoutes(config: ServerConfig) {
       }
     }
 
+    // Emit plugin event (fire-and-forget)
+    pluginManager?.emitEvent('session:stop', stopped).catch(() => {});
+
     return c.json(stopped);
   });
 
@@ -101,6 +127,9 @@ export function createSessionRoutes(config: ServerConfig) {
 
     const paused = await manager.pauseSession(session.id);
 
+    // Emit plugin event (fire-and-forget)
+    pluginManager?.emitEvent('session:pause', paused).catch(() => {});
+
     return c.json(paused);
   });
 
@@ -119,6 +148,9 @@ export function createSessionRoutes(config: ServerConfig) {
     }
 
     const resumed = await manager.resumeSession(session.id);
+
+    // Emit plugin event (fire-and-forget)
+    pluginManager?.emitEvent('session:resume', resumed).catch(() => {});
 
     return c.json(resumed);
   });

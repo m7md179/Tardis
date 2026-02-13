@@ -1,11 +1,20 @@
 import { Telegraf } from 'telegraf';
 import { ServerConfig } from '../../config';
 import { registerCommands } from './commands';
+import type { PluginManager } from '../../plugins/manager';
+
+export interface TelegramBotOptions {
+  config: ServerConfig;
+  pluginManager?: PluginManager;
+}
 
 /**
  * Start Telegram bot
  */
-export async function startTelegramBot(config: ServerConfig) {
+export async function startTelegramBot(configOrOpts: ServerConfig | TelegramBotOptions) {
+  const config = 'config' in configOrOpts ? configOrOpts.config : configOrOpts;
+  const pluginManager = 'pluginManager' in configOrOpts ? configOrOpts.pluginManager : undefined;
+
   const telegram = config.notifications.channels.telegram;
 
   if (!telegram?.enabled || !telegram.botToken) {
@@ -16,7 +25,7 @@ export async function startTelegramBot(config: ServerConfig) {
   const bot = new Telegraf(telegram.botToken);
 
   // Register all commands with access to config
-  registerCommands(bot, config);
+  registerCommands(bot, config, pluginManager);
 
   // Error handling
   bot.catch((err, ctx) => {

@@ -1,6 +1,11 @@
 import { serve } from 'bun';
+import { join } from 'path';
 import { createServer } from './api/server';
 import { loadConfig } from './config';
+import { SessionManager } from './core/session-manager';
+import { TodoistClient } from './integrations/todoist/client';
+import { NotificationService } from './integrations/notifications/service';
+import { PluginManager } from './plugins/manager';
 import { startTelegramBot } from './integrations/telegram/bot';
 import { startScheduler } from './core/scheduler';
 
@@ -11,8 +16,30 @@ async function main() {
 
     console.log('Starting TARDIS Server v2.0.0');
 
+    // Create shared service instances
+    const sessionManager = new SessionManager();
+    const todoistClient = new TodoistClient(config);
+    const notificationService = new NotificationService(config);
+
+    // Initialize plugin system
+    const pluginsDir = join(config.server.dataDir, 'plugins');
+    const pluginManager = new PluginManager({
+      pluginsDir,
+      sessionManager,
+      todoistClient,
+      notificationService,
+    });
+
+    await pluginManager.loadAll();
+
     // Create HTTP server
-    const app = createServer(config);
+    const app = createServer({
+      config,
+      sessionManager,
+      todoistClient,
+      notificationService,
+      pluginManager,
+    });
 
     // Start server
     const server = serve({
@@ -31,7 +58,7 @@ async function main() {
     // Start Telegram bot if enabled
     if (config.notifications.channels.telegram?.enabled) {
       console.log('Starting Telegram bot...');
-      await startTelegramBot(config);
+      await startTelegramBot({ config, pluginManager });
     }
 
     console.log('TARDIS Server ready!');
@@ -39,6 +66,16 @@ async function main() {
     // Graceful shutdown
     process.on('SIGINT', async () => {
       console.log('Shutting down gracefully...');
+
+      // Unload all plugins
+      for (const plugin of pluginManager.getAllPlugins()) {
+        try {
+          await pluginManager.unloadPlugin(plugin.manifest.name);
+        } catch (error) {
+          console.error(`Failed to unload plugin ${plugin.manifest.name}:`, error);
+        }
+      }
+
       server.stop();
       process.exit(0);
     });
