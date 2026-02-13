@@ -182,6 +182,18 @@ export function registerCommands(bot: Telegraf, config: ServerConfig, pluginMana
         return handleHelp(ctx);
 
       default:
+        // Fallback to Gemini assistant for natural language processing
+        if (pluginManager) {
+          const gemini = pluginManager.getPlugin('gemini-assistant');
+          if (gemini) {
+            try {
+              await pluginManager.runCommand('gemini-assistant', 'ask', [ctx.message.text]);
+              return;
+            } catch (e) {
+              console.error('[Gemini fallback error]', e);
+            }
+          }
+        }
         return ctx.reply(
           `Unknown command: "${command}"\n\nType help to see available commands.`
         );

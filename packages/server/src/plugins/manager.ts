@@ -118,6 +118,7 @@ export class PluginManager {
       notificationService: this.notificationService,
       storage,
       eventBus: this.eventBus,
+      pluginManager: this,
     });
 
     // Load persisted config overrides

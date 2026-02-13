@@ -1,0 +1,36 @@
+{
+  "name": "gemini-assistant",
+  "version": "1.0.0",
+  "displayName": "Gemini Assistant",
+  "description": "Natural language interface for TARDIS powered by Google Gemini",
+  "author": "Mohammad <mohammad@weborbit.dev>",
+  "license": "MIT",
+  "tardisVersion": ">=2.0.0",
+  "main": "index.ts",
+  "permissions": [
+    "sessions:read",
+    "sessions:write",
+    "tasks:read",
+    "tasks:write",
+    "storage:read",
+    "storage:write",
+    "http:external",
+    "notifications:send"
+  ],
+  "hooks": [],
+  "commands": [
+    {
+      "name": "ask",
+      "description": "Process natural language input with Gemini"
+    },
+    {
+      "name": "config",
+      "description": "Configure API key, model, and settings"
+    }
+  ],
+  "config": {
+    "enabled": true,
+    "apiKey": "",
+    "model": "gemini-2.0-flash"
+  }
+}

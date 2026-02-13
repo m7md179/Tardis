@@ -4,6 +4,7 @@ import type { TodoistClient } from '../integrations/todoist/client';
 import type { NotificationService } from '../integrations/notifications/service';
 import type { PluginStorage } from './storage';
 import type { EventBus } from './event-bus';
+import type { PluginManager } from './manager';
 
 export interface PluginAPIOptions {
   pluginName: string;
@@ -13,6 +14,7 @@ export interface PluginAPIOptions {
   notificationService: NotificationService;
   storage: PluginStorage;
   eventBus: EventBus;
+  pluginManager: PluginManager;
 }
 
 /**
@@ -28,6 +30,7 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
     notificationService,
     storage,
     eventBus,
+    pluginManager,
   } = options;
 
   const permissions = new Set<PluginPermission>(manifest.permissions);
@@ -129,7 +132,7 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
     notifications: {
       async send(message: string) {
         checkPermission('notifications:send');
-        await notificationService.send(`[${pluginName}] ${message}`);
+        await notificationService.send(message);
       },
     },
 
@@ -167,6 +170,19 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
       },
       on(eventName: string, handler: (data: unknown) => void) {
         eventBus.on(`plugin:${pluginName}:${eventName}`, pluginName, handler);
+      },
+    },
+
+    plugins: {
+      list() {
+        return pluginManager.getAllPlugins().map((p) => ({
+          name: p.manifest.name,
+          displayName: p.manifest.displayName,
+          commands: p.manifest.commands.map((c) => ({ name: c.name, description: c.description })),
+        }));
+      },
+      async run(targetPlugin: string, command: string, args: string[]) {
+        await pluginManager.runCommand(targetPlugin, command, args);
       },
     },
   };

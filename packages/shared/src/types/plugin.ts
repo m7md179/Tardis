@@ -126,6 +126,12 @@ export interface PluginAPI {
     emit(eventName: string, data: unknown): void;
     on(eventName: string, handler: (data: unknown) => void): void;
   };
+
+  /** Discover and invoke other plugins */
+  plugins: {
+    list(): { name: string; displayName: string; commands: { name: string; description?: string }[] }[];
+    run(pluginName: string, command: string, args: string[]): Promise<void>;
+  };
 }
 
 /**
