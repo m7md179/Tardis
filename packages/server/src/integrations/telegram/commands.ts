@@ -106,9 +106,20 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
     try {
       const stopped = await manager.stopSession(sessionId, { sync: true });
 
+      // Complete in Todoist
+      if (stopped.taskId) {
+        try {
+          await todoist.completeTask(stopped.taskId);
+          stopped.todoistSynced = true;
+        } catch (err) {
+          console.error('Failed to complete task in Todoist:', err);
+        }
+      }
+
       let reply = `✅ Stopped tracking: *${stopped.taskName}*\n`;
       reply += `📊 Duration: ${formatDurationHuman(stopped.duration)}\n`;
       reply += `🕐 Ended at: ${fmtTime(stopped.endTime!)}`;
+      if (stopped.todoistSynced) reply += `\n✓ Completed in Todoist`;
 
       await ctx.answerCbQuery();
       await ctx.editMessageText(reply, { parse_mode: 'Markdown' });
@@ -131,7 +142,7 @@ export function registerCommands(bot: Telegraf, config: ServerConfig) {
         return handleStart(ctx, args, todoist);
 
       case 'stop':
-        return handleStop(ctx);
+        return handleStop(ctx, todoist);
 
       case 'pause':
         return handlePause(ctx);
@@ -250,7 +261,7 @@ async function handleStart(ctx: Context, taskName: string, todoist: TodoistClien
   }
 }
 
-async function handleStop(ctx: Context) {
+async function handleStop(ctx: Context, todoist: TodoistClient) {
   try {
     const activeSessions = await manager.getActiveSessions();
 
@@ -265,12 +276,24 @@ async function handleStop(ctx: Context) {
       );
     }
 
-    const session = activeSessions[0];
+    const session = activeSessions[0]!;
     const stopped = await manager.stopSession(session.id, { sync: true });
+
+    // Complete in Todoist
+    let synced = false;
+    if (stopped.taskId) {
+      try {
+        await todoist.completeTask(stopped.taskId);
+        synced = true;
+      } catch (err) {
+        console.error('Failed to complete task in Todoist:', err);
+      }
+    }
 
     let reply = `✅ Stopped tracking: *${stopped.taskName}*\n`;
     reply += `📊 Duration: ${formatDurationHuman(stopped.duration)}\n`;
     reply += `🕐 Ended at: ${fmtTime(stopped.endTime!)}`;
+    if (synced) reply += `\n✓ Completed in Todoist`;
 
     return ctx.reply(reply, { parse_mode: 'Markdown' });
   } catch (error) {

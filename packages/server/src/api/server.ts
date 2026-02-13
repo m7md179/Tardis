@@ -5,11 +5,12 @@ import { authMiddleware } from './middleware/auth';
 import { rateLimitMiddleware } from './middleware/ratelimit';
 import { errorMiddleware } from './middleware/error';
 
+import { ServerConfig } from '../config';
 import healthRoutes from './routes/health';
 import authRoutes from './routes/auth';
-import sessionRoutes from './routes/sessions';
+import { createSessionRoutes } from './routes/sessions';
 
-export function createServer() {
+export function createServer(config: ServerConfig) {
   const app = new Hono();
 
   // Global middleware
@@ -30,7 +31,7 @@ export function createServer() {
   // Protected routes (auth required)
   app.use('/api/sessions/*', authMiddleware);
   app.use('/api/sessions/*', rateLimitMiddleware);
-  app.route('/api/sessions', sessionRoutes);
+  app.route('/api/sessions', createSessionRoutes(config));
 
   return app;
 }

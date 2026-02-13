@@ -12,7 +12,7 @@ async function main() {
     console.log('Starting TARDIS Server v2.0.0');
 
     // Create HTTP server
-    const app = createServer();
+    const app = createServer(config);
 
     // Start server
     const server = serve({
