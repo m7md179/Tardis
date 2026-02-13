@@ -26,8 +26,9 @@ set -euo pipefail
 
 cd ${REMOTE_DIR}
 
-echo "  -> Pulling latest code..."
-git pull origin main
+echo "  -> Resetting local changes..."
+git fetch origin main
+git reset --hard origin/main
 
 echo "  -> Installing dependencies..."
 bun install --frozen-lockfile 2>/dev/null || bun install
