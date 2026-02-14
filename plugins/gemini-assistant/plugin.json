@@ -1,6 +1,6 @@
 {
   "name": "gemini-assistant",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "displayName": "Gemini Assistant",
   "description": "Natural language interface for TARDIS powered by Google Gemini",
   "author": "Mohammad <mohammad@weborbit.dev>",

@@ -58,6 +58,44 @@ export class TodoistClient {
   }
 
   /**
+   * Get a single task by ID
+   */
+  async getTask(taskId: string): Promise<TodoistTask> {
+    const response = await fetch(`${this.baseUrl}/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${this.apiToken}` },
+    });
+    if (!response.ok) throw new Error(`Failed to get task: ${response.status}`);
+    return response.json();
+  }
+
+  /**
+   * Update a task
+   */
+  async updateTask(taskId: string, updates: Record<string, unknown>): Promise<TodoistTask> {
+    const response = await fetch(`${this.baseUrl}/tasks/${taskId}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) throw new Error(`Failed to update task: ${response.status}`);
+    return response.json();
+  }
+
+  /**
+   * Delete a task
+   */
+  async deleteTask(taskId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/tasks/${taskId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${this.apiToken}` },
+    });
+    if (!response.ok) throw new Error(`Failed to delete task: ${response.status}`);
+  }
+
+  /**
    * Create a new task
    */
   async createTask(content: string, description?: string, dueString?: string): Promise<TodoistTask> {

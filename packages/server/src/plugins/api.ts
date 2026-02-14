@@ -75,6 +75,10 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
         checkPermission('tasks:read');
         return todoistClient.getTasks();
       },
+      async getById(taskId: string) {
+        checkPermission('tasks:read');
+        return todoistClient.getTask(taskId);
+      },
       async complete(taskId: string) {
         checkPermission('tasks:write');
         return todoistClient.completeTask(taskId);
@@ -82,6 +86,14 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
       async create(content: string, description?: string, dueString?: string) {
         checkPermission('tasks:write');
         return todoistClient.createTask(content, description, dueString);
+      },
+      async update(taskId: string, updates: { content?: string; description?: string; due_string?: string; priority?: number }) {
+        checkPermission('tasks:write');
+        return todoistClient.updateTask(taskId, updates);
+      },
+      async delete(taskId: string) {
+        checkPermission('tasks:write');
+        return todoistClient.deleteTask(taskId);
       },
     },
 

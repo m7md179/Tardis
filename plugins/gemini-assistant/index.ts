@@ -2,23 +2,15 @@ import type { TardisPlugin, PluginAPI, Session } from '@tardis/shared';
 
 // --- Types ---
 
-interface GeminiResult {
-  action: 'execute' | 'question' | 'notify' | 'conversation';
-  command?: string;
-  args?: string;
-  message: string;
-  schedule?: { message: string; delayMinutes: number };
+interface ContentPart {
+  text?: string;
+  functionCall?: { name: string; args: Record<string, any> };
+  functionResponse?: { name: string; response: any };
 }
 
-interface ConversationEntry {
-  role: 'user' | 'assistant';
-  text: string;
-}
-
-interface Capability {
-  name: string;
-  description: string;
-  handler: string;
+interface GeminiContent {
+  role: 'user' | 'model';
+  parts: ContentPart[];
 }
 
 // --- Helpers ---
@@ -31,114 +23,189 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-function formatSessionStatus(session: Session): string {
-  const status = session.status === 'PAUSED' ? '⏸️ Paused' : '▶️ Active';
-  return `${status}: *${session.taskName}*\n📊 Duration: ${formatDuration(session.duration)}`;
+// --- Fuzzy Task Matcher ---
+
+interface TaskMatch {
+  task: { id: string; content: string; due?: { string: string; date: string } };
+  confidence: 'exact' | 'prefix' | 'contains';
 }
+
+function fuzzyMatchTasks(tasks: any[], query: string): TaskMatch[] {
+  const q = query.toLowerCase().trim();
+  if (!q) return [];
+
+  const exact: TaskMatch[] = [];
+  const prefix: TaskMatch[] = [];
+  const contains: TaskMatch[] = [];
+
+  for (const task of tasks) {
+    const content = (task.content as string).toLowerCase();
+    if (content === q) {
+      exact.push({ task, confidence: 'exact' });
+    } else if (content.startsWith(q)) {
+      prefix.push({ task, confidence: 'prefix' });
+    } else if (content.includes(q)) {
+      contains.push({ task, confidence: 'contains' });
+    }
+  }
+
+  return [...exact, ...prefix, ...contains];
+}
+
+// --- Function Declarations ---
+
+const functionDeclarations = [
+  {
+    name: 'start_tracking',
+    description: 'Start time tracking for a task. Use when Mohammad says he is WORKING on something RIGHT NOW.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        task_name: { type: 'STRING', description: 'Name of the task to track time for' },
+      },
+      required: ['task_name'],
+    },
+  },
+  {
+    name: 'stop_tracking',
+    description: 'Stop the current active time tracking session.',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'pause_tracking',
+    description: 'Pause the current active time tracking session (e.g. taking a break).',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'resume_tracking',
+    description: 'Resume a paused time tracking session (e.g. back from break).',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'get_status',
+    description: 'Get the current time tracking status — what sessions are active or paused.',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'add_task',
+    description: 'Add a new task to Todoist. Use when Mohammad wants to CREATE, SET, or SCHEDULE a task, meeting, appointment, or todo item for the future.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        name: { type: 'STRING', description: 'Task name or content (e.g. "Meeting with client")' },
+        due_date: { type: 'STRING', description: 'Due date in natural language (e.g. "tomorrow", "next Monday", "today", "Feb 20")' },
+        time_window: { type: 'STRING', description: 'Time window (e.g. "10am-11am", "2:30pm-3pm")' },
+        priority: { type: 'NUMBER', description: 'Priority: 1 (normal) to 4 (urgent)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'update_task',
+    description: 'Update an existing Todoist task — change its name, due date, description, or priority.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        task_query: { type: 'STRING', description: 'Name or partial name of the task to find (fuzzy matched against existing tasks)' },
+        new_name: { type: 'STRING', description: 'New task name/content (if changing)' },
+        new_due_date: { type: 'STRING', description: 'New due date in natural language (if rescheduling)' },
+        new_description: { type: 'STRING', description: 'New description (if changing)' },
+        new_priority: { type: 'NUMBER', description: 'New priority 1-4 (if changing)' },
+      },
+      required: ['task_query'],
+    },
+  },
+  {
+    name: 'reschedule_task',
+    description: 'Reschedule an existing Todoist task to a different date or time.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        task_query: { type: 'STRING', description: 'Name or partial name of the task to reschedule (fuzzy matched)' },
+        new_due_date: { type: 'STRING', description: 'New due date in natural language (e.g. "Friday", "next week", "tomorrow")' },
+      },
+      required: ['task_query', 'new_due_date'],
+    },
+  },
+  {
+    name: 'complete_task',
+    description: 'Mark a Todoist task as completed/done.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        task_query: { type: 'STRING', description: 'Name or partial name of the task to complete (fuzzy matched)' },
+      },
+      required: ['task_query'],
+    },
+  },
+  {
+    name: 'delete_task',
+    description: 'Permanently delete a task from Todoist.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        task_query: { type: 'STRING', description: 'Name or partial name of the task to delete (fuzzy matched)' },
+      },
+      required: ['task_query'],
+    },
+  },
+  {
+    name: 'list_tasks',
+    description: 'Show all current Todoist tasks.',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
+    name: 'set_reminder',
+    description: 'Set a reminder notification that fires after a delay (e.g. "remind me to stretch in 30 minutes").',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        message: { type: 'STRING', description: 'What to remind about' },
+        delay_minutes: { type: 'NUMBER', description: 'Minutes from now to send the reminder' },
+      },
+      required: ['message', 'delay_minutes'],
+    },
+  },
+];
 
 // --- System Prompt ---
 
-function buildSystemPrompt(api: PluginAPI, capabilities: Capability[]): string {
-  // Discover loaded plugins dynamically
+function buildSystemPrompt(api: PluginAPI): string {
   const plugins = api.plugins.list();
   const pluginSection = plugins
     .filter((p) => p.name !== 'gemini-assistant')
     .map((p) => {
-      const cmds = p.commands
-        .map((c) => `  - ${c.name}: ${c.description || 'No description'}`)
-        .join('\n');
-      return `Plugin "${p.displayName}" (invoke with command: "plugin ${p.name} <command> [args]"):\n${cmds}`;
+      const cmds = p.commands.map((c) => `${c.name}: ${c.description || ''}`).join(', ');
+      return `- ${p.displayName}: ${cmds}`;
     })
-    .join('\n\n');
+    .join('\n');
 
-  // Registered capabilities from other plugins
-  const capSection = capabilities.length > 0
-    ? capabilities
-        .map((c) => `  - ${c.name}: ${c.description} (invoke: ${c.handler})`)
-        .join('\n')
-    : 'None registered';
-
-  return `You are TARDIS, Mohammad's personal time-tracking assistant. You talk to Mohammad directly — he's a software developer who uses TARDIS to track his work, manage Todoist tasks, and stay productive.
+  return `You are TARDIS, Mohammad's personal time-tracking and task management assistant.
+Mohammad is a software developer. His timezone is Asia/Riyadh (AST/GMT+3).
 
 PERSONALITY:
-- You're Mohammad's assistant, talk to him like a helpful teammate
-- Be casual, concise, and direct — no corporate speak
+- Talk like a helpful teammate — casual, concise, direct
 - Use his name occasionally but don't overdo it
-- When he starts a task, be encouraging. When he stops, acknowledge the work done.
-- If he seems to be working long hours, gently suggest a break
-- You know his timezone is Asia/Riyadh (AST/GMT+3)
+- Be encouraging when he starts tasks, acknowledge work when he stops
+- If he's been working long hours, gently suggest a break
 
-THERE ARE TWO DIFFERENT SYSTEMS — UNDERSTAND THE DIFFERENCE:
-1. TIME TRACKING (start/stop/pause/resume) — Tracks how long Mohammad works on something. Like a stopwatch.
-2. TODOIST TASKS (add/tasks) — His todo list. Adding tasks, viewing tasks, completing tasks.
+TWO SYSTEMS — UNDERSTAND THE DIFFERENCE:
+1. TIME TRACKING (start/stop/pause/resume) = Stopwatch for ACTIVE work happening RIGHT NOW
+2. TODOIST TASKS (add/update/reschedule/complete/delete/list) = Todo list for planning
 
-These are DIFFERENT. "Add a meeting task" = Todoist (add). "Start working on API" = time tracking (start).
+"Working on X right now" → start_tracking. "I have a meeting tomorrow" → add_task.
 
-CORE COMMANDS:
-1. start <task> — Start TIME TRACKING on a task. Use when Mohammad says he's WORKING on something RIGHT NOW.
-2. stop — Stop the current time-tracking session
-3. pause — Pause the current time-tracking session
-4. resume — Resume a paused session
-5. status — Show current session status
-6. list — List all active sessions
-7. tasks — Show Todoist tasks
-8. add <content> — Add a task to TODOIST. Use when Mohammad wants to CREATE/SET/SCHEDULE a task, meeting, or todo item. Args format: "task name due:today" or "task name [2pm-3pm]"
-9. help — Show available commands
+RESOURCEFULNESS:
+You have tools available. If no single tool directly solves a request, CHAIN MULTIPLE TOOLS together.
+Think step-by-step about how to combine your tools to achieve the goal.
+Only say you can't do something if it's truly impossible with any combination of your tools.
 
-WHEN TO USE "add" vs "start":
-- "I have a meeting" / "set a task" / "add X" / "schedule X" / "create a task for X" / "I need to do X" → add (Todoist)
-- "I'm working on X" / "start X" / "begin X" / "going to work on X" → start (time tracking)
-- "A meeting at 10am" / "doctor appointment tomorrow" → add (Todoist) — these are future events to remember
-- "Working on the meeting prep right now" → start (time tracking) — this is active work
-
-${pluginSection ? `INSTALLED PLUGINS:\n${pluginSection}` : 'No plugins installed.'}
-
-EXTENDED CAPABILITIES:\n${capSection}
-
-RESPONSE FORMAT:
-Return a JSON object with ALL of these fields (all are required):
-- action: one of "execute", "question", "notify", "conversation"
-- command: the TARDIS command name (e.g. "start", "stop", "add", "status"). Set to "" if not executing a command.
-- args: THE TASK CONTENT / ARGUMENTS for the command. THIS IS CRITICAL — always put the task name, description, or content here. Set to "" if no args needed. NEVER leave this empty when there's task content to pass.
-- message: text to display to the user.
-- schedule: { message: string, delayMinutes: number } (for "notify" action only, null otherwise)
-
-⚠️ THE "args" FIELD MUST CONTAIN THE ACTUAL TASK CONTENT. Examples:
-- User says "add interview tomorrow at 10am" → args MUST be "Interview due:tomorrow [10am-11am]"
-- User says "start API work" → args MUST be "API work"
-- User says "An interview at 10am, 1 hour, tomorrow" → args MUST be "Interview due:tomorrow [10am-11am]"
-- NEVER put task content only in "message" — it MUST go in "args" for the command to work.
-
-ACTION TYPES:
-- "execute": You've identified a clear command. Set command + args + message (confirmation text).
-- "question": You need more information. ONLY use this if the user's intent is truly unclear AND you cannot make a reasonable guess.
-- "notify": User wants a reminder/notification. Set schedule with message and delay in minutes.
-- "conversation": General chat, no command needed. Set message to your response.
-
-CRITICAL RULES — FOLLOW THESE EXACTLY:
-1. BIAS TOWARD ACTION. If the user mentions ANY task-related content, ACT on it. Don't ask for confirmation.
-2. NEVER use "question" if the user has given you enough information to act. Extract what you can and execute.
-3. Each message is INDEPENDENT. Treat every message as a fresh request.
-
-EXAMPLES — FOLLOW THESE PATTERNS:
-- "start working on API" → { action: "execute", command: "start", args: "API", message: "..." }
-- "I have a meeting with client at 10am" → { action: "execute", command: "add", args: "Meeting with client due:today [10am-11am]", message: "..." }
-- "add buy groceries" → { action: "execute", command: "add", args: "buy groceries", message: "..." }
-- "set a task for doctor appointment tomorrow 3pm" → { action: "execute", command: "add", args: "Doctor appointment due:tomorrow [3pm-4pm]", message: "..." }
-- "meeting at 10am lasts 30 minutes, top priority" → { action: "execute", command: "add", args: "Meeting due:today [10:00am-10:30am] p:1", message: "..." }
-- "remind me to take a break in 25 minutes" → { action: "notify", message: "...", schedule: { message: "Take a break!", delayMinutes: 25 } }
-- "what am I working on?" → { action: "execute", command: "status", message: "..." }
-- "hello" / "thanks" → { action: "conversation", message: "..." }
-- "start" (with NO context at all) → { action: "question", message: "What would you like to start tracking?" }
-
-SYNONYMS:
-- "set a task"/"create a task"/"schedule"/"add"/"I need to" → add (Todoist)
-- "begin"/"go"/"working on"/"starting"/"let me work on" → start (time tracking)
-- "finish"/"done"/"I'm done"/"stop this"/"wrap up" → stop
-- "halt"/"break"/"taking a break" → pause
-- "continue"/"back"/"back at it" → resume
-
-Return ONLY valid JSON. No markdown, no code fences.`;
+RULES:
+- BIAS TOWARD ACTION. If Mohammad gives enough info, act immediately — don't ask for confirmation.
+- When a fuzzy match returns multiple tasks, list them and ask which one.
+- When a fuzzy match fails, tell him what tasks exist so he can clarify.
+- Keep responses SHORT. One or two sentences max unless listing items.
+${pluginSection ? `\nOTHER PLUGINS:\n${pluginSection}` : ''}`;
 }
 
 // --- Context Builder ---
@@ -149,246 +216,278 @@ async function buildContext(api: PluginAPI): Promise<string> {
   try {
     const active = await api.sessions.getActive();
     if (active.length > 0) {
-      const sessionList = active
-        .map((s) => `  - "${s.taskName}" (${s.status}, ${formatDuration(s.duration)})`)
-        .join('\n');
-      parts.push(`ACTIVE SESSIONS:\n${sessionList}`);
+      const list = active
+        .map((s) => `"${s.taskName}" (${s.status}, ${formatDuration(s.duration)})`)
+        .join(', ');
+      parts.push(`Active sessions: ${list}`);
     } else {
-      parts.push('ACTIVE SESSIONS: None');
+      parts.push('Active sessions: None');
     }
   } catch {
-    parts.push('ACTIVE SESSIONS: Unable to fetch');
+    parts.push('Active sessions: Unknown');
   }
 
   try {
     const tasks = await api.tasks.getAll();
     if (tasks.length > 0) {
-      const taskList = tasks
+      const list = tasks
         .slice(0, 10)
-        .map((t: any) => `  - "${t.content}"${t.due ? ` (due: ${t.due.string})` : ''}`)
-        .join('\n');
-      parts.push(`TODOIST TASKS (first 10):\n${taskList}`);
+        .map((t: any) => `"${t.content}"${t.due ? ` (due: ${t.due.string})` : ''}`)
+        .join(', ');
+      parts.push(`Todoist tasks: ${list}`);
+    } else {
+      parts.push('Todoist tasks: None');
     }
   } catch {
     // Todoist might not be configured
   }
 
-  return parts.join('\n\n');
+  return parts.join('\n');
 }
 
-// --- Gemini API ---
+// --- Function Executors ---
 
-async function callGemini(
-  input: string,
-  api: PluginAPI,
-  capabilities: Capability[],
-  history: ConversationEntry[]
-): Promise<GeminiResult> {
+async function executeFunctionCall(
+  name: string,
+  args: Record<string, any>,
+  api: PluginAPI
+): Promise<{ success: boolean; result: any }> {
+  try {
+    switch (name) {
+      case 'start_tracking': {
+        const session = await api.sessions.start({ taskName: args.task_name });
+        return { success: true, result: { taskName: session.taskName, sessionId: session.id } };
+      }
+      case 'stop_tracking': {
+        const active = await api.sessions.getActive();
+        const running = active.filter((s) => s.status === 'ACTIVE');
+        if (running.length === 0) return { success: false, result: { error: 'No active sessions to stop' } };
+        const stopped = await api.sessions.stop(running[0].id);
+        return { success: true, result: { taskName: stopped.taskName, duration: formatDuration(stopped.duration) } };
+      }
+      case 'pause_tracking': {
+        const active = await api.sessions.getActive();
+        const running = active.filter((s) => s.status === 'ACTIVE');
+        if (running.length === 0) return { success: false, result: { error: 'No active sessions to pause' } };
+        await api.sessions.pause(running[0].id);
+        return { success: true, result: { taskName: running[0].taskName } };
+      }
+      case 'resume_tracking': {
+        const active = await api.sessions.getActive();
+        const paused = active.find((s) => s.status === 'PAUSED');
+        if (!paused) return { success: false, result: { error: 'No paused sessions to resume' } };
+        await api.sessions.resume(paused.id);
+        return { success: true, result: { taskName: paused.taskName } };
+      }
+      case 'get_status': {
+        const active = await api.sessions.getActive();
+        if (active.length === 0) return { success: true, result: { sessions: [], message: 'No active sessions' } };
+        const sessions = active.map((s) => ({
+          taskName: s.taskName,
+          status: s.status,
+          duration: formatDuration(s.duration),
+        }));
+        return { success: true, result: { sessions } };
+      }
+      case 'add_task': {
+        const description = args.time_window ? `[${args.time_window}]` : undefined;
+        const task = await api.tasks.create(args.name, description, args.due_date);
+        return {
+          success: true,
+          result: { content: task.content, due: task.due?.string, id: task.id },
+        };
+      }
+      case 'update_task': {
+        const tasks = await api.tasks.getAll();
+        const matches = fuzzyMatchTasks(tasks, args.task_query);
+        if (matches.length === 0) {
+          const available = tasks.slice(0, 10).map((t: any) => t.content);
+          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+        }
+        if (matches.length > 1 && matches[0].confidence !== 'exact') {
+          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+        }
+        const target = matches[0].task;
+        const updates: Record<string, any> = {};
+        if (args.new_name) updates.content = args.new_name;
+        if (args.new_due_date) updates.due_string = args.new_due_date;
+        if (args.new_description) updates.description = args.new_description;
+        if (args.new_priority) updates.priority = args.new_priority;
+        const updated = await api.tasks.update(target.id, updates);
+        return { success: true, result: { content: updated.content, due: updated.due?.string, previous_content: target.content } };
+      }
+      case 'reschedule_task': {
+        const tasks = await api.tasks.getAll();
+        const matches = fuzzyMatchTasks(tasks, args.task_query);
+        if (matches.length === 0) {
+          const available = tasks.slice(0, 10).map((t: any) => t.content);
+          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+        }
+        if (matches.length > 1 && matches[0].confidence !== 'exact') {
+          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+        }
+        const target = matches[0].task;
+        const updated = await api.tasks.update(target.id, { due_string: args.new_due_date });
+        return {
+          success: true,
+          result: { content: updated.content, old_due: target.due?.string, new_due: updated.due?.string },
+        };
+      }
+      case 'complete_task': {
+        const tasks = await api.tasks.getAll();
+        const matches = fuzzyMatchTasks(tasks, args.task_query);
+        if (matches.length === 0) {
+          const available = tasks.slice(0, 10).map((t: any) => t.content);
+          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+        }
+        if (matches.length > 1 && matches[0].confidence !== 'exact') {
+          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+        }
+        const target = matches[0].task;
+        await api.tasks.complete(target.id);
+        return { success: true, result: { content: target.content } };
+      }
+      case 'delete_task': {
+        const tasks = await api.tasks.getAll();
+        const matches = fuzzyMatchTasks(tasks, args.task_query);
+        if (matches.length === 0) {
+          const available = tasks.slice(0, 10).map((t: any) => t.content);
+          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+        }
+        if (matches.length > 1 && matches[0].confidence !== 'exact') {
+          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+        }
+        const target = matches[0].task;
+        await api.tasks.delete(target.id);
+        return { success: true, result: { content: target.content } };
+      }
+      case 'list_tasks': {
+        const tasks = await api.tasks.getAll();
+        if (tasks.length === 0) return { success: true, result: { tasks: [], message: 'No tasks' } };
+        return {
+          success: true,
+          result: {
+            tasks: tasks.slice(0, 15).map((t: any) => ({
+              content: t.content,
+              due: t.due?.string,
+              priority: t.priority,
+              id: t.id,
+            })),
+          },
+        };
+      }
+      case 'set_reminder': {
+        // Actual scheduling happens in the caller
+        return { success: true, result: { message: args.message, delay_minutes: args.delay_minutes, scheduled: true } };
+      }
+      default:
+        return { success: false, result: { error: `Unknown function: ${name}` } };
+    }
+  } catch (error: any) {
+    return { success: false, result: { error: error.message } };
+  }
+}
+
+// --- Gemini Conversation Loop ---
+
+async function processMessage(input: string, api: PluginAPI): Promise<string> {
   const apiKey = api.config.get<string>('apiKey');
   if (!apiKey) {
     throw new Error('Gemini API key not configured. Set it with: plugin gemini-assistant config apiKey YOUR_KEY');
   }
 
   const model = api.config.get<string>('model') || 'gemini-2.0-flash';
-  const systemPrompt = buildSystemPrompt(api, capabilities);
+  const systemPrompt = buildSystemPrompt(api);
   const context = await buildContext(api);
 
-  // Build conversation contents with history (only keep last 6 for context, not too much)
-  const contents: any[] = [];
-  for (const entry of history.slice(-6)) {
-    contents.push({
-      role: entry.role === 'user' ? 'user' : 'model',
-      parts: [{ text: entry.text }],
-    });
-  }
+  // Load conversation history
+  const history = (await api.storage.get<GeminiContent[]>('conversation')) ?? [];
+
+  // Build contents array
+  const contents: GeminiContent[] = [...history.slice(-8)];
 
   // Add current message with context
   contents.push({
     role: 'user',
-    parts: [{ text: `CURRENT STATE:\n${context}\n\nUSER MESSAGE: ${input}` }],
+    parts: [{ text: `[Context: ${context}]\n\n${input}` }],
   });
 
-  const response = await api.http.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      contents,
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            action: { type: 'STRING', enum: ['execute', 'question', 'notify', 'conversation'] },
-            command: { type: 'STRING', nullable: true },
-            args: { type: 'STRING', nullable: true },
-            message: { type: 'STRING' },
-            schedule: {
-              type: 'OBJECT',
-              nullable: true,
-              properties: {
-                message: { type: 'STRING' },
-                delayMinutes: { type: 'NUMBER' },
-              },
-            },
-          },
-          required: ['action', 'command', 'args', 'message'],
-        },
-      },
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const baseRequest = {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    tools: [{ functionDeclarations }],
+    generationConfig: { temperature: 0.5 },
+  };
+
+  // Function calling loop — max 5 iterations
+  let maxTurns = 5;
+  while (maxTurns-- > 0) {
+    const response = await api.http.post(apiUrl, { ...baseRequest, contents });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      if (response.status === 429) throw new Error('Rate limit reached. Try again in a moment.');
+      throw new Error(`Gemini API error ${response.status}: ${errText}`);
     }
-  );
 
-  if (!response.ok) {
-    const errText = await response.text();
-    if (response.status === 400) throw new Error('Invalid request to Gemini API. Check your API key and model.');
-    if (response.status === 429) throw new Error('Gemini API rate limit reached. Try again in a moment.');
-    throw new Error(`Gemini API error ${response.status}: ${errText}`);
-  }
+    const data = (await response.json()) as any;
+    const candidate = data.candidates?.[0];
+    if (!candidate?.content?.parts?.length) throw new Error('Empty response from Gemini');
 
-  const data = (await response.json()) as any;
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Empty response from Gemini');
+    const parts: ContentPart[] = candidate.content.parts;
 
-  return JSON.parse(text) as GeminiResult;
-}
+    // Check for function call
+    const fnCall = parts.find((p) => p.functionCall);
+    if (fnCall?.functionCall) {
+      const { name, args } = fnCall.functionCall;
+      api.logger.info(`Function call: ${name}(${JSON.stringify(args)})`);
 
-// --- Command Executor ---
+      // Execute the function
+      const fnResult = await executeFunctionCall(name, args || {}, api);
+      api.logger.info(`Function result: ${JSON.stringify(fnResult).slice(0, 200)}`);
 
-async function executeAction(result: GeminiResult, api: PluginAPI, userInput: string): Promise<string> {
-  switch (result.action) {
-    case 'execute': {
-      if (!result.command) return result.message;
-
-      // Handle plugin commands
-      if (result.command.startsWith('plugin ')) {
-        const parts = result.command.replace('plugin ', '').split(' ');
-        const pluginName = parts[0]!;
-        const cmd = parts[1];
-        const cmdArgs = parts.slice(2);
-        if (result.args) cmdArgs.push(...result.args.split(' ').filter(Boolean));
-
-        if (!cmd) return `❌ Missing command for plugin ${pluginName}`;
-
-        try {
-          await api.plugins.run(pluginName, cmd, cmdArgs);
-          return result.message;
-        } catch (error: any) {
-          return `❌ Plugin error: ${error.message}`;
-        }
+      // Handle reminder scheduling
+      if (name === 'set_reminder' && fnResult.success) {
+        const timerId = `notify-${Date.now()}`;
+        const timer = setTimeout(async () => {
+          activeTimers.delete(timerId);
+          try {
+            await api.notifications.send(`🔔 Reminder: ${args.message}`);
+          } catch (error) {
+            api.logger.error('Failed to send reminder:', error);
+          }
+        }, (args.delay_minutes || 1) * 60 * 1000);
+        activeTimers.set(timerId, timer);
       }
 
-      // Handle core commands
-      try {
-        switch (result.command) {
-          case 'start': {
-            const taskName = result.args || userInput;
-            if (!taskName) return '❓ What task do you want to start?';
-            const session = await api.sessions.start({ taskName });
-            return `✅ Started tracking: *${session.taskName}*`;
-          }
-          case 'stop': {
-            const active = await api.sessions.getActive();
-            const running = active.filter((s) => s.status === 'ACTIVE');
-            if (running.length === 0) return '❌ No active sessions to stop.';
-            const stopped = await api.sessions.stop(running[0].id);
-            return `✅ Stopped: *${stopped.taskName}* (${formatDuration(stopped.duration)})`;
-          }
-          case 'pause': {
-            const active = await api.sessions.getActive();
-            const running = active.filter((s) => s.status === 'ACTIVE');
-            if (running.length === 0) return '❌ No active sessions to pause.';
-            await api.sessions.pause(running[0].id);
-            return `⏸️ Paused: *${running[0].taskName}*`;
-          }
-          case 'resume': {
-            const active = await api.sessions.getActive();
-            const paused = active.find((s) => s.status === 'PAUSED');
-            if (!paused) return '❌ No paused sessions to resume.';
-            await api.sessions.resume(paused.id);
-            return `▶️ Resumed: *${paused.taskName}*`;
-          }
-          case 'status': {
-            const active = await api.sessions.getActive();
-            if (active.length === 0) return 'No active sessions.';
-            return active.map(formatSessionStatus).join('\n\n');
-          }
-          case 'list': {
-            const active = await api.sessions.getActive();
-            if (active.length === 0) return 'No active sessions.';
-            return `*Active Sessions (${active.length}):*\n\n` + active.map(formatSessionStatus).join('\n\n');
-          }
-          case 'tasks': {
-            const tasks = await api.tasks.getAll();
-            if (tasks.length === 0) return 'No tasks found.';
-            const list = tasks
-              .slice(0, 15)
-              .map((t: any, i: number) => `${i + 1}. ${t.content}${t.due ? ` (${t.due.string})` : ''}`)
-              .join('\n');
-            return `*Your Tasks:*\n${list}`;
-          }
-          case 'add': {
-            const argsText = result.args || userInput;
-            if (!argsText) return '❓ What task do you want to add?';
+      // Append model's function call to contents
+      contents.push({ role: 'model', parts: [{ functionCall: { name, args } }] });
 
-            // Parse inline flags: due:value, p:1-4, [time-window]
-            let text = argsText;
-            let description: string | undefined;
-            let dueString: string | undefined;
+      // Append function response
+      contents.push({
+        role: 'user',
+        parts: [{ functionResponse: { name, response: fnResult } }],
+      });
 
-            // Extract time window [5pm-6pm] or [10:00am-10:30am]
-            const twMatch = text.match(/\[([^\]]+)\]/);
-            if (twMatch) {
-              description = twMatch[0];
-              text = text.replace(twMatch[0], '').trim();
-            }
-
-            // Extract due:value
-            const dueMatch = text.match(/\bdue:(\S+)/i);
-            if (dueMatch) {
-              dueString = dueMatch[1];
-              text = text.replace(dueMatch[0], '').trim();
-            }
-
-            // Extract p:value (strip it, Todoist API handles priority differently)
-            const pMatch = text.match(/\bp:([1-4])/i);
-            if (pMatch) {
-              text = text.replace(pMatch[0], '').trim();
-            }
-
-            // Clean up any leftover empty text
-            text = text.trim();
-            if (!text) text = argsText.replace(/\[.*?\]|due:\S+|p:[1-4]/gi, '').trim() || argsText;
-
-            try {
-              const task = await api.tasks.create(text, description, dueString);
-              let reply = `✅ Added to Todoist: *${task.content}*`;
-              if (description) reply += `\n⏰ ${description}`;
-              if (dueString) reply += `\n📅 Due: ${dueString}`;
-              return reply;
-            } catch (error: any) {
-              api.logger.error('Failed to create Todoist task:', error);
-              return `❌ Failed to add task: ${error.message}`;
-            }
-          }
-          case 'help':
-            return result.message;
-          default:
-            return result.message;
-        }
-      } catch (error: any) {
-        api.logger.error(`Command execution failed (${result.command}):`, error);
-        return `❌ Failed: ${error.message}`;
-      }
+      // Continue loop — Gemini may call another function or return text
+      continue;
     }
-    case 'question':
-      return result.message;
-    case 'notify':
-      return result.message; // Timer scheduling handled in the ask command
-    case 'conversation':
-      return result.message;
-    default:
-      return result.message;
+
+    // Check for text response — this is the final answer
+    const textPart = parts.find((p) => p.text);
+    const finalText = textPart?.text || 'Done.';
+
+    // Save conversation history (keep last 8 content entries)
+    const newHistory = contents.slice(-8);
+    // Add the model's final text response
+    newHistory.push({ role: 'model', parts: [{ text: finalText }] });
+    // Trim to keep only the last 10 entries total
+    await api.storage.set('conversation', newHistory.slice(-10));
+
+    return finalText;
   }
+
+  return 'I tried multiple steps but hit the limit. Could you break your request into smaller pieces?';
 }
 
 // --- Plugin ---
@@ -396,12 +495,9 @@ async function executeAction(result: GeminiResult, api: PluginAPI, userInput: st
 /** Active notification timers */
 const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-/** Capabilities registered by other plugins */
-const capabilities: Capability[] = [];
-
 const plugin: TardisPlugin = {
   name: 'gemini-assistant',
-  version: '1.0.0',
+  version: '2.0.0',
 
   async onActivate(api: PluginAPI) {
     const apiKey = api.config.get<string>('apiKey');
@@ -409,17 +505,8 @@ const plugin: TardisPlugin = {
       api.logger.warn('Gemini API key not configured');
       api.logger.info('Set it with: plugin gemini-assistant config apiKey YOUR_KEY');
     } else {
-      api.logger.info('Gemini Assistant active');
+      api.logger.info('Gemini Assistant v2 active (function calling)');
     }
-
-    // Listen for capability registration from other plugins
-    api.events.on('register-capability', (data: unknown) => {
-      const cap = data as Capability;
-      if (cap.name && cap.description && cap.handler) {
-        capabilities.push(cap);
-        api.logger.info(`Registered capability: ${cap.name}`);
-      }
-    });
   },
 
   async onDeactivate() {
@@ -427,7 +514,6 @@ const plugin: TardisPlugin = {
       clearTimeout(timer);
       activeTimers.delete(id);
     }
-    capabilities.length = 0;
   },
 
   commands: {
@@ -437,6 +523,7 @@ const plugin: TardisPlugin = {
         await api.notifications.send(
           'Just type naturally! For example:\n' +
             '• "I\'m starting work on the docs"\n' +
+            '• "Reschedule the meeting to Friday"\n' +
             '• "What am I working on?"\n' +
             '• "Remind me to take a break in 25 minutes"'
         );
@@ -452,47 +539,8 @@ const plugin: TardisPlugin = {
       }
 
       try {
-        // Load conversation history
-        const history = (await api.storage.get<ConversationEntry[]>('conversation')) ?? [];
-
-        // Call Gemini
-        const result = await callGemini(input, api, capabilities, history);
-        api.logger.info(`Gemini result: action=${result.action} command=${result.command} args=${result.args} message=${result.message.slice(0, 80)}`);
-
-        // Execute the action
-        const response = await executeAction(result, api, input);
-
-        // Handle scheduled notifications
-        if (result.action === 'notify' && result.schedule) {
-          const timerId = `notify-${Date.now()}`;
-          const timer = setTimeout(async () => {
-            activeTimers.delete(timerId);
-            try {
-              await api.notifications.send(`🔔 Reminder: ${result.schedule!.message}`);
-            } catch (error) {
-              api.logger.error('Failed to send scheduled notification:', error);
-            }
-          }, result.schedule.delayMinutes * 60 * 1000);
-
-          activeTimers.set(timerId, timer);
-          api.logger.info(
-            `Scheduled notification in ${result.schedule.delayMinutes}m: "${result.schedule.message}"`
-          );
-        }
-
-        // Send response
+        const response = await processMessage(input, api);
         await api.notifications.send(response);
-
-        // Save conversation history
-        // On successful command execution, clear history to prevent stale context loops
-        if (result.action === 'execute') {
-          await api.storage.set('conversation', []);
-        } else {
-          // For questions/conversation, keep history for follow-ups
-          history.push({ role: 'user', text: input }, { role: 'assistant', text: response });
-          if (history.length > 10) history.splice(0, history.length - 10);
-          await api.storage.set('conversation', history);
-        }
       } catch (error: any) {
         api.logger.error('Gemini processing failed:', error);
         await api.notifications.send(`❌ ${error.message}`);
@@ -514,13 +562,11 @@ const plugin: TardisPlugin = {
       const value = valueParts.join(' ');
 
       if (!value) {
-        await api.notifications.send(`Usage: config <key> <value>\n\nKeys: apiKey, model`);
+        await api.notifications.send('Usage: config <key> <value>\n\nKeys: apiKey, model');
         return;
       }
 
       await api.config.set(key!, value);
-
-      // Mask API key in response
       const display = key === 'apiKey' ? `${value.slice(0, 8)}...` : value;
       await api.notifications.send(`✅ Set ${key} = ${display}`);
     },

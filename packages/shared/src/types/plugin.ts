@@ -82,8 +82,11 @@ export interface PluginAPI {
   /** Todoist task access */
   tasks: {
     getAll(): Promise<any[]>;
+    getById(taskId: string): Promise<any>;
     complete(taskId: string): Promise<void>;
     create(content: string, description?: string, dueString?: string): Promise<any>;
+    update(taskId: string, updates: { content?: string; description?: string; due_string?: string; priority?: number }): Promise<any>;
+    delete(taskId: string): Promise<void>;
   };
 
   /** Plugin-specific persistent storage */
