@@ -96,12 +96,18 @@ ${pluginSection ? `INSTALLED PLUGINS:\n${pluginSection}` : 'No plugins installed
 EXTENDED CAPABILITIES:\n${capSection}
 
 RESPONSE FORMAT:
-Return a JSON object with these fields:
+Return a JSON object with ALL of these fields (all are required):
 - action: one of "execute", "question", "notify", "conversation"
-- command: the TARDIS command to run (for "execute" action only). For plugin commands, use "plugin <name> <command> [args]"
-- args: arguments for the command (for "execute" action only)
-- message: text to display to the user. Always include this.
-- schedule: { message: string, delayMinutes: number } (for "notify" action only)
+- command: the TARDIS command name (e.g. "start", "stop", "add", "status"). Set to "" if not executing a command.
+- args: THE TASK CONTENT / ARGUMENTS for the command. THIS IS CRITICAL — always put the task name, description, or content here. Set to "" if no args needed. NEVER leave this empty when there's task content to pass.
+- message: text to display to the user.
+- schedule: { message: string, delayMinutes: number } (for "notify" action only, null otherwise)
+
+⚠️ THE "args" FIELD MUST CONTAIN THE ACTUAL TASK CONTENT. Examples:
+- User says "add interview tomorrow at 10am" → args MUST be "Interview due:tomorrow [10am-11am]"
+- User says "start API work" → args MUST be "API work"
+- User says "An interview at 10am, 1 hour, tomorrow" → args MUST be "Interview due:tomorrow [10am-11am]"
+- NEVER put task content only in "message" — it MUST go in "args" for the command to work.
 
 ACTION TYPES:
 - "execute": You've identified a clear command. Set command + args + message (confirmation text).
@@ -226,7 +232,7 @@ async function callGemini(
               },
             },
           },
-          required: ['action', 'message'],
+          required: ['action', 'command', 'args', 'message'],
         },
       },
     }
@@ -248,7 +254,7 @@ async function callGemini(
 
 // --- Command Executor ---
 
-async function executeAction(result: GeminiResult, api: PluginAPI): Promise<string> {
+async function executeAction(result: GeminiResult, api: PluginAPI, userInput: string): Promise<string> {
   switch (result.action) {
     case 'execute': {
       if (!result.command) return result.message;
@@ -275,7 +281,7 @@ async function executeAction(result: GeminiResult, api: PluginAPI): Promise<stri
       try {
         switch (result.command) {
           case 'start': {
-            const taskName = result.args || '';
+            const taskName = result.args || userInput;
             if (!taskName) return '❓ What task do you want to start?';
             const session = await api.sessions.start({ taskName });
             return `✅ Started tracking: *${session.taskName}*`;
@@ -321,7 +327,7 @@ async function executeAction(result: GeminiResult, api: PluginAPI): Promise<stri
             return `*Your Tasks:*\n${list}`;
           }
           case 'add': {
-            const argsText = result.args || '';
+            const argsText = result.args || userInput;
             if (!argsText) return '❓ What task do you want to add?';
 
             // Parse inline flags: due:value, p:1-4, [time-window]
@@ -451,10 +457,10 @@ const plugin: TardisPlugin = {
 
         // Call Gemini
         const result = await callGemini(input, api, capabilities, history);
-        api.logger.debug(`Gemini result: ${JSON.stringify(result)}`);
+        api.logger.info(`Gemini result: action=${result.action} command=${result.command} args=${result.args} message=${result.message.slice(0, 80)}`);
 
         // Execute the action
-        const response = await executeAction(result, api);
+        const response = await executeAction(result, api, input);
 
         // Handle scheduled notifications
         if (result.action === 'notify' && result.schedule) {
