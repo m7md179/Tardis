@@ -68,16 +68,28 @@ PERSONALITY:
 - If he seems to be working long hours, gently suggest a break
 - You know his timezone is Asia/Riyadh (AST/GMT+3)
 
+THERE ARE TWO DIFFERENT SYSTEMS — UNDERSTAND THE DIFFERENCE:
+1. TIME TRACKING (start/stop/pause/resume) — Tracks how long Mohammad works on something. Like a stopwatch.
+2. TODOIST TASKS (add/tasks) — His todo list. Adding tasks, viewing tasks, completing tasks.
+
+These are DIFFERENT. "Add a meeting task" = Todoist (add). "Start working on API" = time tracking (start).
+
 CORE COMMANDS:
-1. start <task> — Start tracking a task. Example: "start Write documentation"
-2. stop — Stop the current active task
-3. pause — Pause the current task
-4. resume — Resume a paused task
+1. start <task> — Start TIME TRACKING on a task. Use when Mohammad says he's WORKING on something RIGHT NOW.
+2. stop — Stop the current time-tracking session
+3. pause — Pause the current time-tracking session
+4. resume — Resume a paused session
 5. status — Show current session status
 6. list — List all active sessions
 7. tasks — Show Todoist tasks
-8. add <content> — Add a Todoist task. Args format: "task name" or "task name due:tomorrow" or "task name [2pm-3pm] p:4"
+8. add <content> — Add a task to TODOIST. Use when Mohammad wants to CREATE/SET/SCHEDULE a task, meeting, or todo item. Args format: "task name due:today" or "task name [2pm-3pm]"
 9. help — Show available commands
+
+WHEN TO USE "add" vs "start":
+- "I have a meeting" / "set a task" / "add X" / "schedule X" / "create a task for X" / "I need to do X" → add (Todoist)
+- "I'm working on X" / "start X" / "begin X" / "going to work on X" → start (time tracking)
+- "A meeting at 10am" / "doctor appointment tomorrow" → add (Todoist) — these are future events to remember
+- "Working on the meeting prep right now" → start (time tracking) — this is active work
 
 ${pluginSection ? `INSTALLED PLUGINS:\n${pluginSection}` : 'No plugins installed.'}
 
@@ -93,22 +105,32 @@ Return a JSON object with these fields:
 
 ACTION TYPES:
 - "execute": You've identified a clear command. Set command + args + message (confirmation text).
-- "question": You need more information. ONLY use this if the user's intent is truly unclear.
+- "question": You need more information. ONLY use this if the user's intent is truly unclear AND you cannot make a reasonable guess.
 - "notify": User wants a reminder/notification. Set schedule with message and delay in minutes.
 - "conversation": General chat, no command needed. Set message to your response.
 
-CRITICAL RULES:
-- BIAS TOWARD ACTION. If the user mentions a task name, START IT. Don't ask for confirmation.
-- "start working on API" → execute start with args "API". Do NOT ask "which task?"
-- "start docs" → execute start with args "docs". Do NOT ask "what do you want to document?"
-- "add buy groceries" → execute add with args "buy groceries". Do NOT ask for more details.
-- ONLY use "question" if the user literally says "start" with zero context about what task.
-- Synonyms: "begin"/"go"/"working on" = start, "finish"/"done"/"I'm done"/"stop this" = stop, "halt"/"break"/"taking a break" = pause, "continue"/"back"/"back at it" = resume
-- "add X due:tomorrow" → command: "add", args: "X due:tomorrow" — pass the full string as args
-- For reminders like "remind me in 30 minutes to take a break", use the "notify" action
-- When the user mentions a plugin by name or functionality, route to that plugin's commands
-- Each message is INDEPENDENT. Treat every message as a fresh request. Do NOT assume the user is answering a previous question unless they explicitly reference it.
-- If a user says "actually" or corrects themselves, handle it by stopping/changing the current action
+CRITICAL RULES — FOLLOW THESE EXACTLY:
+1. BIAS TOWARD ACTION. If the user mentions ANY task-related content, ACT on it. Don't ask for confirmation.
+2. NEVER use "question" if the user has given you enough information to act. Extract what you can and execute.
+3. Each message is INDEPENDENT. Treat every message as a fresh request.
+
+EXAMPLES — FOLLOW THESE PATTERNS:
+- "start working on API" → { action: "execute", command: "start", args: "API", message: "..." }
+- "I have a meeting with client at 10am" → { action: "execute", command: "add", args: "Meeting with client due:today [10am-11am]", message: "..." }
+- "add buy groceries" → { action: "execute", command: "add", args: "buy groceries", message: "..." }
+- "set a task for doctor appointment tomorrow 3pm" → { action: "execute", command: "add", args: "Doctor appointment due:tomorrow [3pm-4pm]", message: "..." }
+- "meeting at 10am lasts 30 minutes, top priority" → { action: "execute", command: "add", args: "Meeting due:today [10:00am-10:30am] p:1", message: "..." }
+- "remind me to take a break in 25 minutes" → { action: "notify", message: "...", schedule: { message: "Take a break!", delayMinutes: 25 } }
+- "what am I working on?" → { action: "execute", command: "status", message: "..." }
+- "hello" / "thanks" → { action: "conversation", message: "..." }
+- "start" (with NO context at all) → { action: "question", message: "What would you like to start tracking?" }
+
+SYNONYMS:
+- "set a task"/"create a task"/"schedule"/"add"/"I need to" → add (Todoist)
+- "begin"/"go"/"working on"/"starting"/"let me work on" → start (time tracking)
+- "finish"/"done"/"I'm done"/"stop this"/"wrap up" → stop
+- "halt"/"break"/"taking a break" → pause
+- "continue"/"back"/"back at it" → resume
 
 Return ONLY valid JSON. No markdown, no code fences.`;
 }
@@ -161,7 +183,7 @@ async function callGemini(
     throw new Error('Gemini API key not configured. Set it with: plugin gemini-assistant config apiKey YOUR_KEY');
   }
 
-  const model = api.config.get<string>('model') || 'gemini-2.5-flash';
+  const model = api.config.get<string>('model') || 'gemini-2.0-flash';
   const systemPrompt = buildSystemPrompt(api, capabilities);
   const context = await buildContext(api);
 
@@ -307,7 +329,7 @@ async function executeAction(result: GeminiResult, api: PluginAPI): Promise<stri
             let description: string | undefined;
             let dueString: string | undefined;
 
-            // Extract time window [5pm-6pm]
+            // Extract time window [5pm-6pm] or [10:00am-10:30am]
             const twMatch = text.match(/\[([^\]]+)\]/);
             if (twMatch) {
               description = twMatch[0];
@@ -327,11 +349,20 @@ async function executeAction(result: GeminiResult, api: PluginAPI): Promise<stri
               text = text.replace(pMatch[0], '').trim();
             }
 
-            const task = await api.tasks.create(text, description, dueString);
-            let reply = `✅ Added to Todoist: *${task.content}*`;
-            if (description) reply += `\n⏰ ${description}`;
-            if (dueString) reply += `\n📅 Due: ${dueString}`;
-            return reply;
+            // Clean up any leftover empty text
+            text = text.trim();
+            if (!text) text = argsText.replace(/\[.*?\]|due:\S+|p:[1-4]/gi, '').trim() || argsText;
+
+            try {
+              const task = await api.tasks.create(text, description, dueString);
+              let reply = `✅ Added to Todoist: *${task.content}*`;
+              if (description) reply += `\n⏰ ${description}`;
+              if (dueString) reply += `\n📅 Due: ${dueString}`;
+              return reply;
+            } catch (error: any) {
+              api.logger.error('Failed to create Todoist task:', error);
+              return `❌ Failed to add task: ${error.message}`;
+            }
           }
           case 'help':
             return result.message;
@@ -468,7 +499,7 @@ const plugin: TardisPlugin = {
         const msg =
           '*Gemini Assistant Config:*\n\n' +
           `API Key: ${cfg.apiKey ? '✅ Set' : '❌ Not set'}\n` +
-          `Model: ${cfg.model || 'gemini-2.5-flash'}`;
+          `Model: ${cfg.model || 'gemini-2.0-flash'}`;
         await api.notifications.send(msg);
         return;
       }
