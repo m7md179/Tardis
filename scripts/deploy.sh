@@ -44,6 +44,7 @@ if [ -d ${REMOTE_DIR}/plugins ]; then
     if [ -d "\$PDIR/\$pname/storage" ]; then
       cp -r "\$PDIR/\$pname/storage" "/tmp/tardis-pstor-\$pname"
     fi
+    rm -rf "\$PDIR/\$pname"
     cp -r "\$pdir" "\$PDIR/\$pname"
     if [ -d "/tmp/tardis-pstor-\$pname" ]; then
       cp -r "/tmp/tardis-pstor-\$pname" "\$PDIR/\$pname/storage"
