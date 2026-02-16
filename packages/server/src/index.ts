@@ -58,7 +58,7 @@ async function main() {
     // Start Telegram bot if enabled
     if (config.notifications.channels.telegram?.enabled) {
       console.log('Starting Telegram bot...');
-      await startTelegramBot({ config, pluginManager });
+      await startTelegramBot({ config, pluginManager, todoistClient });
     }
 
     console.log('TARDIS Server ready!');

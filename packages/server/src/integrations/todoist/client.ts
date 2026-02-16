@@ -23,22 +23,51 @@ export class TodoistClient {
     this.apiToken = config.todoist.apiToken;
   }
 
+  /** Update the API token at runtime */
+  setToken(token: string): void {
+    this.apiToken = token;
+  }
+
+  /** Get the current API token */
+  getToken(): string {
+    return this.apiToken;
+  }
+
   /**
-   * Get all active tasks
+   * Get all active tasks (handles pagination)
    */
   async getTasks(): Promise<TodoistTask[]> {
-    const response = await fetch(`${this.baseUrl}/tasks`, {
-      headers: {
-        Authorization: `Bearer ${this.apiToken}`,
-      },
-    });
+    const allTasks: TodoistTask[] = [];
+    let cursor: string | null = null;
 
-    if (!response.ok) {
-      throw new Error(`Todoist API error: ${response.status}`);
-    }
+    do {
+      const url = new URL(`${this.baseUrl}/tasks`);
+      url.searchParams.set('limit', '200');
+      if (cursor) url.searchParams.set('cursor', cursor);
 
-    const data = await response.json();
-    return Array.isArray(data) ? data : data.results ?? [];
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${this.apiToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Todoist API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (Array.isArray(data)) {
+        // REST v2 style — flat array, no pagination
+        return data;
+      }
+
+      // API v1 style — paginated { results, next_cursor }
+      allTasks.push(...(data.results ?? []));
+      cursor = data.next_cursor ?? null;
+    } while (cursor);
+
+    return allTasks;
   }
 
   /**

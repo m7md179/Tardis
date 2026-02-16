@@ -2,7 +2,7 @@ import { Telegraf, Context } from 'telegraf';
 import { SessionManager } from '../../core/session-manager';
 import { TodoistClient } from '../todoist/client';
 import { NotificationService } from '../notifications/service';
-import { ServerConfig } from '../../config';
+import { ServerConfig, updateConfigToken } from '../../config';
 import { formatDurationHuman } from '@tardis/shared';
 import { parseTimeWindow } from '@tardis/shared';
 import { createSessionKeyboard } from './keyboards';
@@ -83,11 +83,21 @@ function parseAddFlags(text: string): {
   return { content: text, description, dueString, priority };
 }
 
+/** Check if text contains natural language date/time patterns */
+function hasNaturalLanguageDate(text: string): boolean {
+  return /\b(today|tomorrow|tonight|next\s+\w+|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at\s+\d{1,2}(:\d{2})?\s*(am|pm)?|\d{1,2}(:\d{2})?\s*(am|pm)\b|\b\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\b|\bdue\s+\w+)/i.test(text);
+}
+
+/** Check if text uses structured flag syntax (due:, [brackets], p:) */
+function hasStructuredFlags(text: string): boolean {
+  return /\bdue:\S+/i.test(text) || /\[[^\]]+\]/.test(text) || /\bp:[1-4]/i.test(text);
+}
+
 /**
  * Register all bot commands
  */
-export function registerCommands(bot: Telegraf, config: ServerConfig, pluginManager?: PluginManager) {
-  const todoist = new TodoistClient(config);
+export function registerCommands(bot: Telegraf, config: ServerConfig, pluginManager?: PluginManager, sharedTodoistClient?: TodoistClient) {
+  const todoist = sharedTodoistClient ?? new TodoistClient(config);
 
   // Telegram's built-in /start — welcome message
   bot.command('start', async (ctx) => {
@@ -155,6 +165,10 @@ export function registerCommands(bot: Telegraf, config: ServerConfig, pluginMana
         return handleStatus(ctx);
 
       case 'list':
+        // "list tasks", "list my tasks" → show Todoist tasks
+        if (args && /\btasks?\b/i.test(args)) {
+          return handleTasks(ctx, todoist);
+        }
         return handleList(ctx);
 
       case 'tasks':
@@ -170,7 +184,25 @@ export function registerCommands(bot: Telegraf, config: ServerConfig, pluginMana
               '  add Urgent fix [14:00-16:00] p:4'
           );
         }
+        // Route to Gemini if args contain natural language date/time patterns
+        // but no structured flags (due:, [brackets], p:)
+        if (hasNaturalLanguageDate(args) && !hasStructuredFlags(args)) {
+          if (pluginManager) {
+            const gemini = pluginManager.getPlugin('gemini-assistant');
+            if (gemini) {
+              try {
+                await pluginManager.runCommand('gemini-assistant', 'ask', [ctx.message.text]);
+                return;
+              } catch (e) {
+                console.error('[Gemini add fallback error]', e);
+              }
+            }
+          }
+        }
         return handleAdd(ctx, todoist, args);
+
+      case 'config':
+        return handleConfig(ctx, args, config, todoist);
 
       case 'test':
         return handleTest(ctx, todoist, config);
@@ -580,6 +612,43 @@ async function handleTest(ctx: Context, todoist: TodoistClient, config: ServerCo
   }
 }
 
+async function handleConfig(ctx: Context, args: string, config: ServerConfig, todoist: TodoistClient) {
+  const parts = args.trim().split(/\s+/);
+  const subcommand = parts[0]?.toLowerCase();
+
+  if (!subcommand || subcommand === 'help') {
+    return ctx.reply(
+      '*Config Commands:*\n\n' +
+        'config todoist <token> - Set Todoist API token\n' +
+        'config todoist - Show token status',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  if (subcommand === 'todoist') {
+    const token = parts[1];
+
+    if (!token) {
+      const current = todoist.getToken();
+      return ctx.reply(
+        current
+          ? `Todoist token: set (${current.slice(0, 8)}...)`
+          : 'Todoist token: not configured'
+      );
+    }
+
+    try {
+      todoist.setToken(token);
+      updateConfigToken(config, token);
+      return ctx.reply(`✅ Todoist token updated (${token.slice(0, 8)}...)\n\nTry: tasks`);
+    } catch (err: any) {
+      return ctx.reply(`❌ Failed to save token: ${err.message}`);
+    }
+  }
+
+  return ctx.reply(`Unknown config key: "${subcommand}". Try: config todoist <token>`);
+}
+
 async function handlePlugin(ctx: Context, args: string, pluginManager?: PluginManager) {
   if (!pluginManager) {
     return ctx.reply('Plugin system not available.');
@@ -636,14 +705,17 @@ async function handleHelp(ctx: Context) {
       'list - List active sessions\n' +
       'tasks - List Todoist tasks\n' +
       'add <task> [time] - Create a new task\n' +
+      'config todoist <token> - Set Todoist API token\n' +
       'plugin [name] [cmd] - Run plugin commands\n' +
       'test - Test notification pipeline\n' +
       'help - Show this help\n\n' +
       '*Examples:*\n' +
       'start Write documentation\n' +
       'add Meeting [2pm-3pm] due:tomorrow\n' +
+      'config todoist abc123...\n' +
       'tasks\n\n' +
-      '_No / prefix needed — just type the command._',
+      '_No / prefix needed — just type naturally._\n' +
+      '_You can also chat naturally and the AI assistant will handle it._',
     { parse_mode: 'Markdown' }
   );
 }

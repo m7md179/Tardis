@@ -200,6 +200,9 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
       async run(targetPlugin: string, command: string, args: string[]) {
         await pluginManager.runCommand(targetPlugin, command, args);
       },
+      async runWithResult(targetPlugin: string, command: string, args: string[]) {
+        return pluginManager.runCommandWithResult(targetPlugin, command, args);
+      },
     },
   };
 

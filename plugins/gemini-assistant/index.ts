@@ -30,26 +30,66 @@ interface TaskMatch {
   confidence: 'exact' | 'prefix' | 'contains';
 }
 
+/** Normalize text for fuzzy comparison: lowercase, collapse whitespace, remove hyphens */
+function normalize(text: string): string {
+  return text.toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Count how many words from the query appear in the target (supports partial/prefix word matches) */
+function wordOverlap(target: string, query: string): number {
+  const targetWords = normalize(target).split(' ');
+  const queryWords = normalize(query).split(' ');
+  let score = 0;
+  for (const qw of queryWords) {
+    if (targetWords.some(tw => tw === qw)) {
+      score += 1; // exact word match
+    } else if (targetWords.some(tw => tw.startsWith(qw) || qw.startsWith(tw))) {
+      score += 0.5; // partial/prefix word match (e.g. "standup" ↔ "stand")
+    }
+  }
+  return score;
+}
+
 function fuzzyMatchTasks(tasks: any[], query: string): TaskMatch[] {
-  const q = query.toLowerCase().trim();
+  const q = normalize(query);
   if (!q) return [];
 
   const exact: TaskMatch[] = [];
   const prefix: TaskMatch[] = [];
   const contains: TaskMatch[] = [];
+  const wordMatches: TaskMatch[] = [];
 
   for (const task of tasks) {
-    const content = (task.content as string).toLowerCase();
+    const content = normalize(task.content as string);
     if (content === q) {
       exact.push({ task, confidence: 'exact' });
     } else if (content.startsWith(q)) {
       prefix.push({ task, confidence: 'prefix' });
     } else if (content.includes(q)) {
       contains.push({ task, confidence: 'contains' });
+    } else {
+      // Word-level matching: check if most query words appear in the task
+      const overlap = wordOverlap(task.content, query);
+      const queryWords = q.split(' ');
+      if (overlap > 0 && overlap >= queryWords.length * 0.5) {
+        wordMatches.push({ task, confidence: 'contains' });
+      }
     }
   }
 
-  return [...exact, ...prefix, ...contains];
+  // Sort contains + word matches by word overlap (higher = better match)
+  const allContains = [...contains, ...wordMatches];
+  if (allContains.length > 1) {
+    allContains.sort((a, b) => {
+      const overlapA = wordOverlap(a.task.content, query);
+      const overlapB = wordOverlap(b.task.content, query);
+      // Prefer higher overlap; tie-break by shorter name (more specific)
+      if (overlapB !== overlapA) return overlapB - overlapA;
+      return (a.task.content as string).length - (b.task.content as string).length;
+    });
+  }
+
+  return [...exact, ...prefix, ...allContains];
 }
 
 // --- Function Declarations ---
@@ -122,7 +162,8 @@ const functionDeclarations = [
       type: 'OBJECT',
       properties: {
         task_query: { type: 'STRING', description: 'Name or partial name of the task to reschedule (fuzzy matched)' },
-        new_due_date: { type: 'STRING', description: 'New due date in natural language (e.g. "Friday", "next week", "tomorrow")' },
+        new_due_date: { type: 'STRING', description: 'New due date in natural language (e.g. "Friday", "next week", "tomorrow at 2pm")' },
+        new_time_window: { type: 'STRING', description: 'New time window if the time is changing (e.g. "2pm-3pm", "14:00-15:00"). Use this when rescheduling to a specific time slot.' },
       },
       required: ['task_query', 'new_due_date'],
     },
@@ -166,46 +207,75 @@ const functionDeclarations = [
       required: ['message', 'delay_minutes'],
     },
   },
+  {
+    name: 'run_plugin_command',
+    description: 'Run a command from any loaded TARDIS plugin. Use this to invoke capabilities from other plugins like pomodoro-timer, google-calendar-sync, etc.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        plugin_name: { type: 'STRING', description: 'The plugin name (e.g. "pomodoro-timer", "google-calendar-sync")' },
+        command: { type: 'STRING', description: 'The command to run within the plugin' },
+        args: {
+          type: 'ARRAY',
+          items: { type: 'STRING' },
+          description: 'Command arguments as an array of strings',
+        },
+      },
+      required: ['plugin_name', 'command'],
+    },
+  },
 ];
 
 // --- System Prompt ---
 
 function buildSystemPrompt(api: PluginAPI): string {
   const plugins = api.plugins.list();
-  const pluginSection = plugins
-    .filter((p) => p.name !== 'gemini-assistant')
+  const otherPlugins = plugins.filter((p) => p.name !== 'gemini-assistant');
+  const pluginSection = otherPlugins
     .map((p) => {
-      const cmds = p.commands.map((c) => `${c.name}: ${c.description || ''}`).join(', ');
-      return `- ${p.displayName}: ${cmds}`;
+      const cmds = p.commands.map((c) => `    - ${c.name}: ${c.description || ''}`).join('\n');
+      return `  - ${p.displayName} (plugin_name: "${p.name}"):\n${cmds}`;
     })
     .join('\n');
 
-  return `You are TARDIS, Mohammad's personal time-tracking and task management assistant.
-Mohammad is a software developer. His timezone is Asia/Riyadh (AST/GMT+3).
+  return `You are TARDIS, Mohammad's personal assistant for time-tracking, task management, and productivity.
+Mohammad is a software developer based in Riyadh (Asia/Riyadh, GMT+3).
 
 PERSONALITY:
-- Talk like a helpful teammate — casual, concise, direct
+- Talk like a sharp, helpful colleague — casual, concise, direct, no fluff
 - Use his name occasionally but don't overdo it
-- Be encouraging when he starts tasks, acknowledge work when he stops
-- If he's been working long hours, gently suggest a break
+- Be encouraging when he starts tasks, brief acknowledgment when he stops
+- If he's been working 3+ hours straight, gently suggest a break
 
-TWO SYSTEMS — UNDERSTAND THE DIFFERENCE:
-1. TIME TRACKING (start/stop/pause/resume) = Stopwatch for ACTIVE work happening RIGHT NOW
-2. TODOIST TASKS (add/update/reschedule/complete/delete/list) = Todo list for planning
+YOUR TWO CORE SYSTEMS:
+1. TIME TRACKING (start_tracking/stop_tracking/pause_tracking/resume_tracking/get_status)
+   = Stopwatch for ACTIVE work happening RIGHT NOW
+   Phrases: "I'm working on...", "starting...", "done with...", "taking a break"
 
-"Working on X right now" → start_tracking. "I have a meeting tomorrow" → add_task.
+2. TODOIST TASKS (add_task/update_task/reschedule_task/complete_task/delete_task/list_tasks)
+   = Todo list for planning and scheduling
+   Phrases: "I have a meeting...", "remind me to...", "schedule...", "add to my list"
 
-RESOURCEFULNESS:
-You have tools available. If no single tool directly solves a request, CHAIN MULTIPLE TOOLS together.
-Think step-by-step about how to combine your tools to achieve the goal.
-Only say you can't do something if it's truly impossible with any combination of your tools.
+AGENTIC BEHAVIOR — CRITICAL:
+- You are a DOER, not an asker. When you have enough information, ACT IMMEDIATELY.
+- CHAIN MULTIPLE FUNCTIONS to accomplish complex requests in one go:
+  * "start working on standup" → get_status to check if something's running → stop_tracking if needed → start_tracking for standup
+  * "add today's standup and start it" → add_task → start_tracking
+  * "reschedule meeting to tomorrow and add prep task" → reschedule_task → add_task
+  * "I'm done with X, mark it complete" → stop_tracking → complete_task
+- After a function returns results, USE them immediately for the next step. Don't ask for confirmation between steps.
+- Only ask for clarification when a fuzzy match returns MULTIPLE tasks and you genuinely can't tell which one.
 
-RULES:
-- BIAS TOWARD ACTION. If Mohammad gives enough info, act immediately — don't ask for confirmation.
-- When a fuzzy match returns multiple tasks, list them and ask which one.
-- When a fuzzy match fails, tell him what tasks exist so he can clarify.
-- Keep responses SHORT. One or two sentences max unless listing items.
-${pluginSection ? `\nOTHER PLUGINS:\n${pluginSection}` : ''}`;
+ERROR RECOVERY:
+- If a function returns {success: false}, read the error and available_tasks carefully.
+- Try an alternative: use list_tasks to see what's available, then retry with a better match.
+- Don't give up after one failure — try at least one alternative before telling the user.
+
+RESPONSE STYLE:
+- Keep responses SHORT — 1-2 sentences for confirmations
+- After completing an action, just confirm what you did
+- Use plain text, minimal formatting
+${otherPlugins.length > 0 ? `\nOTHER PLUGINS (use run_plugin_command to invoke):\n${pluginSection}` : ''}`;
 }
 
 // --- Context Builder ---
@@ -213,6 +283,18 @@ ${pluginSection ? `\nOTHER PLUGINS:\n${pluginSection}` : ''}`;
 async function buildContext(api: PluginAPI): Promise<string> {
   const parts: string[] = [];
 
+  // Temporal context
+  const now = new Date();
+  const riyadhTime = now.toLocaleString('en-US', {
+    timeZone: 'Asia/Riyadh',
+    weekday: 'long',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  parts.push(`Current time: ${riyadhTime}`);
+
+  // Active sessions
   try {
     const active = await api.sessions.getActive();
     if (active.length > 0) {
@@ -227,20 +309,37 @@ async function buildContext(api: PluginAPI): Promise<string> {
     parts.push('Active sessions: Unknown');
   }
 
+  // Todoist tasks with priority info
   try {
     const tasks = await api.tasks.getAll();
     if (tasks.length > 0) {
       const list = tasks
-        .slice(0, 10)
-        .map((t: any) => `"${t.content}"${t.due ? ` (due: ${t.due.string})` : ''}`)
+        .slice(0, 15)
+        .map((t: any) => {
+          let entry = `"${t.content}"`;
+          if (t.due) entry += ` (due: ${t.due.string || t.due.date})`;
+          if (t.priority > 1) entry += ` [p${t.priority}]`;
+          return entry;
+        })
         .join(', ');
-      parts.push(`Todoist tasks: ${list}`);
+      parts.push(`Todoist tasks (${tasks.length} total): ${list}`);
     } else {
       parts.push('Todoist tasks: None');
     }
   } catch {
     // Todoist might not be configured
   }
+
+  // Available plugins
+  try {
+    const plugins = api.plugins.list().filter((p) => p.name !== 'gemini-assistant');
+    if (plugins.length > 0) {
+      const pluginList = plugins
+        .map((p) => `${p.name} (${p.commands.map((c) => c.name).join(', ')})`)
+        .join(', ');
+      parts.push(`Available plugins: ${pluginList}`);
+    }
+  } catch {}
 
   return parts.join('\n');
 }
@@ -327,7 +426,12 @@ async function executeFunctionCall(
           return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
         }
         const target = matches[0].task;
-        const updated = await api.tasks.update(target.id, { due_string: args.new_due_date });
+        const updates: Record<string, any> = { due_string: args.new_due_date };
+        // If new time window is provided, update the description too
+        if (args.new_time_window) {
+          updates.description = `[${args.new_time_window}]`;
+        }
+        const updated = await api.tasks.update(target.id, updates);
         return {
           success: true,
           result: { content: updated.content, old_due: target.due?.string, new_due: updated.due?.string },
@@ -380,6 +484,15 @@ async function executeFunctionCall(
         // Actual scheduling happens in the caller
         return { success: true, result: { message: args.message, delay_minutes: args.delay_minutes, scheduled: true } };
       }
+      case 'run_plugin_command': {
+        const pluginArgs = Array.isArray(args.args) ? args.args : [];
+        try {
+          const output = await api.plugins.runWithResult(args.plugin_name, args.command, pluginArgs);
+          return { success: true, result: { output, plugin: args.plugin_name, command: args.command } };
+        } catch (error: any) {
+          return { success: false, result: { error: error.message } };
+        }
+      }
       default:
         return { success: false, result: { error: `Unknown function: ${name}` } };
     }
@@ -403,8 +516,8 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
   // Load conversation history
   const history = (await api.storage.get<GeminiContent[]>('conversation')) ?? [];
 
-  // Build contents array
-  const contents: GeminiContent[] = [...history.slice(-8)];
+  // Build contents array — keep more history for multi-turn context
+  const contents: GeminiContent[] = [...history.slice(-10)];
 
   // Add current message with context
   contents.push({
@@ -419,8 +532,8 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
     generationConfig: { temperature: 0.5 },
   };
 
-  // Function calling loop — max 5 iterations
-  let maxTurns = 5;
+  // Function calling loop — max 8 iterations for complex multi-step tasks
+  let maxTurns = 8;
   while (maxTurns-- > 0) {
     const response = await api.http.post(apiUrl, { ...baseRequest, contents });
 
@@ -477,12 +590,10 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
     const textPart = parts.find((p) => p.text);
     const finalText = textPart?.text || 'Done.';
 
-    // Save conversation history (keep last 8 content entries)
-    const newHistory = contents.slice(-8);
-    // Add the model's final text response
-    newHistory.push({ role: 'model', parts: [{ text: finalText }] });
-    // Trim to keep only the last 10 entries total
-    await api.storage.set('conversation', newHistory.slice(-10));
+    // Save conversation history with model's final response
+    const newHistory = [...contents, { role: 'model', parts: [{ text: finalText }] }];
+    // Keep last 12 entries for richer multi-turn context
+    await api.storage.set('conversation', newHistory.slice(-12));
 
     return finalText;
   }

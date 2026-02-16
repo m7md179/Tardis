@@ -135,6 +135,7 @@ export interface PluginAPI {
   plugins: {
     list(): { name: string; displayName: string; commands: { name: string; description?: string }[] }[];
     run(pluginName: string, command: string, args: string[]): Promise<void>;
+    runWithResult(pluginName: string, command: string, args: string[]): Promise<string>;
   };
 }
 

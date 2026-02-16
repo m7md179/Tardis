@@ -226,6 +226,35 @@ export class PluginManager {
   }
 
   /**
+   * Run a plugin command and capture its notification output
+   */
+  async runCommandWithResult(pluginName: string, command: string, args: string[] = []): Promise<string> {
+    const loaded = this.plugins.get(pluginName);
+    if (!loaded) {
+      throw new Error(`Plugin not loaded: ${pluginName}`);
+    }
+
+    const handler = loaded.instance.commands?.[command];
+    if (!handler) {
+      throw new Error(`Command not found: ${pluginName}:${command}`);
+    }
+
+    // Create a capturing API that intercepts notifications
+    const messages: string[] = [];
+    const capturingApi: typeof loaded.api = {
+      ...loaded.api,
+      notifications: {
+        async send(msg: string) {
+          messages.push(msg);
+        },
+      },
+    };
+
+    await handler(args, capturingApi);
+    return messages.join('\n');
+  }
+
+  /**
    * Get a loaded plugin
    */
   getPlugin(name: string): LoadedPlugin | undefined {

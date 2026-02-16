@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { z } from 'zod';
 
 const ServerConfigSchema = z.object({
@@ -23,7 +23,7 @@ const ServerConfigSchema = z.object({
     timeWindowCheckInterval: z.number().int().default(60), // 1 minute (seconds)
   }),
   todoist: z.object({
-    apiToken: z.string(),
+    apiToken: z.string().default(''),
   }),
   notifications: z.object({
     enabled: z.boolean().default(true),
@@ -68,4 +68,21 @@ export async function loadConfig(): Promise<ServerConfig> {
   const config = JSON.parse(configFile);
 
   return ServerConfigSchema.parse(config);
+}
+
+/** Get the config file path */
+export function getConfigPath(): string {
+  return process.env.TARDIS_CONFIG || '/var/lib/tardis/config.json';
+}
+
+/** Save the full config back to disk */
+export function saveConfig(config: ServerConfig): void {
+  const configPath = getConfigPath();
+  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+/** Update the Todoist API token in config and persist to disk */
+export function updateConfigToken(config: ServerConfig, token: string): void {
+  (config as any).todoist.apiToken = token;
+  saveConfig(config);
 }
