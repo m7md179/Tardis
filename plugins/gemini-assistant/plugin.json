@@ -21,11 +21,13 @@
   "commands": [
     {
       "name": "ask",
+      "args": "<message>",
       "description": "Process natural language input with Gemini"
     },
     {
       "name": "config",
-      "description": "Configure API key, model, and settings"
+      "args": "[key] [value]",
+      "description": "View or set config (keys: apiKey, model)"
     },
     {
       "name": "clear",

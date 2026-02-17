@@ -35,6 +35,7 @@ export type PluginHook = z.infer<typeof PluginHookSchema>;
 export const PluginCommandDefSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
+  args: z.string().optional(),
 });
 export type PluginCommandDef = z.infer<typeof PluginCommandDefSchema>;
 

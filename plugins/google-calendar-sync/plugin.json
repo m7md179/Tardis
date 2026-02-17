@@ -23,6 +23,7 @@
   "commands": [
     {
       "name": "setup",
+      "args": "<client-id> <client-secret>",
       "description": "Configure Google Calendar OAuth credentials"
     },
     {

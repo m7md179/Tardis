@@ -217,12 +217,57 @@ export class PluginManager {
       throw new Error(`Plugin not loaded: ${pluginName}`);
     }
 
+    // Built-in help command — reads manifest and formats help text
+    if (command === 'help') {
+      const m = loaded.manifest;
+      const helpText = this.formatPluginHelp(m);
+      await loaded.api.notifications.send(helpText);
+      return;
+    }
+
     const handler = loaded.instance.commands?.[command];
     if (!handler) {
       throw new Error(`Command not found: ${pluginName}:${command}`);
     }
 
     await handler(args, loaded.api);
+  }
+
+  /**
+   * Format help text from a plugin manifest
+   */
+  formatPluginHelp(manifest: import('@tardis/shared').PluginManifest): string {
+    const lines: string[] = [];
+    lines.push(`${manifest.displayName} v${manifest.version}`);
+    if (manifest.description) lines.push(manifest.description);
+    lines.push('');
+
+    if (manifest.commands.length > 0) {
+      lines.push('Commands:');
+      for (const cmd of manifest.commands) {
+        const args = cmd.args ? ` ${cmd.args}` : '';
+        const desc = cmd.description ? ` - ${cmd.description}` : '';
+        lines.push(`  ${cmd.name}${args}${desc}`);
+      }
+    } else {
+      lines.push('No commands available.');
+    }
+
+    if (manifest.hooks.length > 0) {
+      lines.push('');
+      lines.push(`Hooks: ${manifest.hooks.join(', ')}`);
+    }
+
+    const configKeys = Object.keys(manifest.config).filter((k) => k !== 'enabled');
+    if (configKeys.length > 0) {
+      lines.push('');
+      lines.push(`Config keys: ${configKeys.join(', ')}`);
+    }
+
+    lines.push('');
+    lines.push(`Usage: plugin ${manifest.name} <command> [args]`);
+
+    return lines.join('\n');
   }
 
   /**

@@ -682,8 +682,11 @@ async function handlePlugin(ctx: Context, args: string, pluginManager?: PluginMa
     if (!loaded) {
       return ctx.reply(`Plugin not found: ${pluginName}`);
     }
-    const cmds = loaded.manifest.commands.map((c) => `  • ${c.name} - ${c.description || ''}`).join('\n');
-    return ctx.reply(`*${loaded.manifest.displayName}*\n\nCommands:\n${cmds || '  (none)'}`, { parse_mode: 'Markdown' });
+    const cmds = loaded.manifest.commands.map((c) => {
+      const args = c.args ? ` ${c.args}` : '';
+      return `  • ${c.name}${args} - ${c.description || ''}`;
+    }).join('\n');
+    return ctx.reply(`*${loaded.manifest.displayName}*\n\nCommands:\n${cmds}\n  • help - Show this help`, { parse_mode: 'Markdown' });
   }
 
   try {

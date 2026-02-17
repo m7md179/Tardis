@@ -108,12 +108,15 @@ export async function pluginListCommand(): Promise<void> {
   for (const { manifest } of plugins) {
     const enabled = manifest.config.enabled !== false;
     const status = enabled ? success('enabled') : warning('disabled');
-    const cmds = manifest.commands.map((c) => c.name).join(', ') || 'none';
+    const cmds = manifest.commands.map((c) => {
+      const cmdArgs = c.args ? ` ${c.args}` : '';
+      return `${c.name}${cmdArgs}`;
+    }).join(', ') || 'none';
     const hooks = manifest.hooks.join(', ') || 'none';
 
     console.log(`  ${manifest.displayName} v${manifest.version} [${status}]`);
     console.log(`    ${manifest.description || ''}`);
-    console.log(`    Commands: ${cmds}`);
+    console.log(`    Commands: ${cmds}, help`);
     console.log(`    Hooks: ${hooks}`);
     console.log('');
   }
@@ -272,6 +275,40 @@ async function pluginUpdateSingle(name: string): Promise<void> {
  * Executes the command on the server via API.
  */
 export async function pluginRunCommand(name: string, command: string, args: string[]): Promise<void> {
+  // Handle help locally — doesn't need a running server
+  if (command === 'help') {
+    const pluginDir = join(PLUGINS_DIR, name);
+    const manifest = loadManifest(pluginDir);
+    if (!manifest) {
+      console.log(errorStyle(`Plugin "${name}" not found.`));
+      return;
+    }
+    console.log(heading(`\n${manifest.displayName} v${manifest.version}`));
+    if (manifest.description) console.log(`  ${manifest.description}`);
+    console.log('');
+    console.log(heading('Commands:'));
+    for (const cmd of manifest.commands) {
+      const cmdArgs = cmd.args ? ` ${cmd.args}` : '';
+      console.log(`  ${cmd.name}${cmdArgs}  ${cmd.description || ''}`);
+    }
+    console.log(`  help  Show this help`);
+    if (manifest.hooks.length > 0) {
+      console.log('');
+      console.log(heading('Hooks:'));
+      console.log(`  ${manifest.hooks.join(', ')}`);
+    }
+    const configKeys = Object.keys(manifest.config).filter((k) => k !== 'enabled');
+    if (configKeys.length > 0) {
+      console.log('');
+      console.log(heading('Config keys:'));
+      console.log(`  ${configKeys.join(', ')}`);
+    }
+    console.log('');
+    console.log(`Usage: tardis plugin ${name} <command> [args]`);
+    console.log('');
+    return;
+  }
+
   const client = new ServerClient();
 
   if (!client.isConfigured()) {
@@ -321,6 +358,7 @@ export async function pluginCreateCommand(name: string): Promise<void> {
     commands: [
       {
         name: 'hello',
+        args: '[name]',
         description: 'Say hello',
       },
     ],

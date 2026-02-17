@@ -92,6 +92,39 @@ function fuzzyMatchTasks(tasks: any[], query: string): TaskMatch[] {
   return [...exact, ...prefix, ...allContains];
 }
 
+// --- Time Window Normalizer ---
+
+/** Convert any time window format (12hr or 24hr) to normalized 24hr "[HH:MM-HH:MM]" */
+function normalizeTimeWindow(tw: string): string {
+  // Strip existing brackets
+  let cleaned = tw.replace(/[\[\]]/g, '').trim();
+
+  // Try matching 12hr format: "2pm-3pm", "2:30pm-3:00pm", "2:30 PM - 3:00 PM"
+  const pattern12 = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i;
+  const match = cleaned.match(pattern12);
+  if (match) {
+    const [, sH, sM, sPeriod, eH, eM, ePeriod] = match;
+    const startH = to24(parseInt(sH), sPeriod);
+    const startM = sM ? parseInt(sM) : 0;
+    const endH = to24(parseInt(eH), ePeriod);
+    const endM = eM ? parseInt(eM) : 0;
+    return `[${pad(startH)}:${pad(startM)}-${pad(endH)}:${pad(endM)}]`;
+  }
+
+  // Already 24hr or unrecognized — wrap in brackets
+  return `[${cleaned}]`;
+}
+
+function to24(hour: number, period: string): number {
+  const p = period.toLowerCase();
+  if (p === 'am') return hour === 12 ? 0 : hour;
+  return hour === 12 ? 12 : hour + 12;
+}
+
+function pad(n: number): string {
+  return n.toString().padStart(2, '0');
+}
+
 // --- Function Declarations ---
 
 const functionDeclarations = [
@@ -134,7 +167,7 @@ const functionDeclarations = [
       properties: {
         name: { type: 'STRING', description: 'Task name or content (e.g. "Meeting with client")' },
         due_date: { type: 'STRING', description: 'Due date in natural language (e.g. "tomorrow", "next Monday", "today", "Feb 20")' },
-        time_window: { type: 'STRING', description: 'Time window (e.g. "10am-11am", "2:30pm-3pm")' },
+        time_window: { type: 'STRING', description: 'Time window in 24hr format (e.g. "10:00-11:00", "14:30-15:00"). ALWAYS use HH:MM-HH:MM format.' },
         priority: { type: 'NUMBER', description: 'Priority: 1 (normal) to 4 (urgent)' },
       },
       required: ['name'],
@@ -163,7 +196,7 @@ const functionDeclarations = [
       properties: {
         task_query: { type: 'STRING', description: 'Name or partial name of the task to reschedule (fuzzy matched)' },
         new_due_date: { type: 'STRING', description: 'New due date in natural language (e.g. "Friday", "next week", "tomorrow at 2pm")' },
-        new_time_window: { type: 'STRING', description: 'New time window if the time is changing (e.g. "2pm-3pm", "14:00-15:00"). Use this when rescheduling to a specific time slot.' },
+        new_time_window: { type: 'STRING', description: 'New time window in 24hr format (e.g. "14:00-15:00", "09:00-10:30"). ALWAYS use HH:MM-HH:MM format.' },
       },
       required: ['task_query', 'new_due_date'],
     },
@@ -389,7 +422,7 @@ async function executeFunctionCall(
         return { success: true, result: { sessions } };
       }
       case 'add_task': {
-        const description = args.time_window ? `[${args.time_window}]` : undefined;
+        const description = args.time_window ? normalizeTimeWindow(args.time_window) : undefined;
         const task = await api.tasks.create(args.name, description, args.due_date);
         return {
           success: true,
@@ -427,9 +460,9 @@ async function executeFunctionCall(
         }
         const target = matches[0].task;
         const updates: Record<string, any> = { due_string: args.new_due_date };
-        // If new time window is provided, update the description too
+        // If new time window is provided, normalize and update the description
         if (args.new_time_window) {
-          updates.description = `[${args.new_time_window}]`;
+          updates.description = normalizeTimeWindow(args.new_time_window);
         }
         const updated = await api.tasks.update(target.id, updates);
         return {

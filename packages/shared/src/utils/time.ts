@@ -8,8 +8,10 @@ export function parseTimeWindow(input: string): TimeWindow | null {
   // Remove brackets and extra whitespace
   const cleaned = input.replace(/[\[\]]/g, '').replace(/\s+/g, ' ').trim();
 
-  // Match patterns like "1pm-3pm" or "09:00-12:00" (with optional spaces around dash)
-  const pattern12 = /^(\d{1,2})(am|pm)\s*-\s*(\d{1,2})(am|pm)$/i;
+  // Match patterns:
+  //   "1pm-3pm", "2:30pm-3:00pm", "2:30 PM - 3:00 PM" (12hr with optional minutes)
+  //   "09:00-12:00" (24hr)
+  const pattern12 = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i;
   const pattern24 = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/;
 
   let startHour = 0;
@@ -19,11 +21,11 @@ export function parseTimeWindow(input: string): TimeWindow | null {
 
   const match12 = cleaned.match(pattern12);
   if (match12) {
-    const [, startH, startPeriod, endH, endPeriod] = match12;
+    const [, startH, startM, startPeriod, endH, endM, endPeriod] = match12;
     startHour = convertTo24Hour(parseInt(startH), startPeriod);
+    startMin = startM ? parseInt(startM) : 0;
     endHour = convertTo24Hour(parseInt(endH), endPeriod);
-    startMin = 0;
-    endMin = 0;
+    endMin = endM ? parseInt(endM) : 0;
   } else {
     const match24 = cleaned.match(pattern24);
     if (match24) {

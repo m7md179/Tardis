@@ -21,11 +21,13 @@
   "commands": [
     {
       "name": "start",
+      "args": "<task>",
       "description": "Start a Pomodoro session for a task"
     },
     {
       "name": "config",
-      "description": "View or update Pomodoro settings (workDuration, breakDuration)"
+      "args": "[key] [value]",
+      "description": "View or set settings (keys: workDuration, breakDuration, autoNotify)"
     },
     {
       "name": "stats",
