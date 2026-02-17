@@ -21,7 +21,12 @@ export function parseTimeWindow(input: string): TimeWindow | null {
 
   const match12 = cleaned.match(pattern12);
   if (match12) {
-    const [, startH, startM, startPeriod, endH, endM, endPeriod] = match12;
+    const startH = match12[1] ?? '0';
+    const startM = match12[2];
+    const startPeriod = match12[3] ?? 'am';
+    const endH = match12[4] ?? '0';
+    const endM = match12[5];
+    const endPeriod = match12[6] ?? 'am';
     startHour = convertTo24Hour(parseInt(startH), startPeriod);
     startMin = startM ? parseInt(startM) : 0;
     endHour = convertTo24Hour(parseInt(endH), endPeriod);
@@ -29,11 +34,10 @@ export function parseTimeWindow(input: string): TimeWindow | null {
   } else {
     const match24 = cleaned.match(pattern24);
     if (match24) {
-      const [, startH, startM, endH, endM] = match24;
-      startHour = parseInt(startH);
-      startMin = parseInt(startM);
-      endHour = parseInt(endH);
-      endMin = parseInt(endM);
+      startHour = parseInt(match24[1] ?? '0');
+      startMin = parseInt(match24[2] ?? '0');
+      endHour = parseInt(match24[3] ?? '0');
+      endMin = parseInt(match24[4] ?? '0');
     } else {
       return null;
     }

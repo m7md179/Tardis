@@ -5,6 +5,7 @@ import type { NotificationService } from '../integrations/notifications/service'
 import type { PluginStorage } from './storage';
 import type { EventBus } from './event-bus';
 import type { PluginManager } from './manager';
+import { getDb } from '@tardis/db';
 
 export interface PluginAPIOptions {
   pluginName: string;
@@ -186,6 +187,24 @@ export function createPluginAPI(options: PluginAPIOptions): IPluginAPI {
       },
       on(eventName: string, handler: (data: unknown) => void) {
         eventBus.on(`plugin:${pluginName}:${eventName}`, pluginName, handler);
+      },
+    },
+
+    db: {
+      query<T = unknown>(sqlStr: string, params?: unknown[]): T[] {
+        checkPermission('db:read');
+        const db = getDb();
+        const stmt = (db as any).all(sqlStr, ...(params || []));
+        return stmt as T[];
+      },
+      run(sqlStr: string, params?: unknown[]): void {
+        checkPermission('db:write');
+        const db = getDb();
+        (db as any).run(sqlStr, ...(params || []));
+      },
+      drizzle(): unknown {
+        checkPermission('db:read');
+        return getDb();
       },
     },
 

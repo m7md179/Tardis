@@ -13,6 +13,8 @@ export const PluginPermissionSchema = z.enum([
   'notifications:send',
   'tasks:read',
   'tasks:write',
+  'db:read',
+  'db:write',
 ]);
 export type PluginPermission = z.infer<typeof PluginPermissionSchema>;
 
@@ -130,6 +132,16 @@ export interface PluginAPI {
   events: {
     emit(eventName: string, data: unknown): void;
     on(eventName: string, handler: (data: unknown) => void): void;
+  };
+
+  /** Shared SQLite database access */
+  db: {
+    /** Run a SELECT query. Requires db:read permission. */
+    query<T = unknown>(sql: string, params?: unknown[]): T[];
+    /** Run an INSERT/UPDATE/DELETE statement. Requires db:write permission. */
+    run(sql: string, params?: unknown[]): void;
+    /** Get the raw Drizzle database instance. Requires db:read permission. */
+    drizzle(): unknown;
   };
 
   /** Discover and invoke other plugins */

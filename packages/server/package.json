@@ -14,6 +14,7 @@
     "test:coverage": "bun test --coverage"
   },
   "dependencies": {
+    "@tardis/db": "workspace:*",
     "@tardis/shared": "workspace:*",
     "hono": "^4.0.0",
     "jsonwebtoken": "^9.0.2",

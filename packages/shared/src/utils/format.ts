@@ -58,7 +58,7 @@ export function formatTaskName(name: string): string {
 export function formatDurationColored(durationStr: string): string {
   // Parse hours from duration string (e.g., "2h 15m" -> 2)
   const hoursMatch = durationStr.match(/(\d+)h/);
-  const hours = hoursMatch ? parseInt(hoursMatch[1]) : 0;
+  const hours = hoursMatch ? parseInt(hoursMatch[1] ?? '0') : 0;
 
   if (hours >= 4) {
     return chalk.green(durationStr); // Long session

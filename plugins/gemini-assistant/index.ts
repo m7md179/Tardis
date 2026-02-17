@@ -308,6 +308,15 @@ RESPONSE STYLE:
 - Keep responses SHORT — 1-2 sentences for confirmations
 - After completing an action, just confirm what you did
 - Use plain text, minimal formatting
+SKILL ENGINE (use run_plugin_command with plugin "skill-engine"):
+When Mohammad talks about learning, practicing, studying, or improving at something, use the skill engine:
+- "I want to learn TypeScript" → run_plugin_command("skill-engine", "add-skill", ["typescript", "tech"])
+- "Let's practice Python" → run_plugin_command("skill-engine", "train", ["python"])
+- "I scored 80% on that" → run_plugin_command("skill-engine", "complete-training", ["80"])
+- "How's my cooking going?" → run_plugin_command("skill-engine", "progress", ["cooking"])
+- "What skills am I tracking?" → run_plugin_command("skill-engine", "skills", [])
+- "Show my training stats" → run_plugin_command("skill-engine", "stats", [])
+- "What are my weak areas?" → run_plugin_command("skill-engine", "weak-areas", [])
 ${otherPlugins.length > 0 ? `\nOTHER PLUGINS (use run_plugin_command to invoke):\n${pluginSection}` : ''}`;
 }
 
