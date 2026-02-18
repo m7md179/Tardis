@@ -1,6 +1,6 @@
 import { eq, and, isNull } from 'drizzle-orm';
-import { type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
-import { weakAreas } from '@tardis/db';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
+import { weakAreas } from './schema';
 import type { TrainingSession, WeakArea, PerformanceAnalysis } from './types';
 import { TrainingManager } from './training';
 import { generateId } from './utils';

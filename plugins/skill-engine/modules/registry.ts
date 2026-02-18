@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
-import { skills } from '@tardis/db';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
+import { skills } from './schema';
 import type { Skill, SkillCategory, XPResult } from './types';
 import { generateId, calculateLevel, calculateXP } from './utils';
 

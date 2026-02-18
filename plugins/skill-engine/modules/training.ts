@@ -1,6 +1,6 @@
 import { eq, desc, and, isNull } from 'drizzle-orm';
-import { type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
-import { trainingSessions } from '@tardis/db';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
+import { trainingSessions } from './schema';
 import type { TrainingSession, TrainingType } from './types';
 import { generateId } from './utils';
 

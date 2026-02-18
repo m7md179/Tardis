@@ -1,12 +1,16 @@
 import { eq, desc } from 'drizzle-orm';
-import { type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
-import { skillSnapshots } from '@tardis/db';
-import type { PluginAPI } from '@tardis/shared';
-import type { Skill, OverallStats, ProgressReport } from './types';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
+import { skillSnapshots } from './schema';
+import type { OverallStats, ProgressReport } from './types';
 import { SkillRegistry } from './registry';
 import { TrainingManager } from './training';
 import { DifficultyEngine } from './difficulty';
 import { generateId } from './utils';
+
+/** Minimal type for the task-creation API — avoids importing @tardis/shared at runtime */
+interface TaskAPI {
+  tasks: { create(content: string, description?: string, dueString?: string): Promise<any> };
+}
 
 export class AnalyticsEngine {
   constructor(
@@ -147,7 +151,7 @@ export class AnalyticsEngine {
   /**
    * Create Todoist tasks for weak areas and stale skills
    */
-  async createTrainingTasks(api: PluginAPI): Promise<string[]> {
+  async createTrainingTasks(api: TaskAPI): Promise<string[]> {
     const created: string[] = [];
 
     // Task for unresolved weak areas

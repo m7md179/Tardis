@@ -1,5 +1,5 @@
 import type { TardisPlugin, PluginAPI, Session } from '@tardis/shared';
-import { type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
+import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { SkillRegistry } from './modules/registry';
 import { TrainingManager } from './modules/training';
 import { DifficultyEngine } from './modules/difficulty';

@@ -102,7 +102,42 @@ Scaffolds a new plugin with a starter `plugin.json` and `index.ts`. If you want 
 
 ## Included Plugins
 
-TARDIS ships with two ready-to-use plugins. They're deployed automatically when you run `./scripts/deploy.sh`.
+TARDIS ships with these ready-to-use plugins. They're deployed automatically when you run `./scripts/deploy.sh`.
+
+### Skill Engine
+
+Self-evolving skill tracking with adaptive training, XP, leveling, weak area detection, and Todoist integration.
+
+Full documentation: [skill-engine.md](./skill-engine.md)
+
+**Commands:** `add-skill`, `remove-skill`, `skills`, `train`, `complete-training`, `progress`, `weak-areas`, `stats`, `calibrate`, `config`
+
+**Quick start:**
+```
+plugin skill-engine add-skill typescript tech
+plugin skill-engine train typescript
+plugin skill-engine complete-training 85
+plugin skill-engine progress typescript
+```
+
+Or via Gemini natural language: *"I want to learn Python"*, *"Let's practice TypeScript"*, *"I scored 80%"*
+
+---
+
+### Gemini Assistant
+
+AI-powered natural language interface. Turns plain text messages into TARDIS actions through Google Gemini's function calling API.
+
+**Setup:**
+```
+plugin gemini-assistant config apiKey YOUR_GEMINI_KEY
+```
+
+**How it works:** Any unrecognized message in Telegram is routed to Gemini. It chains up to 8 function calls to accomplish complex requests in one go — time tracking, task management, plugin commands, reminders, and skill training.
+
+**Commands:** `ask`, `config`, `clear`
+
+---
 
 ### Pomodoro Timer
 
