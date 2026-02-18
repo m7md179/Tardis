@@ -598,8 +598,9 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
   const systemPrompt = buildSystemPrompt(api);
   const context = await buildContext(api);
 
-  // Load conversation history
-  const history = (await api.storage.get<ChatMessage[]>('conversation')) ?? [];
+  // Load conversation history and sanitize null content (Ollama rejects null)
+  const rawHistory = (await api.storage.get<ChatMessage[]>('conversation')) ?? [];
+  const history = rawHistory.map((m) => ({ ...m, content: m.content ?? '' }));
 
   // Build messages array
   const messages: ChatMessage[] = [
@@ -679,7 +680,7 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
       // Append assistant's tool call message
       messages.push({
         role: 'assistant',
-        content: null,
+        content: '',
         tool_calls: [{
           id: callId,
           type: 'function',
