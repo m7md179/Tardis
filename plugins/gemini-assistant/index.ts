@@ -126,128 +126,128 @@ function pad(n: number): string {
 const functionDeclarations = [
   {
     name: 'start_tracking',
-    description: 'Start time tracking for a task. Use when Mohammad says he is WORKING on something RIGHT NOW.',
+    description: 'Start time tracking for a task',
     parameters: {
       type: 'OBJECT',
       properties: {
-        task_name: { type: 'STRING', description: 'Name of the task to track time for' },
+        task_name: { type: 'STRING', description: 'Task name' },
       },
       required: ['task_name'],
     },
   },
   {
     name: 'stop_tracking',
-    description: 'Stop the current active time tracking session.',
+    description: 'Stop active time tracking',
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
     name: 'pause_tracking',
-    description: 'Pause the current active time tracking session (e.g. taking a break).',
+    description: 'Pause active time tracking',
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
     name: 'resume_tracking',
-    description: 'Resume a paused time tracking session (e.g. back from break).',
+    description: 'Resume paused time tracking',
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
     name: 'get_status',
-    description: 'Get the current time tracking status — what sessions are active or paused.',
+    description: 'Get active/paused sessions',
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
     name: 'add_task',
-    description: 'Add a new task to Todoist. Use when Mohammad wants to CREATE, SET, or SCHEDULE a task, meeting, appointment, or todo item for the future.',
+    description: 'Create a new Todoist task',
     parameters: {
       type: 'OBJECT',
       properties: {
-        name: { type: 'STRING', description: 'Task name or content (e.g. "Meeting with client")' },
-        due_date: { type: 'STRING', description: 'Due date in natural language (e.g. "tomorrow", "next Monday", "today", "Feb 20")' },
-        time_window: { type: 'STRING', description: 'Time window in 24hr format (e.g. "10:00-11:00", "14:30-15:00"). ALWAYS use HH:MM-HH:MM format.' },
-        priority: { type: 'NUMBER', description: 'Priority: 1 (normal) to 4 (urgent)' },
+        name: { type: 'STRING', description: 'Task name' },
+        due_date: { type: 'STRING', description: 'Due date (natural language)' },
+        time_window: { type: 'STRING', description: 'Time slot HH:MM-HH:MM' },
+        priority: { type: 'NUMBER', description: '1-4 (4=urgent)' },
       },
       required: ['name'],
     },
   },
   {
     name: 'update_task',
-    description: 'Update an existing Todoist task — change its name, due date, description, or priority.',
+    description: 'Update a Todoist task',
     parameters: {
       type: 'OBJECT',
       properties: {
-        task_query: { type: 'STRING', description: 'Name or partial name of the task to find (fuzzy matched against existing tasks)' },
-        new_name: { type: 'STRING', description: 'New task name/content (if changing)' },
-        new_due_date: { type: 'STRING', description: 'New due date in natural language (if rescheduling)' },
-        new_description: { type: 'STRING', description: 'New description (if changing)' },
-        new_priority: { type: 'NUMBER', description: 'New priority 1-4 (if changing)' },
+        task_query: { type: 'STRING', description: 'Task name to find (fuzzy)' },
+        new_name: { type: 'STRING', description: 'New name' },
+        new_due_date: { type: 'STRING', description: 'New due date' },
+        new_description: { type: 'STRING', description: 'New description' },
+        new_priority: { type: 'NUMBER', description: 'New priority 1-4' },
       },
       required: ['task_query'],
     },
   },
   {
     name: 'reschedule_task',
-    description: 'Reschedule an existing Todoist task to a different date or time.',
+    description: 'Reschedule a Todoist task',
     parameters: {
       type: 'OBJECT',
       properties: {
-        task_query: { type: 'STRING', description: 'Name or partial name of the task to reschedule (fuzzy matched)' },
-        new_due_date: { type: 'STRING', description: 'New due date in natural language (e.g. "Friday", "next week", "tomorrow at 2pm")' },
-        new_time_window: { type: 'STRING', description: 'New time window in 24hr format (e.g. "14:00-15:00", "09:00-10:30"). ALWAYS use HH:MM-HH:MM format.' },
+        task_query: { type: 'STRING', description: 'Task name to find (fuzzy)' },
+        new_due_date: { type: 'STRING', description: 'New due date' },
+        new_time_window: { type: 'STRING', description: 'New time slot HH:MM-HH:MM' },
       },
       required: ['task_query', 'new_due_date'],
     },
   },
   {
     name: 'complete_task',
-    description: 'Mark a Todoist task as completed/done.',
+    description: 'Mark a task as done',
     parameters: {
       type: 'OBJECT',
       properties: {
-        task_query: { type: 'STRING', description: 'Name or partial name of the task to complete (fuzzy matched)' },
+        task_query: { type: 'STRING', description: 'Task name to find (fuzzy)' },
       },
       required: ['task_query'],
     },
   },
   {
     name: 'delete_task',
-    description: 'Permanently delete a task from Todoist.',
+    description: 'Delete a task',
     parameters: {
       type: 'OBJECT',
       properties: {
-        task_query: { type: 'STRING', description: 'Name or partial name of the task to delete (fuzzy matched)' },
+        task_query: { type: 'STRING', description: 'Task name to find (fuzzy)' },
       },
       required: ['task_query'],
     },
   },
   {
     name: 'list_tasks',
-    description: 'Show all current Todoist tasks.',
+    description: 'List all Todoist tasks',
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
     name: 'set_reminder',
-    description: 'Set a reminder notification that fires after a delay (e.g. "remind me to stretch in 30 minutes").',
+    description: 'Set a timed reminder',
     parameters: {
       type: 'OBJECT',
       properties: {
-        message: { type: 'STRING', description: 'What to remind about' },
-        delay_minutes: { type: 'NUMBER', description: 'Minutes from now to send the reminder' },
+        message: { type: 'STRING', description: 'Reminder text' },
+        delay_minutes: { type: 'NUMBER', description: 'Minutes from now' },
       },
       required: ['message', 'delay_minutes'],
     },
   },
   {
     name: 'run_plugin_command',
-    description: 'Run a command from any loaded TARDIS plugin. Use this to invoke capabilities from other plugins like pomodoro-timer, google-calendar-sync, etc.',
+    description: 'Run a command from another TARDIS plugin',
     parameters: {
       type: 'OBJECT',
       properties: {
-        plugin_name: { type: 'STRING', description: 'The plugin name (e.g. "pomodoro-timer", "google-calendar-sync")' },
-        command: { type: 'STRING', description: 'The command to run within the plugin' },
+        plugin_name: { type: 'STRING', description: 'Plugin name' },
+        command: { type: 'STRING', description: 'Command name' },
         args: {
           type: 'ARRAY',
           items: { type: 'STRING' },
-          description: 'Command arguments as an array of strings',
+          description: 'Arguments',
         },
       },
       required: ['plugin_name', 'command'],
@@ -304,59 +304,14 @@ function buildSystemPrompt(api: PluginAPI): string {
     })
     .join('\n');
 
-  return `You are TARDIS, Mohammad's personal assistant for time-tracking, task management, and productivity.
-Mohammad is a software developer based in Riyadh (Asia/Riyadh, GMT+3).
+  return `You are TARDIS, Mohammad's assistant. Riyadh timezone (GMT+3). Be concise, casual, no emojis. Reply in 1-2 sentences max. Never ask "would you like" or "do you want" — just act.
 
-PERSONALITY:
-- Talk like a sharp, helpful colleague — casual, concise, direct, no fluff
-- Use his name occasionally but don't overdo it
-- Be encouraging when he starts tasks, brief acknowledgment when he stops
-- If he's been working 3+ hours straight, gently suggest a break
-
-YOUR TWO CORE SYSTEMS:
-1. TIME TRACKING (start_tracking/stop_tracking/pause_tracking/resume_tracking/get_status)
-   = Stopwatch for ACTIVE work happening RIGHT NOW
-   Phrases: "I'm working on...", "starting...", "done with...", "taking a break"
-
-2. TODOIST TASKS (add_task/update_task/reschedule_task/complete_task/delete_task/list_tasks)
-   = Todo list for planning and scheduling
-   Phrases: "I have a meeting...", "remind me to...", "schedule...", "add to my list"
-
-AGENTIC BEHAVIOR — CRITICAL:
-- You are a DOER, not an asker. When you have enough information, ACT IMMEDIATELY.
-- CHAIN MULTIPLE FUNCTIONS to accomplish complex requests in one go:
-  * "start working on standup" → get_status to check if something's running → stop_tracking if needed → start_tracking for standup
-  * "add today's standup and start it" → add_task → start_tracking
-  * "reschedule meeting to tomorrow and add prep task" → reschedule_task → add_task
-  * "I'm done with X, mark it complete" → stop_tracking → complete_task
-- After a function returns results, USE them immediately for the next step. Don't ask for confirmation between steps.
-- Only ask for clarification when a fuzzy match returns MULTIPLE tasks and you genuinely can't tell which one.
-
-ERROR RECOVERY:
-- If a function returns {success: false}, read the error and available_tasks carefully.
-- Try an alternative: use list_tasks to see what's available, then retry with a better match.
-- Don't give up after one failure — try at least one alternative before telling the user.
-
-RESPONSE STYLE:
-- Keep responses SHORT — 1-2 sentences for confirmations
-- After completing an action, just confirm what you did
-- Use plain text, minimal formatting
-
-THINKING:
-- You may think step-by-step internally, but keep your final response concise.
-- Do NOT include your internal reasoning in the response. Only output the final answer.
-- If you produce <think>...</think> tags, they will be stripped automatically.
-
-SKILL ENGINE (use run_plugin_command with plugin "skill-engine"):
-When Mohammad talks about learning, practicing, studying, or improving at something, use the skill engine:
-- "I want to learn TypeScript" → run_plugin_command("skill-engine", "add-skill", ["typescript", "tech"])
-- "Let's practice Python" → run_plugin_command("skill-engine", "train", ["python"])
-- "I scored 80% on that" → run_plugin_command("skill-engine", "complete-training", ["80"])
-- "How's my cooking going?" → run_plugin_command("skill-engine", "progress", ["cooking"])
-- "What skills am I tracking?" → run_plugin_command("skill-engine", "skills", [])
-- "Show my training stats" → run_plugin_command("skill-engine", "stats", [])
-- "What are my weak areas?" → run_plugin_command("skill-engine", "weak-areas", [])
-${otherPlugins.length > 0 ? `\nOTHER PLUGINS (use run_plugin_command to invoke):\n${pluginSection}` : ''}`;
+RULES:
+- Act immediately with tools. Never ask for confirmation.
+- Chain tools for complex requests (e.g. stop current → start new).
+- On error, retry with list_tasks to find correct match.
+- For greetings, reply briefly without using any tools.
+${otherPlugins.length > 0 ? `\nPLUGINS (use run_plugin_command): ${otherPlugins.map((p) => `${p.name}: ${p.commands.map((c) => c.name).join(', ')}`).join('; ')}` : ''}`;
 }
 
 // --- Context Builder ---
@@ -364,65 +319,27 @@ ${otherPlugins.length > 0 ? `\nOTHER PLUGINS (use run_plugin_command to invoke):
 async function buildContext(api: PluginAPI): Promise<string> {
   const parts: string[] = [];
 
-  // Temporal context
+  // Time
   const now = new Date();
-  const riyadhTime = now.toLocaleString('en-US', {
-    timeZone: 'Asia/Riyadh',
-    weekday: 'long',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-  parts.push(`Current time: ${riyadhTime}`);
+  parts.push(now.toLocaleString('en-US', { timeZone: 'Asia/Riyadh', weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true }));
 
-  // Active sessions
+  // Active sessions (compact)
   try {
     const active = await api.sessions.getActive();
     if (active.length > 0) {
-      const list = active
-        .map((s) => `"${s.taskName}" (${s.status}, ${formatDuration(s.duration)})`)
-        .join(', ');
-      parts.push(`Active sessions: ${list}`);
-    } else {
-      parts.push('Active sessions: None');
-    }
-  } catch {
-    parts.push('Active sessions: Unknown');
-  }
-
-  // Todoist tasks with priority info
-  try {
-    const tasks = await api.tasks.getAll();
-    if (tasks.length > 0) {
-      const list = tasks
-        .slice(0, 15)
-        .map((t: any) => {
-          let entry = `"${t.content}"`;
-          if (t.due) entry += ` (due: ${t.due.string || t.due.date})`;
-          if (t.priority > 1) entry += ` [p${t.priority}]`;
-          return entry;
-        })
-        .join(', ');
-      parts.push(`Todoist tasks (${tasks.length} total): ${list}`);
-    } else {
-      parts.push('Todoist tasks: None');
-    }
-  } catch {
-    // Todoist might not be configured
-  }
-
-  // Available plugins
-  try {
-    const plugins = api.plugins.list().filter((p) => p.name !== 'gemini-assistant');
-    if (plugins.length > 0) {
-      const pluginList = plugins
-        .map((p) => `${p.name} (${p.commands.map((c) => c.name).join(', ')})`)
-        .join(', ');
-      parts.push(`Available plugins: ${pluginList}`);
+      parts.push(`Tracking: ${active.map((s) => `${s.taskName} (${s.status}, ${formatDuration(s.duration)})`).join(', ')}`);
     }
   } catch {}
 
-  return parts.join('\n');
+  // Tasks (compact, max 8)
+  try {
+    const tasks = await api.tasks.getAll();
+    if (tasks.length > 0) {
+      parts.push(`Tasks: ${tasks.slice(0, 8).map((t: any) => t.content + (t.due ? ` [${t.due.date}]` : '')).join('; ')}`);
+    }
+  } catch {}
+
+  return parts.join(' | ');
 }
 
 // --- Function Executors ---
@@ -623,11 +540,26 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
       stream: false,
     };
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    // 60s timeout — local models can be slow on first load
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    let response: Response;
+    try {
+      response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') {
+        throw new Error('Ollama took too long to respond (60s timeout). The model may still be loading — try again.');
+      }
+      throw new Error(`Cannot reach Ollama at ${ollamaUrl}: ${err.message}`);
+    }
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -635,10 +567,11 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
     }
 
     const data = (await response.json()) as any;
+    api.logger.info(`Ollama response: ${JSON.stringify(data).slice(0, 300)}`);
     const choice = data.choices?.[0];
     const message = choice?.message;
 
-    if (!message) throw new Error('Empty response from Ollama');
+    if (!message) throw new Error(`Empty response from Ollama: ${JSON.stringify(data).slice(0, 200)}`);
 
     // Check for tool calls
     if (message.tool_calls && message.tool_calls.length > 0) {
@@ -732,18 +665,26 @@ const plugin: TardisPlugin = {
     const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
     const model = api.config.get<string>('model') || 'tardis-assistant';
 
-    // Check Ollama connectivity
+    // Check Ollama connectivity and model availability
     try {
       const res = await fetch(`${ollamaUrl}/api/tags`);
       if (res.ok) {
-        api.logger.info(`TARDIS Assistant v3 active (Ollama @ ${ollamaUrl}, model: ${model})`);
+        const data = (await res.json()) as any;
+        const models = (data.models || []).map((m: any) => m.name);
+        if (models.some((m: string) => m.startsWith(model))) {
+          api.logger.info(`TARDIS Assistant v3 active (Ollama @ ${ollamaUrl}, model: ${model})`);
+        } else {
+          api.logger.warn(`Ollama is running but model "${model}" not found. Available: ${models.join(', ')}`);
+          api.logger.info(`Create it with: ollama create ${model} -f Modelfile`);
+          api.logger.info(`Or pull base model: ollama pull qwen3:1.7b`);
+        }
       } else {
         api.logger.warn(`Ollama reachable but returned ${res.status} — check server status`);
       }
     } catch {
       api.logger.warn(`Cannot reach Ollama at ${ollamaUrl} — make sure Ollama is running`);
       api.logger.info(`Install: curl -fsSL https://ollama.com/install.sh | sh`);
-      api.logger.info(`Pull model: ollama pull ${model}`);
+      api.logger.info(`Pull model: ollama pull qwen3:1.7b`);
     }
   },
 
