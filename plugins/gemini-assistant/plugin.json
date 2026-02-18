@@ -1,8 +1,8 @@
 {
   "name": "gemini-assistant",
-  "version": "2.0.0",
-  "displayName": "Gemini Assistant",
-  "description": "Natural language interface for TARDIS powered by Google Gemini",
+  "version": "3.0.0",
+  "displayName": "TARDIS Assistant",
+  "description": "Natural language interface for TARDIS powered by local Ollama LLM",
   "author": "Mohammad <mohammad@weborbit.dev>",
   "license": "MIT",
   "tardisVersion": ">=2.0.0",
@@ -14,7 +14,6 @@
     "tasks:write",
     "storage:read",
     "storage:write",
-    "http:external",
     "notifications:send"
   ],
   "hooks": [],
@@ -22,12 +21,12 @@
     {
       "name": "ask",
       "args": "<message>",
-      "description": "Process natural language input with Gemini"
+      "description": "Process natural language input with local LLM"
     },
     {
       "name": "config",
       "args": "[key] [value]",
-      "description": "View or set config (keys: apiKey, model)"
+      "description": "View or set config (keys: ollamaUrl, model)"
     },
     {
       "name": "clear",
@@ -36,7 +35,7 @@
   ],
   "config": {
     "enabled": true,
-    "apiKey": "",
-    "model": "gemini-2.0-flash"
+    "model": "tardis-assistant",
+    "ollamaUrl": "http://localhost:11434"
   }
 }

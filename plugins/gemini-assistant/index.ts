@@ -2,15 +2,11 @@ import type { TardisPlugin, PluginAPI, Session } from '@tardis/shared';
 
 // --- Types ---
 
-interface ContentPart {
-  text?: string;
-  functionCall?: { name: string; args: Record<string, any> };
-  functionResponse?: { name: string; response: any };
-}
-
-interface GeminiContent {
-  role: 'user' | 'model';
-  parts: ContentPart[];
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[];
+  tool_call_id?: string;
 }
 
 // --- Helpers ---
@@ -125,7 +121,7 @@ function pad(n: number): string {
   return n.toString().padStart(2, '0');
 }
 
-// --- Function Declarations ---
+// --- Function Declarations (Gemini format, converted at runtime) ---
 
 const functionDeclarations = [
   {
@@ -259,6 +255,43 @@ const functionDeclarations = [
   },
 ];
 
+// --- Convert Gemini function declarations to OpenAI tool format ---
+
+function convertTypeValue(geminiType: string): string {
+  return geminiType.toLowerCase();
+}
+
+function convertProperties(props: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(props)) {
+    const converted: Record<string, any> = { type: convertTypeValue(value.type) };
+    if (value.description) converted.description = value.description;
+    if (value.items) {
+      converted.items = { type: convertTypeValue(value.items.type) };
+    }
+    if (value.properties) {
+      converted.properties = convertProperties(value.properties);
+    }
+    result[key] = converted;
+  }
+  return result;
+}
+
+function convertTools(): { type: 'function'; function: { name: string; description: string; parameters: any } }[] {
+  return functionDeclarations.map((decl) => ({
+    type: 'function' as const,
+    function: {
+      name: decl.name,
+      description: decl.description,
+      parameters: {
+        type: convertTypeValue(decl.parameters.type),
+        properties: convertProperties(decl.parameters.properties || {}),
+        ...(decl.parameters.required ? { required: decl.parameters.required } : {}),
+      },
+    },
+  }));
+}
+
 // --- System Prompt ---
 
 function buildSystemPrompt(api: PluginAPI): string {
@@ -308,6 +341,12 @@ RESPONSE STYLE:
 - Keep responses SHORT — 1-2 sentences for confirmations
 - After completing an action, just confirm what you did
 - Use plain text, minimal formatting
+
+THINKING:
+- You may think step-by-step internally, but keep your final response concise.
+- Do NOT include your internal reasoning in the response. Only output the final answer.
+- If you produce <think>...</think> tags, they will be stripped automatically.
+
 SKILL ENGINE (use run_plugin_command with plugin "skill-engine"):
 When Mohammad talks about learning, practicing, studying, or improving at something, use the skill engine:
 - "I want to learn TypeScript" → run_plugin_command("skill-engine", "add-skill", ["typescript", "tech"])
@@ -543,99 +582,135 @@ async function executeFunctionCall(
   }
 }
 
-// --- Gemini Conversation Loop ---
+// --- Strip <think> tags from Qwen3 responses ---
+
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+}
+
+// --- Ollama Conversation Loop ---
+
+let toolCallCounter = 0;
 
 async function processMessage(input: string, api: PluginAPI): Promise<string> {
-  const apiKey = api.config.get<string>('apiKey');
-  if (!apiKey) {
-    throw new Error('Gemini API key not configured. Set it with: plugin gemini-assistant config apiKey YOUR_KEY');
-  }
-
-  const model = api.config.get<string>('model') || 'gemini-2.0-flash';
+  const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
+  const model = api.config.get<string>('model') || 'tardis-assistant';
   const systemPrompt = buildSystemPrompt(api);
   const context = await buildContext(api);
 
   // Load conversation history
-  const history = (await api.storage.get<GeminiContent[]>('conversation')) ?? [];
+  const history = (await api.storage.get<ChatMessage[]>('conversation')) ?? [];
 
-  // Build contents array — keep more history for multi-turn context
-  const contents: GeminiContent[] = [...history.slice(-10)];
+  // Build messages array
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...history.slice(-10),
+    { role: 'user', content: `[Context: ${context}]\n\n${input}` },
+  ];
 
-  // Add current message with context
-  contents.push({
-    role: 'user',
-    parts: [{ text: `[Context: ${context}]\n\n${input}` }],
-  });
-
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const baseRequest = {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    tools: [{ functionDeclarations }],
-    generationConfig: { temperature: 0.5 },
-  };
+  const tools = convertTools();
+  const apiUrl = `${ollamaUrl}/v1/chat/completions`;
 
   // Function calling loop — max 8 iterations for complex multi-step tasks
   let maxTurns = 8;
   while (maxTurns-- > 0) {
-    const response = await api.http.post(apiUrl, { ...baseRequest, contents });
+    const body = {
+      model,
+      messages,
+      tools,
+      tool_choice: 'auto',
+      stream: false,
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
 
     if (!response.ok) {
       const errText = await response.text();
-      if (response.status === 429) throw new Error('Rate limit reached. Try again in a moment.');
-      throw new Error(`Gemini API error ${response.status}: ${errText}`);
+      throw new Error(`Ollama API error ${response.status}: ${errText}`);
     }
 
     const data = (await response.json()) as any;
-    const candidate = data.candidates?.[0];
-    if (!candidate?.content?.parts?.length) throw new Error('Empty response from Gemini');
+    const choice = data.choices?.[0];
+    const message = choice?.message;
 
-    const parts: ContentPart[] = candidate.content.parts;
+    if (!message) throw new Error('Empty response from Ollama');
 
-    // Check for function call
-    const fnCall = parts.find((p) => p.functionCall);
-    if (fnCall?.functionCall) {
-      const { name, args } = fnCall.functionCall;
-      api.logger.info(`Function call: ${name}(${JSON.stringify(args)})`);
+    // Check for tool calls
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      const toolCall = message.tool_calls[0];
+      const fnName = toolCall.function.name;
+      let fnArgs: Record<string, any> = {};
+
+      try {
+        fnArgs = typeof toolCall.function.arguments === 'string'
+          ? JSON.parse(toolCall.function.arguments)
+          : toolCall.function.arguments || {};
+      } catch {
+        fnArgs = {};
+      }
+
+      api.logger.info(`Function call: ${fnName}(${JSON.stringify(fnArgs)})`);
 
       // Execute the function
-      const fnResult = await executeFunctionCall(name, args || {}, api);
+      const fnResult = await executeFunctionCall(fnName, fnArgs, api);
       api.logger.info(`Function result: ${JSON.stringify(fnResult).slice(0, 200)}`);
 
       // Handle reminder scheduling
-      if (name === 'set_reminder' && fnResult.success) {
+      if (fnName === 'set_reminder' && fnResult.success) {
         const timerId = `notify-${Date.now()}`;
         const timer = setTimeout(async () => {
           activeTimers.delete(timerId);
           try {
-            await api.notifications.send(`🔔 Reminder: ${args.message}`);
+            await api.notifications.send(`Reminder: ${fnArgs.message}`);
           } catch (error) {
             api.logger.error('Failed to send reminder:', error);
           }
-        }, (args.delay_minutes || 1) * 60 * 1000);
+        }, (fnArgs.delay_minutes || 1) * 60 * 1000);
         activeTimers.set(timerId, timer);
       }
 
-      // Append model's function call to contents
-      contents.push({ role: 'model', parts: [{ functionCall: { name, args } }] });
+      // Generate a tool_call_id
+      const callId = toolCall.id || `call_${++toolCallCounter}`;
 
-      // Append function response
-      contents.push({
-        role: 'user',
-        parts: [{ functionResponse: { name, response: fnResult } }],
+      // Append assistant's tool call message
+      messages.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: callId,
+          type: 'function',
+          function: {
+            name: fnName,
+            arguments: typeof toolCall.function.arguments === 'string'
+              ? toolCall.function.arguments
+              : JSON.stringify(fnArgs),
+          },
+        }],
       });
 
-      // Continue loop — Gemini may call another function or return text
+      // Append tool response
+      messages.push({
+        role: 'tool',
+        content: JSON.stringify(fnResult),
+        tool_call_id: callId,
+      });
+
+      // Continue loop — model may call another function or return text
       continue;
     }
 
-    // Check for text response — this is the final answer
-    const textPart = parts.find((p) => p.text);
-    const finalText = textPart?.text || 'Done.';
+    // Text response — this is the final answer
+    const finalText = stripThinkTags(message.content || 'Done.');
 
-    // Save conversation history with model's final response
-    const newHistory = [...contents, { role: 'model', parts: [{ text: finalText }] }];
+    // Save conversation history (without system prompt)
+    const historyToSave = messages.slice(1); // skip system prompt
+    historyToSave.push({ role: 'assistant', content: finalText });
     // Keep last 12 entries for richer multi-turn context
-    await api.storage.set('conversation', newHistory.slice(-12));
+    await api.storage.set('conversation', historyToSave.slice(-12));
 
     return finalText;
   }
@@ -650,15 +725,24 @@ const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const plugin: TardisPlugin = {
   name: 'gemini-assistant',
-  version: '2.0.0',
+  version: '3.0.0',
 
   async onActivate(api: PluginAPI) {
-    const apiKey = api.config.get<string>('apiKey');
-    if (!apiKey) {
-      api.logger.warn('Gemini API key not configured');
-      api.logger.info('Set it with: plugin gemini-assistant config apiKey YOUR_KEY');
-    } else {
-      api.logger.info('Gemini Assistant v2 active (function calling)');
+    const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
+    const model = api.config.get<string>('model') || 'tardis-assistant';
+
+    // Check Ollama connectivity
+    try {
+      const res = await fetch(`${ollamaUrl}/api/tags`);
+      if (res.ok) {
+        api.logger.info(`TARDIS Assistant v3 active (Ollama @ ${ollamaUrl}, model: ${model})`);
+      } else {
+        api.logger.warn(`Ollama reachable but returned ${res.status} — check server status`);
+      }
+    } catch {
+      api.logger.warn(`Cannot reach Ollama at ${ollamaUrl} — make sure Ollama is running`);
+      api.logger.info(`Install: curl -fsSL https://ollama.com/install.sh | sh`);
+      api.logger.info(`Pull model: ollama pull ${model}`);
     }
   },
 
@@ -675,18 +759,10 @@ const plugin: TardisPlugin = {
       if (!input) {
         await api.notifications.send(
           'Just type naturally! For example:\n' +
-            '• "I\'m starting work on the docs"\n' +
-            '• "Reschedule the meeting to Friday"\n' +
-            '• "What am I working on?"\n' +
-            '• "Remind me to take a break in 25 minutes"'
-        );
-        return;
-      }
-
-      const apiKey = api.config.get<string>('apiKey');
-      if (!apiKey) {
-        await api.notifications.send(
-          '❌ Gemini API key not configured.\n\nSet it with:\nplugin gemini-assistant config apiKey YOUR_KEY\n\nGet a key at: https://aistudio.google.com/apikey'
+            '- "I\'m starting work on the docs"\n' +
+            '- "Reschedule the meeting to Friday"\n' +
+            '- "What am I working on?"\n' +
+            '- "Remind me to take a break in 25 minutes"'
         );
         return;
       }
@@ -695,8 +771,8 @@ const plugin: TardisPlugin = {
         const response = await processMessage(input, api);
         await api.notifications.send(response);
       } catch (error: any) {
-        api.logger.error('Gemini processing failed:', error);
-        await api.notifications.send(`❌ ${error.message}`);
+        api.logger.error('Assistant processing failed:', error);
+        await api.notifications.send(`Error: ${error.message}`);
       }
     },
 
@@ -704,9 +780,9 @@ const plugin: TardisPlugin = {
       if (args.length === 0) {
         const cfg = api.config.getAll();
         const msg =
-          '*Gemini Assistant Config:*\n\n' +
-          `API Key: ${cfg.apiKey ? '✅ Set' : '❌ Not set'}\n` +
-          `Model: ${cfg.model || 'gemini-2.0-flash'}`;
+          'TARDIS Assistant Config:\n\n' +
+          `Ollama URL: ${cfg.ollamaUrl || 'http://localhost:11434'}\n` +
+          `Model: ${cfg.model || 'tardis-assistant'}`;
         await api.notifications.send(msg);
         return;
       }
@@ -715,18 +791,17 @@ const plugin: TardisPlugin = {
       const value = valueParts.join(' ');
 
       if (!value) {
-        await api.notifications.send('Usage: config <key> <value>\n\nKeys: apiKey, model');
+        await api.notifications.send('Usage: config <key> <value>\n\nKeys: ollamaUrl, model');
         return;
       }
 
       await api.config.set(key!, value);
-      const display = key === 'apiKey' ? `${value.slice(0, 8)}...` : value;
-      await api.notifications.send(`✅ Set ${key} = ${display}`);
+      await api.notifications.send(`Set ${key} = ${value}`);
     },
 
     async clear(_args: string[], api: PluginAPI) {
       await api.storage.set('conversation', []);
-      await api.notifications.send('🧹 Conversation history cleared.');
+      await api.notifications.send('Conversation history cleared.');
     },
   },
 };
