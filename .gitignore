@@ -2,6 +2,7 @@
 tardis
 tardis-go
 tardis-*
+!plugins/tardis-assistant/
 dist/
 
 # Dependencies
