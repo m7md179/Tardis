@@ -585,7 +585,7 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
 
     // 60s timeout — local models can be slow on first load
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
 
     let response: Response;
     try {
@@ -598,7 +598,7 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
     } catch (err: any) {
       clearTimeout(timeout);
       if (err.name === 'AbortError') {
-        throw new Error('Ollama took too long to respond (60s timeout). The model may still be loading — try again.');
+        throw new Error('Ollama took too long to respond (120s timeout). The model may still be loading — try again.');
       }
       throw new Error(`Cannot reach Ollama at ${ollamaUrl}: ${err.message}`);
     }
