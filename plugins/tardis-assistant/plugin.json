@@ -39,7 +39,7 @@
   ],
   "config": {
     "enabled": true,
-    "model": "qwen3:4b",
+    "model": "tardis-assistant",
     "ollamaUrl": "http://localhost:11434"
   }
 }

@@ -552,7 +552,7 @@ let toolCallCounter = 0;
 
 async function processMessage(input: string, api: PluginAPI): Promise<string> {
   const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
-  const model = api.config.get<string>('model') || 'qwen3:4b';
+  const model = api.config.get<string>('model') || 'tardis-assistant';
   const systemPrompt = buildSystemPrompt(api);
   const context = await buildContext(api);
 
@@ -581,9 +581,6 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
       tools,
       tool_choice: 'auto',
       stream: false,
-      temperature: 0.6,
-      top_p: 0.9,
-      max_tokens: 300,
     };
 
     // 60s timeout — local models can be slow on first load
@@ -712,7 +709,7 @@ const plugin: TardisPlugin = {
 
   async onActivate(api: PluginAPI) {
     const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
-    const model = api.config.get<string>('model') || 'qwen3:4b';
+    const model = api.config.get<string>('model') || 'tardis-assistant';
 
     // Clear stale conversation history on startup
     await api.storage.set('conversation', []);
@@ -727,7 +724,7 @@ const plugin: TardisPlugin = {
           api.logger.info(`TARDIS Assistant v3 active (Ollama @ ${ollamaUrl}, model: ${model})`);
         } else {
           api.logger.warn(`Ollama is running but model "${model}" not found. Available: ${models.join(', ')}`);
-          api.logger.info(`Create it with: ollama create ${model} -f Modelfile`);
+          api.logger.info(`Create it with: ollama create tardis-assistant -f /path/to/Modelfile`);
           api.logger.info(`Or pull base model: ollama pull qwen3:1.7b`);
         }
       } else {
@@ -785,7 +782,7 @@ const plugin: TardisPlugin = {
         const msg =
           'TARDIS Assistant Config:\n\n' +
           `Ollama URL: ${cfg.ollamaUrl || 'http://localhost:11434'}\n` +
-          `Model: ${cfg.model || 'qwen3:4b'}`;
+          `Model: ${cfg.model || 'tardis-assistant'}`;
         await api.notifications.send(msg);
         return;
       }
