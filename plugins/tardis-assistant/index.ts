@@ -556,14 +556,16 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
   const systemPrompt = buildSystemPrompt(api);
   const context = await buildContext(api);
 
-  // Load conversation history and sanitize null content (Ollama rejects null)
+  // Load conversation history — only user/assistant text pairs, sanitize nulls
   const rawHistory = (await api.storage.get<ChatMessage[]>('conversation')) ?? [];
-  const history = rawHistory.map((m) => ({ ...m, content: m.content ?? '' }));
+  const history = rawHistory
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
+    .map((m) => ({ role: m.role, content: m.content ?? '' }));
 
-  // Build messages array
+  // Build messages array — context goes in user message, history is clean text only
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
-    ...history.slice(-10),
+    ...history.slice(-8),
     { role: 'user', content: `[Context: ${context}]\n\n${input}` },
   ];
 
@@ -679,13 +681,16 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
     }
 
     // Text response — this is the final answer
-    const finalText = stripThinkTags(message.content || 'Done.');
+    const rawContent = message.content || '';
+    const finalText = stripThinkTags(rawContent);
+    api.logger.info(`Raw content: ${rawContent.slice(0, 200)}`);
+    api.logger.info(`Final text: ${finalText.slice(0, 200)}`);
 
-    // Save conversation history (without system prompt)
-    const historyToSave = messages.slice(1); // skip system prompt
-    historyToSave.push({ role: 'assistant', content: finalText });
-    // Keep last 12 entries for richer multi-turn context
-    await api.storage.set('conversation', historyToSave.slice(-12));
+    // Save only clean user/assistant text pairs to history
+    const prevHistory = history.slice(-8);
+    prevHistory.push({ role: 'user', content: input });
+    prevHistory.push({ role: 'assistant', content: finalText });
+    await api.storage.set('conversation', prevHistory.slice(-10));
 
     return finalText;
   }
@@ -705,6 +710,9 @@ const plugin: TardisPlugin = {
   async onActivate(api: PluginAPI) {
     const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
     const model = api.config.get<string>('model') || 'tardis-assistant';
+
+    // Clear stale conversation history on startup
+    await api.storage.set('conversation', []);
 
     // Check Ollama connectivity and model availability
     try {
@@ -745,8 +753,17 @@ const plugin: TardisPlugin = {
             '- "I\'m starting work on the docs"\n' +
             '- "Reschedule the meeting to Friday"\n' +
             '- "What am I working on?"\n' +
-            '- "Remind me to take a break in 25 minutes"'
+            '- "Remind me to take a break in 25 minutes"\n' +
+            '- "/new" to start a fresh conversation'
         );
+        return;
+      }
+
+      // Handle /new command inline — typing "/new" or "new conversation" resets history
+      const lower = input.toLowerCase().trim();
+      if (lower === '/new' || lower === 'new' || lower === 'new conversation' || lower === 'reset') {
+        await api.storage.set('conversation', []);
+        await api.notifications.send('Fresh start. What can I do for you, boss?');
         return;
       }
 
@@ -780,6 +797,11 @@ const plugin: TardisPlugin = {
 
       await api.config.set(key!, value);
       await api.notifications.send(`Set ${key} = ${value}`);
+    },
+
+    async 'new'(_args: string[], api: PluginAPI) {
+      await api.storage.set('conversation', []);
+      await api.notifications.send('Fresh start. What can I do for you, boss?');
     },
 
     async clear(_args: string[], api: PluginAPI) {

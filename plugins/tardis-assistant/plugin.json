@@ -29,6 +29,10 @@
       "description": "View or set config (keys: ollamaUrl, model)"
     },
     {
+      "name": "new",
+      "description": "Start a fresh conversation"
+    },
+    {
       "name": "clear",
       "description": "Clear conversation history"
     }
