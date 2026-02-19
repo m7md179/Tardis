@@ -316,8 +316,7 @@ RULES:
 - After using a tool, ALWAYS describe what you did in a natural sentence. NEVER just say "Done."
 - For greetings, be warm and mention his current tasks or status.
 - To mark ALL tasks done, use complete_all_tasks (one call, not multiple complete_task calls).
-${otherPlugins.length > 0 ? `\nPLUGINS (via run_plugin_command):\n${otherPlugins.map((p) => `- ${p.name}: ${p.commands.map((c) => c.name).join(', ')}`).join('\n')}` : ''}
-/no_think`;
+${otherPlugins.length > 0 ? `\nPLUGINS (via run_plugin_command):\n${otherPlugins.map((p) => `- ${p.name}: ${p.commands.map((c) => c.name).join(', ')}`).join('\n')}` : ''}`;
 }
 
 // --- Context Builder ---
@@ -696,8 +695,10 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
     api.logger.info(`Raw content: ${rawContent.slice(0, 200)}`);
     api.logger.info(`Final text: ${finalText.slice(0, 200)}`);
 
-    // If model just said "Done." after tool calls, build a summary from the tool results
-    const isDone = !finalText || finalText.toLowerCase().replace(/[.!]/, '') === 'done';
+    // Detect useless "Done." responses
+    const isDone = !finalText || /^done[.!]?$/i.test(finalText.trim());
+
+    // If "Done." after tool calls — build summary from tool results
     if (isDone && toolResults.length > 0) {
       const summaries = toolResults.map((r) => {
         if (r.name === 'complete_task') return `Completed "${r.result?.content || 'task'}"`;
@@ -714,6 +715,40 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
       }).filter(Boolean);
       if (summaries.length > 0) {
         finalText = summaries.join('. ') + '.';
+      }
+    }
+
+    // If "Done." with NO tool calls — the model is confused. Retry once WITHOUT tools
+    // (tools bloat the prompt and can make small models default to "Done.")
+    if (isDone && toolResults.length === 0) {
+      api.logger.warn(`Model said "${finalText}" with no tools — retrying without tools`);
+      const retryBody = {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `[Context: ${context}]\n\n${input}` },
+        ],
+        stream: false,
+        temperature: 0.7,
+        max_tokens: 400,
+      };
+      try {
+        const retryRes = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(retryBody),
+        });
+        if (retryRes.ok) {
+          const retryData = (await retryRes.json()) as any;
+          const retryContent = retryData.choices?.[0]?.message?.content || '';
+          const retryText = stripThinkTags(retryContent);
+          if (retryText && !/^done[.!]?$/i.test(retryText.trim())) {
+            finalText = retryText;
+            api.logger.info(`Retry succeeded: ${finalText.slice(0, 200)}`);
+          }
+        }
+      } catch (retryErr) {
+        api.logger.warn('Retry without tools also failed');
       }
     }
 
