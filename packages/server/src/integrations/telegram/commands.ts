@@ -188,13 +188,13 @@ export function registerCommands(bot: Telegraf, config: ServerConfig, pluginMana
         // but no structured flags (due:, [brackets], p:)
         if (hasNaturalLanguageDate(args) && !hasStructuredFlags(args)) {
           if (pluginManager) {
-            const gemini = pluginManager.getPlugin('gemini-assistant');
-            if (gemini) {
+            const assistant = pluginManager.getPlugin('tardis-assistant');
+            if (assistant) {
               try {
-                await pluginManager.runCommand('gemini-assistant', 'ask', [ctx.message.text]);
+                await pluginManager.runCommand('tardis-assistant', 'ask', [ctx.message.text]);
                 return;
               } catch (e) {
-                console.error('[Gemini add fallback error]', e);
+                console.error('[Assistant add fallback error]', e);
               }
             }
           }
@@ -214,15 +214,15 @@ export function registerCommands(bot: Telegraf, config: ServerConfig, pluginMana
         return handleHelp(ctx);
 
       default:
-        // Fallback to Gemini assistant for natural language processing
+        // Fallback to TARDIS assistant for natural language processing
         if (pluginManager) {
-          const gemini = pluginManager.getPlugin('gemini-assistant');
-          if (gemini) {
+          const assistant = pluginManager.getPlugin('tardis-assistant');
+          if (assistant) {
             try {
-              await pluginManager.runCommand('gemini-assistant', 'ask', [ctx.message.text]);
+              await pluginManager.runCommand('tardis-assistant', 'ask', [ctx.message.text]);
               return;
             } catch (e) {
-              console.error('[Gemini fallback error]', e);
+              console.error('[Assistant fallback error]', e);
             }
           }
         }
