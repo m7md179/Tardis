@@ -552,7 +552,7 @@ let toolCallCounter = 0;
 
 async function processMessage(input: string, api: PluginAPI): Promise<string> {
   const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
-  const model = api.config.get<string>('model') || 'tardis-assistant';
+  const model = api.config.get<string>('model') || 'qwen3:4b';
   const systemPrompt = buildSystemPrompt(api);
   const context = await buildContext(api);
 
@@ -581,6 +581,9 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
       tools,
       tool_choice: 'auto',
       stream: false,
+      temperature: 0.6,
+      top_p: 0.9,
+      max_tokens: 300,
     };
 
     // 60s timeout — local models can be slow on first load
@@ -709,7 +712,7 @@ const plugin: TardisPlugin = {
 
   async onActivate(api: PluginAPI) {
     const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
-    const model = api.config.get<string>('model') || 'tardis-assistant';
+    const model = api.config.get<string>('model') || 'qwen3:4b';
 
     // Clear stale conversation history on startup
     await api.storage.set('conversation', []);
@@ -782,7 +785,7 @@ const plugin: TardisPlugin = {
         const msg =
           'TARDIS Assistant Config:\n\n' +
           `Ollama URL: ${cfg.ollamaUrl || 'http://localhost:11434'}\n` +
-          `Model: ${cfg.model || 'tardis-assistant'}`;
+          `Model: ${cfg.model || 'qwen3:4b'}`;
         await api.notifications.send(msg);
         return;
       }
