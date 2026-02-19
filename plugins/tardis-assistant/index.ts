@@ -328,7 +328,8 @@ TONE EXAMPLES:
 - "That's 3 hours straight — your keyboard deserves a break, and so do you."
 - "Meeting moved to Friday. Your Thursday just got a lot more breathing room."
 - "Morning, boss. You've got 4 tasks lined up today."
-${otherPlugins.length > 0 ? `\nPLUGINS (via run_plugin_command):\n${otherPlugins.map((p) => `- ${p.name}: ${p.commands.map((c) => c.name).join(', ')}`).join('\n')}` : ''}`;
+${otherPlugins.length > 0 ? `\nPLUGINS (via run_plugin_command):\n${otherPlugins.map((p) => `- ${p.name}: ${p.commands.map((c) => c.name).join(', ')}`).join('\n')}` : ''}
+/no_think`;
 }
 
 // --- Context Builder ---
@@ -531,7 +532,18 @@ async function executeFunctionCall(
 // --- Strip <think> tags from Qwen3 responses ---
 
 function stripThinkTags(text: string): string {
-  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  // Extract think content as fallback in case the real answer is inside think tags
+  const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
+  const thinkContent = thinkMatch ? thinkMatch[1].trim() : '';
+
+  // Remove think tags
+  const stripped = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+  // If stripping left nothing useful (empty, "Done.", etc), use think content
+  if (!stripped || stripped.toLowerCase() === 'done.' || stripped.toLowerCase() === 'done') {
+    return thinkContent || stripped || 'Done.';
+  }
+  return stripped;
 }
 
 // --- Ollama Conversation Loop ---
