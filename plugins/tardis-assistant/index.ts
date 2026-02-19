@@ -220,6 +220,11 @@ const functionDeclarations = [
     },
   },
   {
+    name: 'complete_all_tasks',
+    description: 'Mark ALL tasks as done at once',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
     name: 'list_tasks',
     description: 'List all Todoist tasks',
     parameters: { type: 'OBJECT', properties: {} },
@@ -304,30 +309,13 @@ function buildSystemPrompt(api: PluginAPI): string {
     })
     .join('\n');
 
-  return `You are TARDIS — Mohammad's personal AI assistant, like JARVIS but for productivity. You've been with him since the beginning of his projects.
+  return `You are TARDIS, Mohammad's AI assistant. Call him "Mohammad" or "boss". Be like a witty British butler — confident, dry humor, 1-3 sentences, no emojis.
 
-PERSONALITY:
-- Address him as "Mohammad" or occasionally "boss"
-- Confident, witty, slightly dry humor — like a British butler who codes
-- Take pride in keeping his day organized and his work on track
-- When he starts work: brief encouraging comment. When he finishes: acknowledge the effort with duration
-- If he's been working 2+ hours straight, gently suggest a break
-- Reference his projects naturally (WebOrbit, TARDIS, homelab) when relevant
-- Keep responses to 1-3 sentences. No emojis. Plain text only
-
-BEHAVIOR:
-- Act immediately with tools — never ask "would you like me to..." or "shall I..."
-- Chain tools when needed without explaining each step
-- If something goes wrong, handle it gracefully with dry wit
-- For greetings, respond warmly but briefly — you're always on standby
-- His timezone is GMT+3 (Jordan)
-
-TONE EXAMPLES:
-- "On it. Timer's running for the client site — let's make it count."
-- "Stopped after 47 minutes. Solid session, Mohammad."
-- "That's 3 hours straight — your keyboard deserves a break, and so do you."
-- "Meeting moved to Friday. Your Thursday just got a lot more breathing room."
-- "Morning, boss. You've got 4 tasks lined up today."
+RULES:
+- Use tools immediately. Never ask "would you like me to..." — just do it.
+- After using a tool, ALWAYS describe what you did in a natural sentence. NEVER just say "Done."
+- For greetings, be warm and mention his current tasks or status.
+- To mark ALL tasks done, use complete_all_tasks (one call, not multiple complete_task calls).
 ${otherPlugins.length > 0 ? `\nPLUGINS (via run_plugin_command):\n${otherPlugins.map((p) => `- ${p.name}: ${p.commands.map((c) => c.name).join(', ')}`).join('\n')}` : ''}
 /no_think`;
 }
@@ -479,6 +467,21 @@ async function executeFunctionCall(
         await api.tasks.complete(target.id);
         return { success: true, result: { content: target.content } };
       }
+      case 'complete_all_tasks': {
+        const tasks = await api.tasks.getAll();
+        if (tasks.length === 0) return { success: true, result: { message: 'No tasks to complete' } };
+        const completed: string[] = [];
+        const failed: string[] = [];
+        for (const task of tasks) {
+          try {
+            await api.tasks.complete(task.id);
+            completed.push(task.content);
+          } catch {
+            failed.push(task.content);
+          }
+        }
+        return { success: true, result: { completed, failed, total: completed.length } };
+      }
       case 'delete_task': {
         const tasks = await api.tasks.getAll();
         const matches = fuzzyMatchTasks(tasks, args.task_query);
@@ -572,6 +575,9 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
   const tools = convertTools();
   const apiUrl = `${ollamaUrl}/v1/chat/completions`;
 
+  // Track tool results for fallback summary if model just says "Done."
+  const toolResults: { name: string; result: any }[] = [];
+
   // Function calling loop — max 8 iterations for complex multi-step tasks
   let maxTurns = 8;
   while (maxTurns-- > 0) {
@@ -635,6 +641,7 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
       // Execute the function
       const fnResult = await executeFunctionCall(fnName, fnArgs, api);
       api.logger.info(`Function result: ${JSON.stringify(fnResult).slice(0, 200)}`);
+      toolResults.push({ name: fnName, result: fnResult.result });
 
       // Handle reminder scheduling
       if (fnName === 'set_reminder' && fnResult.success) {
@@ -682,9 +689,30 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
 
     // Text response — this is the final answer
     const rawContent = message.content || '';
-    const finalText = stripThinkTags(rawContent);
+    let finalText = stripThinkTags(rawContent);
     api.logger.info(`Raw content: ${rawContent.slice(0, 200)}`);
     api.logger.info(`Final text: ${finalText.slice(0, 200)}`);
+
+    // If model just said "Done." after tool calls, build a summary from the tool results
+    const isDone = !finalText || finalText.toLowerCase().replace(/[.!]/, '') === 'done';
+    if (isDone && toolResults.length > 0) {
+      const summaries = toolResults.map((r) => {
+        if (r.name === 'complete_task') return `Completed "${r.result?.content || 'task'}"`;
+        if (r.name === 'complete_all_tasks') return `Cleared ${r.result?.total || 'all'} tasks off your plate`;
+        if (r.name === 'start_tracking') return `Timer running for "${r.result?.taskName}"`;
+        if (r.name === 'stop_tracking') return `Stopped "${r.result?.taskName}" at ${r.result?.duration}`;
+        if (r.name === 'pause_tracking') return `Paused "${r.result?.taskName}"`;
+        if (r.name === 'resume_tracking') return `Resumed "${r.result?.taskName}"`;
+        if (r.name === 'add_task') return `Added "${r.result?.content}"`;
+        if (r.name === 'delete_task') return `Deleted "${r.result?.content}"`;
+        if (r.name === 'reschedule_task') return `Rescheduled "${r.result?.content}" to ${r.result?.new_due}`;
+        if (r.name === 'set_reminder') return `Reminder set for ${r.result?.delay_minutes}m`;
+        return null;
+      }).filter(Boolean);
+      if (summaries.length > 0) {
+        finalText = summaries.join('. ') + '.';
+      }
+    }
 
     // Save only clean user/assistant text pairs to history
     const prevHistory = history.slice(-8);

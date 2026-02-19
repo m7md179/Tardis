@@ -1,6 +1,6 @@
-FROM qwen3:1.7b
+FROM qwen3:4b
 
 PARAMETER temperature 0.6
 PARAMETER top_p 0.9
-PARAMETER num_ctx 4096
-PARAMETER num_predict 300
+PARAMETER num_ctx 6144
+PARAMETER num_predict 400
