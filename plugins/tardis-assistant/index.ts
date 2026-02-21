@@ -225,6 +225,11 @@ const functionDeclarations = [
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
+    name: 'delete_all_tasks',
+    description: 'Delete ALL tasks at once',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+  {
     name: 'list_tasks',
     description: 'List all Todoist tasks',
     parameters: { type: 'OBJECT', properties: {} },
@@ -309,14 +314,10 @@ function buildSystemPrompt(api: PluginAPI): string {
     })
     .join('\n');
 
-  return `You are TARDIS, Mohammad's AI assistant. Call him "Mohammad" or "boss". Be like a witty British butler — confident, dry humor, 1-3 sentences, no emojis.
-
-RULES:
-- Use tools immediately. Never ask "would you like me to..." — just do it.
-- After using a tool, ALWAYS describe what you did in a natural sentence. NEVER just say "Done."
-- For greetings, be warm and mention his current tasks or status.
-- To mark ALL tasks done, use complete_all_tasks (one call, not multiple complete_task calls).
-${otherPlugins.length > 0 ? `\nPLUGINS (via run_plugin_command):\n${otherPlugins.map((p) => `- ${p.name}: ${p.commands.map((c) => c.name).join(', ')}`).join('\n')}` : ''}`;
+  return `You are TARDIS, Mohammad's personal assistant. He calls you TARDIS. Call him "Mohammad" or "boss".
+Personality: witty British butler — confident, dry humor, 1-3 sentences. No emojis ever.
+Never ask for confirmation. Never say "Let me know" or "Would you like me to". Just act and report what you did.
+${otherPlugins.length > 0 ? `\nOther plugins (via run_plugin_command): ${otherPlugins.map((p) => `${p.name}`).join(', ')}` : ''}`;
 }
 
 // --- Context Builder ---
@@ -481,6 +482,21 @@ async function executeFunctionCall(
         }
         return { success: true, result: { completed, failed, total: completed.length } };
       }
+      case 'delete_all_tasks': {
+        const tasks = await api.tasks.getAll();
+        if (tasks.length === 0) return { success: true, result: { message: 'No tasks to delete' } };
+        const deleted: string[] = [];
+        const failed: string[] = [];
+        for (const task of tasks) {
+          try {
+            await api.tasks.delete(task.id);
+            deleted.push(task.content);
+          } catch {
+            failed.push(task.content);
+          }
+        }
+        return { success: true, result: { deleted, failed, total: deleted.length } };
+      }
       case 'delete_task': {
         const tasks = await api.tasks.getAll();
         const matches = fuzzyMatchTasks(tasks, args.task_query);
@@ -548,13 +564,71 @@ function stripThinkTags(text: string): string {
   return stripped;
 }
 
+// --- Intent Detection (fallback when model doesn't call tools) ---
+
+interface DetectedIntent {
+  action: string;
+  args: Record<string, any>;
+}
+
+function detectIntent(input: string, modelResponse: string): DetectedIntent | null {
+  const lower = input.toLowerCase();
+
+  // Delete all / remove all tasks
+  if (lower.match(/\b(delete|remove|clear)\b.*\b(all|every|them)\b.*\btask/i) ||
+      (lower.match(/\b(delete|remove)\b.*\b(them|all)\b/i) && !lower.match(/\btimer|track|session/i))) {
+    return { action: 'delete_all_tasks', args: {} };
+  }
+
+  // Complete all / mark all done
+  if (lower.match(/\b(complete|finish|done|mark)\b.*\b(all|every|them)\b/i)) {
+    return { action: 'complete_all_tasks', args: {} };
+  }
+
+  // Start tracking
+  const startMatch = lower.match(/\b(?:start|begin|track)\b.*?(?:on|for|tracking)?\s+["""]?(.+?)["""]?\s*$/i) ||
+                     lower.match(/\b(?:working on|starting)\s+["""]?(.+?)["""]?\s*$/i);
+  if (startMatch && !lower.match(/\bstop|pause|end\b/)) {
+    return { action: 'start_tracking', args: { task_name: startMatch[1].trim() } };
+  }
+
+  // Stop tracking
+  if (lower.match(/\b(stop|end|finish)\b.*\b(track|timer|work|session)/i) || lower === 'stop') {
+    return { action: 'stop_tracking', args: {} };
+  }
+
+  // Pause tracking
+  if (lower.match(/\bpause\b/i)) {
+    return { action: 'pause_tracking', args: {} };
+  }
+
+  // Resume tracking
+  if (lower.match(/\bresume\b/i)) {
+    return { action: 'resume_tracking', args: {} };
+  }
+
+  // Delete specific task
+  const deleteMatch = lower.match(/\b(?:delete|remove)\b\s+["""]?(.+?)["""]?\s*(?:task)?\s*$/i);
+  if (deleteMatch) {
+    return { action: 'delete_task', args: { task_query: deleteMatch[1].trim() } };
+  }
+
+  // Complete specific task
+  const completeMatch = lower.match(/\b(?:complete|finish|done|mark)\b\s+["""]?(.+?)["""]?\s*(?:as\s+done|task)?\s*$/i);
+  if (completeMatch) {
+    return { action: 'complete_task', args: { task_query: completeMatch[1].trim() } };
+  }
+
+  return null;
+}
+
 // --- Ollama Conversation Loop ---
 
 let toolCallCounter = 0;
 
 async function processMessage(input: string, api: PluginAPI): Promise<string> {
   const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
-  const model = api.config.get<string>('model') || 'qwen3:4b';
+  const model = api.config.get<string>('model') || 'qwen3:1.7b';
   const systemPrompt = buildSystemPrompt(api);
   const context = await buildContext(api);
 
@@ -695,14 +769,12 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
     api.logger.info(`Raw content: ${rawContent.slice(0, 200)}`);
     api.logger.info(`Final text: ${finalText.slice(0, 200)}`);
 
-    // Detect useless "Done." responses
-    const isDone = !finalText || /^done[.!]?$/i.test(finalText.trim());
-
-    // If "Done." after tool calls — build summary from tool results
-    if (isDone && toolResults.length > 0) {
-      const summaries = toolResults.map((r) => {
+    // Build tool result summary helper
+    const buildSummary = (results: { name: string; result: any }[]): string => {
+      const summaries = results.map((r) => {
         if (r.name === 'complete_task') return `Completed "${r.result?.content || 'task'}"`;
         if (r.name === 'complete_all_tasks') return `Cleared ${r.result?.total || 'all'} tasks off your plate`;
+        if (r.name === 'delete_all_tasks') return `Deleted ${r.result?.total || 'all'} tasks — clean slate, boss`;
         if (r.name === 'start_tracking') return `Timer running for "${r.result?.taskName}"`;
         if (r.name === 'stop_tracking') return `Stopped "${r.result?.taskName}" at ${r.result?.duration}`;
         if (r.name === 'pause_tracking') return `Paused "${r.result?.taskName}"`;
@@ -713,44 +785,76 @@ async function processMessage(input: string, api: PluginAPI): Promise<string> {
         if (r.name === 'set_reminder') return `Reminder set for ${r.result?.delay_minutes}m`;
         return null;
       }).filter(Boolean);
-      if (summaries.length > 0) {
-        finalText = summaries.join('. ') + '.';
+      return summaries.length > 0 ? summaries.join('. ') + '.' : '';
+    };
+
+    // Detect useless "Done." or model describing actions without calling tools
+    const isDone = !finalText || /^done[.!]?$/i.test(finalText.trim());
+    const modelDescribedAction = !isDone && toolResults.length === 0 &&
+      /\b(I'll|I will|Let me|deleting|completing|removing|starting|stopping)\b/i.test(finalText) &&
+      /\b(task|timer|track|delete|complete|remove)\b/i.test(finalText);
+
+    // Case 1: "Done." after tool calls — use tool result summary
+    if (isDone && toolResults.length > 0) {
+      const summary = buildSummary(toolResults);
+      if (summary) finalText = summary;
+    }
+
+    // Case 2: Model didn't call tools but user wanted an action — detect intent & execute
+    if ((isDone || modelDescribedAction) && toolResults.length === 0) {
+      const intent = detectIntent(input, finalText);
+      if (intent) {
+        api.logger.info(`Intent detected: ${intent.action}(${JSON.stringify(intent.args)})`);
+        const result = await executeFunctionCall(intent.action, intent.args, api);
+        toolResults.push({ name: intent.action, result: result.result });
+
+        // Handle reminder scheduling for detected intents
+        if (intent.action === 'set_reminder' && result.success) {
+          const timerId = `notify-${Date.now()}`;
+          const timer = setTimeout(async () => {
+            activeTimers.delete(timerId);
+            try { await api.notifications.send(`Reminder: ${intent.args.message}`); } catch {}
+          }, (intent.args.delay_minutes || 1) * 60 * 1000);
+          activeTimers.set(timerId, timer);
+        }
+
+        const summary = buildSummary(toolResults);
+        if (summary) finalText = summary;
+      } else if (isDone) {
+        // No intent detected and model said "Done." — retry without tools for conversational response
+        api.logger.warn(`Model said "${finalText}" with no tools — retrying without tools`);
+        try {
+          const retryRes = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                ...history.slice(-4),
+                { role: 'user', content: `[Context: ${context}]\n\n${input}` },
+              ],
+              stream: false,
+              temperature: 0.7,
+              max_tokens: 400,
+            }),
+          });
+          if (retryRes.ok) {
+            const retryData = (await retryRes.json()) as any;
+            const retryText = stripThinkTags(retryData.choices?.[0]?.message?.content || '');
+            if (retryText && !/^done[.!]?$/i.test(retryText.trim())) {
+              finalText = retryText;
+              api.logger.info(`Retry succeeded: ${finalText.slice(0, 200)}`);
+            }
+          }
+        } catch {
+          api.logger.warn('Retry without tools also failed');
+        }
       }
     }
 
-    // If "Done." with NO tool calls — the model is confused. Retry once WITHOUT tools
-    // (tools bloat the prompt and can make small models default to "Done.")
-    if (isDone && toolResults.length === 0) {
-      api.logger.warn(`Model said "${finalText}" with no tools — retrying without tools`);
-      const retryBody = {
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `[Context: ${context}]\n\n${input}` },
-        ],
-        stream: false,
-        temperature: 0.7,
-        max_tokens: 400,
-      };
-      try {
-        const retryRes = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(retryBody),
-        });
-        if (retryRes.ok) {
-          const retryData = (await retryRes.json()) as any;
-          const retryContent = retryData.choices?.[0]?.message?.content || '';
-          const retryText = stripThinkTags(retryContent);
-          if (retryText && !/^done[.!]?$/i.test(retryText.trim())) {
-            finalText = retryText;
-            api.logger.info(`Retry succeeded: ${finalText.slice(0, 200)}`);
-          }
-        }
-      } catch (retryErr) {
-        api.logger.warn('Retry without tools also failed');
-      }
-    }
+    // Strip emojis from response (small models ignore "no emojis" instruction)
+    finalText = finalText.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu, '').trim();
 
     // Save only clean user/assistant text pairs to history
     const prevHistory = history.slice(-8);
@@ -775,7 +879,7 @@ const plugin: TardisPlugin = {
 
   async onActivate(api: PluginAPI) {
     const ollamaUrl = api.config.get<string>('ollamaUrl') || 'http://localhost:11434';
-    const model = api.config.get<string>('model') || 'qwen3:4b';
+    const model = api.config.get<string>('model') || 'qwen3:1.7b';
 
     // Clear stale conversation history on startup
     await api.storage.set('conversation', []);
@@ -848,7 +952,7 @@ const plugin: TardisPlugin = {
         const msg =
           'TARDIS Assistant Config:\n\n' +
           `Ollama URL: ${cfg.ollamaUrl || 'http://localhost:11434'}\n` +
-          `Model: ${cfg.model || 'qwen3:4b'}`;
+          `Model: ${cfg.model || 'qwen3:1.7b'}`;
         await api.notifications.send(msg);
         return;
       }

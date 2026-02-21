@@ -39,7 +39,7 @@
   ],
   "config": {
     "enabled": true,
-    "model": "qwen3:4b",
+    "model": "qwen3:1.7b",
     "ollamaUrl": "http://localhost:11434"
   }
 }
