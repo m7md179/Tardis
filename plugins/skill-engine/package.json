@@ -1,8 +1,0 @@
-{
-  "name": "tardis-plugin-skill-engine",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "drizzle-orm": "^0.38.0"
-  }
-}

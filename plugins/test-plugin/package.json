@@ -1,0 +1,7 @@
+{
+  "name": "@tardis-plugin/test-plugin",
+  "version": "1.0.0",
+  "description": "TARDIS test plugin for development",
+  "type": "module",
+  "private": true
+}

@@ -1,7 +1,7 @@
 {
-  "name": "@tardis/server",
+  "name": "@tardis/core",
   "version": "2.0.0",
-  "description": "TARDIS v2 Server — HTTP server, Telegram bot, Web UI API",
+  "description": "TARDIS v2 core — AI engine, plugin system, memory, events",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -12,8 +12,6 @@
     }
   },
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
@@ -22,11 +20,8 @@
     "clean": "rm -rf dist coverage"
   },
   "dependencies": {
-    "@tardis/core": "workspace:*",
-    "@tardis/db": "workspace:*",
     "@tardis/shared": "workspace:*",
-    "hono": "^4.0.0",
-    "telegraf": "^4.16.3",
+    "@tardis/db": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {

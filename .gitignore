@@ -1,33 +1,18 @@
-# Binaries
-tardis
-tardis-go
-tardis-*
-!plugins/tardis-assistant/
-dist/
-
 # Dependencies
 node_modules/
 .pnp
 .pnp.js
 
-# Testing
-coverage/
-.test-*
-*.test.local
-
-# Build
+# Build outputs
+dist/
+build/
 *.tsbuildinfo
+
+# Turbo cache
 .turbo/
 
-# Go (legacy)
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-go.work
+# Testing
+coverage/
 
 # IDE
 .idea/
@@ -40,33 +25,23 @@ go.work
 .DS_Store
 Thumbs.db
 
-# Local storage (user data)
-.tardis/
-
-# Credentials and secrets
-credentials.json
-token.json
-sheets_config.json
+# Secrets and credentials
 *.env
 *.env.local
+.env.*
+credentials.json
+token.json
+config.json
 
-# Migration work-in-progress
-migration-chunks/
+# Runtime data (user data dir)
+data/
+*.db
+*.db-shm
+*.db-wal
+migrations/
+
+# Logs
+*.log
 
 # Temporary files
-*.log
-.claude/
-
-# Old Go files (migrated to TypeScript)
-cmd/
-internal/
-main.go
-go.mod
-go.sum
-README_GO.md
-
-# Temporary documentation
-MIGRATION-COMPLETE.md
-TEST-*.md
-phase1.md
-QUICK-START.md
+*.tmp
