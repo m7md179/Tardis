@@ -119,14 +119,12 @@ describe('PermissionGuard', () => {
 
   it('plugin without sessions:write fails guard for sessions:write', () => {
     const guard = new PermissionGuard('read-only-session-plugin', ['sessions:read']);
-    expect(() => guard.assert('sessions:write')).toThrow(PermissionDeniedError);
-    const err = (() => {
-      try {
-        guard.assert('sessions:write');
-      } catch (e) {
-        return e;
-      }
-    })();
+    let err: unknown;
+    try {
+      guard.assert('sessions:write');
+    } catch (e) {
+      err = e;
+    }
     expect(err).toBeInstanceOf(PermissionDeniedError);
     expect((err as PermissionDeniedError).pluginName).toBe('read-only-session-plugin');
     expect((err as PermissionDeniedError).permission).toBe('sessions:write');

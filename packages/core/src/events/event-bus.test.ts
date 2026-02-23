@@ -186,9 +186,15 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const results: unknown[] = [];
 
-    bus.on('broadcast', (data) => results.push({ sub: 'A', data }));
-    bus.on('broadcast', (data) => results.push({ sub: 'B', data }));
-    bus.on('broadcast', (data) => results.push({ sub: 'C', data }));
+    bus.on('broadcast', (data) => {
+      results.push({ sub: 'A', data });
+    });
+    bus.on('broadcast', (data) => {
+      results.push({ sub: 'B', data });
+    });
+    bus.on('broadcast', (data) => {
+      results.push({ sub: 'C', data });
+    });
 
     await bus.emit('broadcast', 'hello');
 
