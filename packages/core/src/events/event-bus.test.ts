@@ -162,4 +162,37 @@ describe('EventBus', () => {
     expect(received).not.toBeNull();
     expect(received!).toEqual({ userId: '42', action: 'login' });
   });
+
+  it('emitting to an event with no subscribers does not throw', async () => {
+    const bus = new EventBus();
+    await expect(bus.emit('event:with:no:subscribers')).resolves.toBeUndefined();
+    await expect(bus.emit('event:with:no:subscribers', { data: 42 })).resolves.toBeUndefined();
+  });
+
+  it('subscriber receives correct data from emitted event', async () => {
+    const bus = new EventBus();
+    let received: unknown;
+
+    bus.on('plugin:loaded', (data) => {
+      received = data;
+    });
+
+    await bus.emit('plugin:loaded', { name: 'time-tracker', version: '1.0.0' });
+
+    expect(received).toEqual({ name: 'time-tracker', version: '1.0.0' });
+  });
+
+  it('multiple subscribers all receive the same event data', async () => {
+    const bus = new EventBus();
+    const results: unknown[] = [];
+
+    bus.on('broadcast', (data) => results.push({ sub: 'A', data }));
+    bus.on('broadcast', (data) => results.push({ sub: 'B', data }));
+    bus.on('broadcast', (data) => results.push({ sub: 'C', data }));
+
+    await bus.emit('broadcast', 'hello');
+
+    expect(results).toHaveLength(3);
+    expect(results.every((r) => (r as { data: unknown }).data === 'hello')).toBe(true);
+  });
 });

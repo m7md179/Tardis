@@ -6,11 +6,19 @@ import { PermissionDeniedError } from './permission-guard.js';
 import { createDb, migrate } from '@tardis/db';
 import type { SystemConfig } from '@tardis/shared';
 
-const TEST_DB_PATH = `/tmp/tardis-api-test-${randomUUID()}.db`;
+// ─── Test DB helpers ───
 
-function makeDb() {
-  migrate(TEST_DB_PATH);
-  return createDb(TEST_DB_PATH);
+/** Each test gets its own isolated DB to prevent cross-test pollution. */
+function makeTestDb() {
+  const path = `/tmp/tardis-api-test-${randomUUID()}.db`;
+  migrate(path);
+  const db = createDb(path);
+  return {
+    db,
+    cleanup() {
+      if (existsSync(path)) unlinkSync(path);
+    },
+  };
 }
 
 const MOCK_CONFIG: SystemConfig = {
@@ -27,13 +35,11 @@ const MOCK_CONFIG: SystemConfig = {
   proactive: { enabled: true },
 };
 
-function cleanup() {
-  if (existsSync(TEST_DB_PATH)) unlinkSync(TEST_DB_PATH);
-}
+// ─── Storage ───
 
-describe('PluginAPI.storage', () => {
-  it('can set and get a value with storage permissions', async () => {
-    const db = makeDb();
+describe('PluginAPI.storage: basic CRUD', () => {
+  it('set() and get() round-trip a value', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'test-plugin',
       permissions: ['storage:read', 'storage:write'],
@@ -47,8 +53,8 @@ describe('PluginAPI.storage', () => {
     cleanup();
   });
 
-  it('returns null for missing key', async () => {
-    const db = makeDb();
+  it('get() returns null for a key that does not exist', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'test-plugin',
       permissions: ['storage:read'],
@@ -56,13 +62,12 @@ describe('PluginAPI.storage', () => {
       config: MOCK_CONFIG,
     });
 
-    const val = await api.storage.get('nonexistent');
-    expect(val).toBeNull();
+    expect(await api.storage.get('nonexistent')).toBeNull();
     cleanup();
   });
 
-  it('overwrites existing value on set', async () => {
-    const db = makeDb();
+  it('set() overwrites an existing value', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'test-plugin',
       permissions: ['storage:read', 'storage:write'],
@@ -72,13 +77,12 @@ describe('PluginAPI.storage', () => {
 
     await api.storage.set('key', 'first');
     await api.storage.set('key', 'second');
-    const val = await api.storage.get<string>('key');
-    expect(val).toBe('second');
+    expect(await api.storage.get<string>('key')).toBe('second');
     cleanup();
   });
 
-  it('can delete a key', async () => {
-    const db = makeDb();
+  it('delete() removes a key so get() returns null', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'test-plugin',
       permissions: ['storage:read', 'storage:write'],
@@ -88,21 +92,14 @@ describe('PluginAPI.storage', () => {
 
     await api.storage.set('key', 'value');
     await api.storage.delete('key');
-    const val = await api.storage.get('key');
-    expect(val).toBeNull();
+    expect(await api.storage.get('key')).toBeNull();
     cleanup();
   });
 
-  it('lists keys for this plugin only', async () => {
-    const db = makeDb();
+  it('list() returns all keys for this plugin', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'test-plugin',
-      permissions: ['storage:read', 'storage:write'],
-      db,
-      config: MOCK_CONFIG,
-    });
-    const api2 = createPluginApi({
-      pluginName: 'other-plugin',
       permissions: ['storage:read', 'storage:write'],
       db,
       config: MOCK_CONFIG,
@@ -110,17 +107,14 @@ describe('PluginAPI.storage', () => {
 
     await api.storage.set('alpha', 1);
     await api.storage.set('beta', 2);
-    await api2.storage.set('gamma', 3); // different plugin
-
     const keys = await api.storage.list();
     expect(keys).toContain('alpha');
     expect(keys).toContain('beta');
-    expect(keys).not.toContain('gamma');
     cleanup();
   });
 
-  it('lists keys with prefix filter', async () => {
-    const db = makeDb();
+  it('list() filters by prefix', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'test-plugin',
       permissions: ['storage:read', 'storage:write'],
@@ -137,9 +131,107 @@ describe('PluginAPI.storage', () => {
     expect(sessionKeys.every((k) => k.startsWith('session:'))).toBe(true);
     cleanup();
   });
+});
 
-  it('throws PermissionDeniedError on storage:read without permission', async () => {
-    const db = makeDb();
+describe('PluginAPI.storage: namespace isolation', () => {
+  it('Plugin A cannot see Plugin B keys via list()', async () => {
+    const { db, cleanup } = makeTestDb();
+    const apiA = createPluginApi({
+      pluginName: 'plugin-a',
+      permissions: ['storage:read', 'storage:write'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const apiB = createPluginApi({
+      pluginName: 'plugin-b',
+      permissions: ['storage:read', 'storage:write'],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    await apiA.storage.set('alpha', 1);
+    await apiA.storage.set('beta', 2);
+    await apiB.storage.set('gamma', 3);
+
+    const keysA = await apiA.storage.list();
+    expect(keysA).toContain('alpha');
+    expect(keysA).toContain('beta');
+    expect(keysA).not.toContain('gamma');
+
+    const keysB = await apiB.storage.list();
+    expect(keysB).toContain('gamma');
+    expect(keysB).not.toContain('alpha');
+    cleanup();
+  });
+
+  it('Plugin A cannot read Plugin B key via get() — returns null', async () => {
+    const { db, cleanup } = makeTestDb();
+    const apiA = createPluginApi({
+      pluginName: 'plugin-a',
+      permissions: ['storage:read', 'storage:write'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const apiB = createPluginApi({
+      pluginName: 'plugin-b',
+      permissions: ['storage:read', 'storage:write'],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    // Plugin B sets a value under the same key name as plugin A will try to read
+    await apiB.storage.set('shared-key-name', 'secret-value');
+
+    // Plugin A reads same key name — should get null (different namespace)
+    const val = await apiA.storage.get('shared-key-name');
+    expect(val).toBeNull();
+    cleanup();
+  });
+});
+
+describe('PluginAPI.storage: permission enforcement', () => {
+  it('storage:read allows get() and list()', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'read-only-plugin',
+      permissions: ['storage:read'],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    await expect(api.storage.get('key')).resolves.toBeNull();
+    await expect(api.storage.list()).resolves.toEqual([]);
+    cleanup();
+  });
+
+  it('storage:read does NOT allow set()', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'read-only-plugin',
+      permissions: ['storage:read'],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    await expect(api.storage.set('key', 'val')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('storage:read does NOT allow delete()', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'read-only-plugin',
+      permissions: ['storage:read'],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    await expect(api.storage.delete('key')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('no permissions throws PermissionDeniedError on storage.get()', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'no-perm-plugin',
       permissions: [],
@@ -151,25 +243,27 @@ describe('PluginAPI.storage', () => {
     cleanup();
   });
 
-  it('throws PermissionDeniedError on storage:write without permission', async () => {
-    const db = makeDb();
+  it('no permissions throws PermissionDeniedError on storage.list()', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
-      pluginName: 'read-only-plugin',
-      permissions: ['storage:read'],
+      pluginName: 'no-perm-plugin',
+      permissions: [],
       db,
       config: MOCK_CONFIG,
     });
 
-    await expect(api.storage.set('key', 'val')).rejects.toThrow(PermissionDeniedError);
+    await expect(api.storage.list()).rejects.toThrow(PermissionDeniedError);
     cleanup();
   });
 });
 
+// ─── Logger ───
+
 describe('PluginAPI.logger', () => {
-  it('logger methods are always available (no permission required)', () => {
-    const db = makeDb();
+  it('all logger methods are available with no permissions', () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
-      pluginName: 'test-plugin',
+      pluginName: 'no-perm-plugin',
       permissions: [],
       db,
       config: MOCK_CONFIG,
@@ -181,18 +275,64 @@ describe('PluginAPI.logger', () => {
     expect(() => api.logger.debug('test debug')).not.toThrow();
     cleanup();
   });
+
+  it('logger methods accept optional data argument', () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'test-plugin',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    expect(() => api.logger.info('event fired', { userId: '123' })).not.toThrow();
+    expect(() => api.logger.error('something broke', new Error('oops'))).not.toThrow();
+    cleanup();
+  });
 });
 
+// ─── Config ───
+
+describe('PluginAPI.config', () => {
+  it('config.get() is available with no permissions and returns null (stub)', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'no-perm-plugin',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    expect(await api.config.get('any-key')).toBeNull();
+    cleanup();
+  });
+
+  it('config.set() is available with no permissions and does not throw (stub)', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'no-perm-plugin',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+    });
+
+    await expect(api.config.set('key', 'value')).resolves.toBeUndefined();
+    cleanup();
+  });
+});
+
+// ─── Events ───
+
 describe('PluginAPI.events', () => {
-  it('emits and receives events via the event emitter', async () => {
-    const db = makeDb();
+  it('events.emit() forwards the event to the event emitter', () => {
+    const { db, cleanup } = makeTestDb();
     const received: unknown[] = [];
 
     const eventEmitter = {
-      emit: (name: string, data?: unknown) => {
-        if (name === 'test:event') received.push(data);
+      emit: (_name: string, data?: unknown) => {
+        received.push(data);
       },
-      on: () => {},
+      on: (_name: string, _handler: (data: unknown) => void) => {},
     };
 
     const api = createPluginApi({
@@ -208,23 +348,61 @@ describe('PluginAPI.events', () => {
     expect(received[0]).toEqual({ value: 42 });
     cleanup();
   });
-});
 
-describe('PluginAPI stubs', () => {
-  it('notifications.send throws permission denied without notifications:send', async () => {
-    const db = makeDb();
+  it('events.on() registers a handler that receives emitted events', () => {
+    const { db, cleanup } = makeTestDb();
+
+    // A real in-memory event emitter to test full round-trip
+    const handlers = new Map<string, ((data: unknown) => void)[]>();
+    const eventEmitter = {
+      emit: (name: string, data?: unknown) => {
+        (handlers.get(name) ?? []).forEach((h) => h(data));
+      },
+      on: (name: string, handler: (data: unknown) => void) => {
+        const list = handlers.get(name) ?? [];
+        list.push(handler);
+        handlers.set(name, list);
+      },
+    };
+
     const api = createPluginApi({
-      pluginName: 'silent-plugin',
+      pluginName: 'test-plugin',
       permissions: [],
       db,
       config: MOCK_CONFIG,
+      eventEmitter,
     });
-    await expect(api.notifications.send('hello')).rejects.toThrow(PermissionDeniedError);
+
+    const received: unknown[] = [];
+    api.events.on('task:completed', (data) => received.push(data));
+
+    api.events.emit('task:completed', { taskId: 'abc', duration: 60 });
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual({ taskId: 'abc', duration: 60 });
     cleanup();
   });
 
-  it('sessions.getActive throws permission denied without sessions:read', async () => {
-    const db = makeDb();
+  it('events work without a registered eventEmitter (no-op, no crash)', () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'test-plugin',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+      // no eventEmitter
+    });
+
+    expect(() => api.events.emit('some:event', { x: 1 })).not.toThrow();
+    expect(() => api.events.on('some:event', () => {})).not.toThrow();
+    cleanup();
+  });
+});
+
+// ─── Sessions (stub) ───
+
+describe('PluginAPI.sessions: permission enforcement', () => {
+  it('sessions.getActive() throws PermissionDeniedError without sessions:read', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'no-session-plugin',
       permissions: [],
@@ -235,8 +413,8 @@ describe('PluginAPI stubs', () => {
     cleanup();
   });
 
-  it('sessions.start throws permission denied without sessions:write', async () => {
-    const db = makeDb();
+  it('sessions.start() throws PermissionDeniedError without sessions:write', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'no-session-plugin',
       permissions: ['sessions:read'],
@@ -247,20 +425,174 @@ describe('PluginAPI stubs', () => {
     cleanup();
   });
 
-  it('memory.get throws permission denied without memory:read', async () => {
-    const db = makeDb();
+  it('sessions.stop() throws PermissionDeniedError without sessions:write', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.sessions.stop('id')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('sessions.pause() throws PermissionDeniedError without sessions:write', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.sessions.pause('id')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('sessions.resume() throws PermissionDeniedError without sessions:write', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.sessions.resume('id')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('sessions.getHistory() throws PermissionDeniedError without sessions:read', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.sessions.getHistory()).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+});
+
+describe('PluginAPI.sessions: passes permission check then throws not-yet-implemented', () => {
+  it('sessions.start() with sessions:write throws "not yet implemented" (not permission denied)', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
-      pluginName: 'no-memory-plugin',
-      permissions: [],
+      pluginName: 'time-tracker',
+      permissions: ['sessions:write'],
       db,
       config: MOCK_CONFIG,
     });
+    const err = await api.sessions.start({ taskName: 'coding' }).catch((e) => e);
+    expect(err).not.toBeInstanceOf(PermissionDeniedError);
+    expect(err.message).toContain('not yet implemented');
+    cleanup();
+  });
+
+  it('sessions.getActive() with sessions:read throws "not yet implemented"', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'time-tracker',
+      permissions: ['sessions:read'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const err = await api.sessions.getActive().catch((e) => e);
+    expect(err).not.toBeInstanceOf(PermissionDeniedError);
+    expect(err.message).toContain('not yet implemented');
+    cleanup();
+  });
+
+  it('sessions.getHistory() with sessions:read throws "not yet implemented"', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'time-tracker',
+      permissions: ['sessions:read'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const err = await api.sessions.getHistory().catch((e) => e);
+    expect(err).not.toBeInstanceOf(PermissionDeniedError);
+    expect(err.message).toContain('not yet implemented');
+    cleanup();
+  });
+});
+
+// ─── Memory (stub) ───
+
+describe('PluginAPI.memory: permission enforcement', () => {
+  it('memory.get() throws PermissionDeniedError without memory:read', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
     await expect(api.memory.get('key')).rejects.toThrow(PermissionDeniedError);
     cleanup();
   });
 
-  it('http.get throws not-yet-implemented', async () => {
-    const db = makeDb();
+  it('memory.search() throws PermissionDeniedError without memory:read', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.memory.search('query')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('memory.set() throws PermissionDeniedError without memory:write', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.memory.set('key', 'value')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('memory.delete() throws PermissionDeniedError without memory:write', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.memory.delete('key')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('memory:read allows get() and search() but not set()', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'read-memory-plugin',
+      permissions: ['memory:read'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    // Permission passes; these throw "not yet implemented" (not PermissionDeniedError)
+    const getErr = await api.memory.get('key').catch((e) => e);
+    expect(getErr).not.toBeInstanceOf(PermissionDeniedError);
+    expect(getErr.message).toContain('not yet implemented');
+
+    await expect(api.memory.set('key', 'val')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('memory:write allows set() and delete() but not get()', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'write-memory-plugin',
+      permissions: ['memory:write'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const setErr = await api.memory.set('key', 'val').catch((e) => e);
+    expect(setErr).not.toBeInstanceOf(PermissionDeniedError);
+    expect(setErr.message).toContain('not yet implemented');
+
+    await expect(api.memory.get('key')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+});
+
+// ─── Notifications (stub) ───
+
+describe('PluginAPI.notifications: permission enforcement', () => {
+  it('notifications.send() throws PermissionDeniedError without notifications:send', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.notifications.send('hello')).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('notifications.send() with notifications:send throws "not yet implemented"', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'p',
+      permissions: ['notifications:send'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const err = await api.notifications.send('hello').catch((e) => e);
+    expect(err).not.toBeInstanceOf(PermissionDeniedError);
+    expect(err.message).toContain('not yet implemented');
+    cleanup();
+  });
+});
+
+// ─── HTTP (stub) ───
+
+describe('PluginAPI.http: stub behaviour', () => {
+  it('http.get() throws "not yet implemented" (no permission check)', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'http-plugin',
       permissions: ['http:external'],
@@ -271,8 +603,24 @@ describe('PluginAPI stubs', () => {
     cleanup();
   });
 
-  it('llm.generate throws not-yet-implemented', async () => {
-    const db = makeDb();
+  it('http.post() throws "not yet implemented"', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'http-plugin',
+      permissions: ['http:external'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    await expect(api.http.post('https://example.com', {})).rejects.toThrow('not yet implemented');
+    cleanup();
+  });
+});
+
+// ─── LLM (stub) ───
+
+describe('PluginAPI.llm: stub behaviour', () => {
+  it('llm.generate() throws "not yet implemented" with llm:use permission', async () => {
+    const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'llm-plugin',
       permissions: ['llm:use'],
@@ -280,6 +628,36 @@ describe('PluginAPI stubs', () => {
       config: MOCK_CONFIG,
     });
     await expect(api.llm.generate('hello')).rejects.toThrow('not yet implemented');
+    cleanup();
+  });
+});
+
+// ─── Plugins (stub) ───
+
+describe('PluginAPI.plugins: stub behaviour', () => {
+  it('plugins.list() throws "not yet implemented" with plugins:call permission', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'orchestrator',
+      permissions: ['plugins:call'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    await expect(api.plugins.list()).rejects.toThrow('not yet implemented');
+    cleanup();
+  });
+
+  it('plugins.call() throws "not yet implemented" with plugins:call permission', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'orchestrator',
+      permissions: ['plugins:call'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    await expect(api.plugins.call('other-plugin', 'some-tool', {})).rejects.toThrow(
+      'not yet implemented'
+    );
     cleanup();
   });
 });
