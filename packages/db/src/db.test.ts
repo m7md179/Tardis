@@ -3,7 +3,14 @@ import { unlinkSync, existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { createDb } from './connection.js';
 import { migrate } from './migrate.js';
-import { conversations, memories, thoughtTraces, pluginStorage, proactiveSettings, sessions } from './schema.js';
+import {
+  conversations,
+  memories,
+  thoughtTraces,
+  pluginStorage,
+  proactiveSettings,
+  sessions,
+} from './schema.js';
 import { eq } from 'drizzle-orm';
 
 const TEST_DB_PATH = `/tmp/tardis-test-${randomUUID()}.db`;
@@ -72,7 +79,10 @@ describe('memories', () => {
       updatedAt: now,
     });
 
-    await db.update(memories).set({ value: 'light', updatedAt: Date.now() }).where(eq(memories.id, id));
+    await db
+      .update(memories)
+      .set({ value: 'light', updatedAt: Date.now() })
+      .where(eq(memories.id, id));
 
     const rows = await db.select().from(memories).where(eq(memories.id, id));
     expect(rows[0]!.value).toBe('light');
@@ -87,7 +97,14 @@ describe('thoughtTraces', () => {
     await db.insert(thoughtTraces).values({
       id,
       userMessage: 'Start a timer for coding',
-      steps: JSON.stringify([{ type: 'tool_call', toolName: 'time-tracker.start', timestamp: Date.now(), content: 'Starting timer' }]),
+      steps: JSON.stringify([
+        {
+          type: 'tool_call',
+          toolName: 'time-tracker.start',
+          timestamp: Date.now(),
+          content: 'Starting timer',
+        },
+      ]),
       finalResponse: 'Timer started for coding.',
       totalDurationMs: 150,
       modelUsed: 'qwen3:4b',
@@ -180,12 +197,15 @@ describe('sessions', () => {
     });
 
     const endTime = Date.now();
-    await db.update(sessions).set({
-      status: 'completed',
-      endTime,
-      duration: 3600,
-      accumulatedTime: 3600,
-    }).where(eq(sessions.id, id));
+    await db
+      .update(sessions)
+      .set({
+        status: 'completed',
+        endTime,
+        duration: 3600,
+        accumulatedTime: 3600,
+      })
+      .where(eq(sessions.id, id));
 
     const rows = await db.select().from(sessions).where(eq(sessions.id, id));
     expect(rows[0]!.status).toBe('completed');

@@ -40,7 +40,7 @@ export function fuzzyFind<T>(
   needle: string,
   items: T[],
   toString: (item: T) => string,
-  threshold = 0.3,
+  threshold = 0.3
 ): FuzzyMatch<T>[] {
   return items
     .map((item) => ({ item, score: fuzzyScore(needle, toString(item)) }))
@@ -55,7 +55,7 @@ export function fuzzyFindOne<T>(
   needle: string,
   items: T[],
   toString: (item: T) => string,
-  threshold = 0.3,
+  threshold = 0.3
 ): T | null {
   const results = fuzzyFind(needle, items, toString, threshold);
   return results[0]?.item ?? null;

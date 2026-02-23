@@ -24,6 +24,7 @@ This guide explains how to set up and configure Todoist integration with TARDIS.
 3. Keep it secure - treat it like a password!
 
 **Example token format:**
+
 ```
 abc123def456...xyz789
 ```
@@ -39,6 +40,7 @@ tardis setup
 ```
 
 Follow the prompts:
+
 1. Paste your Todoist API token when asked
 2. TARDIS will validate the token
 3. Configuration is saved automatically
@@ -82,11 +84,13 @@ tardis tasks
 Add time windows to your Todoist task descriptions:
 
 **Format:**
+
 ```
 [START-END] Task description
 ```
 
 **Examples:**
+
 ```
 [9am-5pm] Write documentation
 [14:00-15:30] Team meeting
@@ -94,6 +98,7 @@ Add time windows to your Todoist task descriptions:
 ```
 
 **Supported formats:**
+
 - 12-hour: `[9am-5pm]`, `[1PM-3PM]`
 - 24-hour: `[09:00-17:00]`, `[14:00-15:30]`
 
@@ -131,6 +136,7 @@ tardis sync
 ```
 
 This is useful if:
+
 - You used `--no-sync` when stopping
 - Previous sync attempts failed
 - You want to batch sync multiple sessions
@@ -190,6 +196,7 @@ tardis sync
 **Problem:** "Invalid token" or "Could not connect to Todoist"
 
 **Solutions:**
+
 1. Verify token is exactly 40 hexadecimal characters
 2. Check for extra spaces or newlines
 3. Ensure you copied the entire token
@@ -206,6 +213,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 **Problem:** `tardis tasks` shows "No tasks found"
 
 **Solutions:**
+
 1. Check you have active tasks in Todoist
 2. Verify token has correct permissions
 3. Check internet connection
@@ -216,6 +224,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 **Problem:** Tasks not syncing to Todoist
 
 **Solutions:**
+
 1. Check internet connection
 2. Verify Todoist is accessible
 3. Check task has valid Todoist ID
@@ -227,12 +236,14 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 **Problem:** Time windows not showing in `tardis tasks`
 
 **Solutions:**
+
 1. Verify format: `[9am-5pm]` or `[09:00-17:00]`
 2. Check brackets are square brackets `[]`
 3. Ensure time window is in task description (not title)
 4. Start time must be before end time
 
 **Example task description:**
+
 ```
 [9am-5pm] Complete API documentation
 
@@ -261,11 +272,13 @@ tardis start "Write API documentation"  # Exact match
 Use clear, unique task names in Todoist:
 
 ✅ Good:
+
 - "Write API documentation"
 - "Code review: PR #123"
 - "Team standup meeting"
 
 ❌ Avoid:
+
 - "Work"
 - "Task"
 - "Meeting" (too generic)
@@ -275,11 +288,13 @@ Use clear, unique task names in Todoist:
 Always use brackets and valid times:
 
 ✅ Good:
+
 - `[9am-5pm] Task`
 - `[09:00-17:00] Task`
 - `[14:00-15:30] Task`
 
 ❌ Avoid:
+
 - `9am-5pm Task` (no brackets)
 - `[9-5] Task` (missing am/pm)
 - `[17:00-09:00] Task` (end before start)
@@ -337,7 +352,7 @@ Edit `~/.tardis/config.json`:
 {
   "todoist": {
     "apiToken": "your-token",
-    "syncInterval": 600  // 10 minutes (default: 300)
+    "syncInterval": 600 // 10 minutes (default: 300)
   }
 }
 ```
@@ -348,8 +363,8 @@ Edit `~/.tardis/config.json`:
 {
   "todoist": {
     "apiToken": "your-token",
-    "projectId": "123456789",  // Only show this project
-    "labelFilter": ["work", "coding"]  // Only these labels
+    "projectId": "123456789", // Only show this project
+    "labelFilter": ["work", "coding"] // Only these labels
   }
 }
 ```
@@ -361,12 +376,15 @@ Edit `~/.tardis/config.json`:
 Your Todoist API token is stored in plain text at `~/.tardis/config.json`.
 
 **Security recommendations:**
+
 1. Set appropriate file permissions:
+
    ```bash
    chmod 600 ~/.tardis/config.json
    ```
 
 2. Don't commit config to git:
+
    ```bash
    echo ".tardis/" >> ~/.gitignore
    ```
@@ -380,6 +398,7 @@ Your Todoist API token is stored in plain text at `~/.tardis/config.json`.
 ### Rate Limits
 
 Todoist API has rate limits:
+
 - 450 requests per 15 minutes
 - TARDIS makes minimal requests
 - Caches tasks locally

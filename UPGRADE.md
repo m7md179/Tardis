@@ -24,6 +24,7 @@ From your local machine:
 ```
 
 This automates the entire upgrade process:
+
 1. Pushes your local changes to git
 2. SSHs into the Proxmox host
 3. Exec into PCT 106 (LXC container)
@@ -113,6 +114,7 @@ pct exec 106 -- journalctl -u tardis -n 100 --no-pager
 ```
 
 Common issues:
+
 - **Config file missing**: Check `/var/lib/tardis/config.json` exists
 - **Port conflict**: `pct exec 106 -- ss -tlnp | grep 3000`
 - **Permission issues**: Verify `/opt/Tardis` and `/var/lib/tardis` are readable
@@ -153,12 +155,12 @@ pct exec 106 -- journalctl -u tardis -n 50  # Logs
 
 ## File Locations (Inside Container)
 
-| Path | Purpose |
-|------|---------|
-| `/opt/Tardis` | Source code (git repo) |
-| `/var/lib/tardis` | Data, config, sessions |
-| `/var/lib/tardis/config.json` | Server configuration |
-| `/etc/systemd/system/tardis.service` | Systemd service file |
+| Path                                 | Purpose                |
+| ------------------------------------ | ---------------------- |
+| `/opt/Tardis`                        | Source code (git repo) |
+| `/var/lib/tardis`                    | Data, config, sessions |
+| `/var/lib/tardis/config.json`        | Server configuration   |
+| `/etc/systemd/system/tardis.service` | Systemd service file   |
 
 ## Backup Before Upgrade
 

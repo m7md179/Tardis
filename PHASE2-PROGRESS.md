@@ -9,8 +9,10 @@ Last Updated: 2026-02-05
 ## ✅ Completed Tasks (6/10)
 
 ### 1. Server Package Structure and Configuration ✓
+
 **Status**: Complete  
 **Files Created**:
+
 - `packages/server/package.json` - Server package configuration
 - `packages/server/tsconfig.json` - TypeScript configuration
 - `packages/server/.env.example` - Environment variables template
@@ -18,13 +20,16 @@ Last Updated: 2026-02-05
 - `packages/server/src/index.ts` - Main server entry point
 
 **Features**:
+
 - Complete directory structure created
 - Configuration loading from JSON file
 - Support for all required settings (server, auth, rate limiting, scheduler, Todoist, notifications)
 
 ### 2. Hono.js Server with Middleware ✓
+
 **Status**: Complete  
 **Files Created**:
+
 - `packages/server/src/api/server.ts` - Main Hono server setup
 - `packages/server/src/api/middleware/auth.ts` - JWT authentication middleware
 - `packages/server/src/api/middleware/ratelimit.ts` - Rate limiting middleware
@@ -32,6 +37,7 @@ Last Updated: 2026-02-05
 - `packages/server/src/api/routes/health.ts` - Health check endpoint
 
 **Features**:
+
 - CORS support for cross-origin requests
 - Request logging
 - JWT-based authentication
@@ -40,13 +46,16 @@ Last Updated: 2026-02-05
 - Health check endpoint at `/api/health`
 
 ### 3. Authentication System ✓
+
 **Status**: Complete  
 **Files Created**:
+
 - `packages/server/src/utils/auth.ts` - Authentication utilities
 - `packages/server/src/api/routes/auth.ts` - Authentication routes
 - `packages/server/scripts/generate-api-key.ts` - API key generation script
 
 **Features**:
+
 - API key generation and management
 - API key hashing with SHA-256
 - JWT token generation and validation
@@ -56,11 +65,14 @@ Last Updated: 2026-02-05
 - POST `/api/auth/refresh` - Refresh expired JWT
 
 ### 4. Session Management API Routes ✓
+
 **Status**: Complete  
 **Files Created**:
+
 - `packages/server/src/api/routes/sessions.ts` - All session endpoints
 
 **Endpoints**:
+
 - GET `/api/sessions/active` - List all active sessions
 - GET `/api/sessions/status` - Get current or specific session status
 - POST `/api/sessions/start` - Start new session
@@ -72,13 +84,16 @@ Last Updated: 2026-02-05
 - DELETE `/api/sessions` - Wipe all sessions (with confirmation)
 
 ### 5. Core Session Manager Service ✓
+
 **Status**: Complete  
 **Files Created**:
+
 - `packages/server/src/core/session-manager.ts` - Business logic layer
 - `packages/server/src/storage/session-store.ts` - Session storage
 - `packages/server/src/storage/json-store.ts` - Generic JSON store
 
 **Features**:
+
 - Session lifecycle management (start, stop, pause, resume)
 - Fuzzy task name matching
 - Active and archived session storage
@@ -88,13 +103,16 @@ Last Updated: 2026-02-05
 - File-based storage in `/var/lib/tardis/users/default/`
 
 ### 6. Notification Service ✓
+
 **Status**: Complete (by agent a9f7c35)  
 **Files Created**:
+
 - `packages/server/src/integrations/notifications/service.ts` - Main service
 - `packages/server/src/integrations/notifications/telegram.ts` - Telegram notifier
 - `packages/server/src/integrations/notifications/email.ts` - Email notifier (placeholder)
 
 **Features**:
+
 - Multi-channel notification support
 - Time window starting/ending notifications
 - Task overdue warnings
@@ -107,8 +125,10 @@ Last Updated: 2026-02-05
 ## 🚧 Pending Tasks (4/10)
 
 ### 7. Telegram Bot with Commands
+
 **Status**: Pending  
 **What's Needed**:
+
 - Create `packages/server/src/integrations/telegram/bot.ts`
 - Create `packages/server/src/integrations/telegram/commands.ts`
 - Create `packages/server/src/integrations/telegram/keyboards.ts`
@@ -119,8 +139,10 @@ Last Updated: 2026-02-05
 **Estimated Effort**: 3-4 hours
 
 ### 8. Scheduler Daemon and Time Window Monitor
+
 **Status**: Pending  
 **What's Needed**:
+
 - Create `packages/server/src/core/scheduler.ts`
 - Create `packages/server/src/core/time-window-monitor.ts`
 - Create `packages/server/src/core/rescheduler.ts`
@@ -132,8 +154,10 @@ Last Updated: 2026-02-05
 **Estimated Effort**: 4-5 hours
 
 ### 9. CLI Server Integration
+
 **Status**: Pending  
 **What's Needed**:
+
 - Create `packages/cli/src/api/client.ts` - ServerClient class
 - Update all CLI commands to use server API
 - Implement offline fallback logic
@@ -144,8 +168,10 @@ Last Updated: 2026-02-05
 **Estimated Effort**: 3-4 hours
 
 ### 10. Deployment Scripts and Configuration
+
 **Status**: Pending  
 **What's Needed**:
+
 - Create systemd service file (`tardis.service`)
 - Create example config.json for production
 - Create deployment scripts for Proxmox
@@ -162,14 +188,16 @@ Last Updated: 2026-02-05
 The following packages have been configured in `packages/server/package.json`:
 
 ### Runtime Dependencies:
+
 - `hono` ^4.0.0 - Web framework
 - `jsonwebtoken` ^9.0.2 - JWT auth
 - `telegraf` ^4.16.3 - Telegram bot
 - `zod` ^3.24.1 - Schema validation
 - `date-fns` ^4.1.0 - Date utilities
-- `@tardis/shared` workspace:* - Shared types/utils
+- `@tardis/shared` workspace:\* - Shared types/utils
 
 ### Dev Dependencies:
+
 - `@types/bun` ^1.1.13
 - `@types/jsonwebtoken` ^9.0.5
 - `typescript` ^5.7.2
@@ -345,6 +373,7 @@ To complete Phase 2, work on these tasks in order:
 ## 🎯 Success Criteria Checklist
 
 ### Server Infrastructure
+
 - [x] Server runs on development machine
 - [x] All session endpoints working
 - [x] Authentication functional
@@ -353,6 +382,7 @@ To complete Phase 2, work on these tasks in order:
 - [ ] Zero security vulnerabilities (needs audit)
 
 ### Core Features
+
 - [x] Session management (start/stop/pause/resume)
 - [x] Session history and querying
 - [x] JWT authentication with API keys
@@ -362,6 +392,7 @@ To complete Phase 2, work on these tasks in order:
 - [ ] Auto-reschedule working
 
 ### Integration
+
 - [ ] CLI connects to server
 - [ ] Offline mode functional
 - [ ] Todoist sync working
@@ -376,7 +407,7 @@ To complete Phase 2, work on these tasks in order:
 Progress: ███████████░░░░░░░░░ 60%
 
 Completed:   6 / 10 tasks
-In Progress: 0 / 10 tasks  
+In Progress: 0 / 10 tasks
 Pending:     4 / 10 tasks
 ```
 

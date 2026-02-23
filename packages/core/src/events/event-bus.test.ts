@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { EventBus } from './event-bus.js';
 
 describe('EventBus', () => {
@@ -6,8 +6,12 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    bus.on('test', (data: unknown) => { received.push(`a:${String(data)}`); });
-    bus.on('test', (data: unknown) => { received.push(`b:${String(data)}`); });
+    bus.on('test', (data: unknown) => {
+      received.push(`a:${String(data)}`);
+    });
+    bus.on('test', (data: unknown) => {
+      received.push(`b:${String(data)}`);
+    });
 
     await bus.emit('test', 'hello');
 
@@ -19,8 +23,12 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    bus.on('event-a', () => { received.push('a'); });
-    bus.on('event-b', () => { received.push('b'); });
+    bus.on('event-a', () => {
+      received.push('a');
+    });
+    bus.on('event-b', () => {
+      received.push('b');
+    });
 
     await bus.emit('event-a');
 
@@ -31,7 +39,9 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    const handler = () => { received.push('called'); };
+    const handler = () => {
+      received.push('called');
+    };
     bus.on('test', handler);
     await bus.emit('test');
     expect(received).toHaveLength(1);
@@ -45,7 +55,9 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    const unsub = bus.on('test', () => { received.push('called'); });
+    const unsub = bus.on('test', () => {
+      received.push('called');
+    });
     await bus.emit('test');
     expect(received).toHaveLength(1);
 
@@ -58,8 +70,12 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    bus.on('test', () => { throw new Error('handler error'); });
-    bus.on('test', () => { received.push('second ran'); });
+    bus.on('test', () => {
+      throw new Error('handler error');
+    });
+    bus.on('test', () => {
+      received.push('second ran');
+    });
 
     // Should not throw
     await bus.emit('test');
@@ -71,8 +87,12 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    bus.on('test', async () => { throw new Error('async handler error'); });
-    bus.on('test', async () => { received.push('second ran'); });
+    bus.on('test', async () => {
+      throw new Error('async handler error');
+    });
+    bus.on('test', async () => {
+      received.push('second ran');
+    });
 
     await bus.emit('test');
 
@@ -97,8 +117,12 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    bus.on('test', () => { received.push('test'); });
-    bus.on('other', () => { received.push('other'); });
+    bus.on('test', () => {
+      received.push('test');
+    });
+    bus.on('other', () => {
+      received.push('other');
+    });
 
     bus.removeAllListeners('test');
     await bus.emit('test');
@@ -111,8 +135,12 @@ describe('EventBus', () => {
     const bus = new EventBus();
     const received: string[] = [];
 
-    bus.on('a', () => { received.push('a'); });
-    bus.on('b', () => { received.push('b'); });
+    bus.on('a', () => {
+      received.push('a');
+    });
+    bus.on('b', () => {
+      received.push('b');
+    });
 
     bus.removeAllListeners();
     await bus.emit('a');
@@ -131,6 +159,7 @@ describe('EventBus', () => {
 
     await bus.emit('user:action', { userId: '42', action: 'login' });
 
-    expect(received).toEqual({ userId: '42', action: 'login' });
+    expect(received).not.toBeNull();
+    expect(received!).toEqual({ userId: '42', action: 'login' });
   });
 });

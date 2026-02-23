@@ -82,8 +82,8 @@ Copy the bot's response after each one. After all tests, share the full chat so 
 
 For each message, copy:
 
-1. **Your message** (exactly as sent)  
-2. **Bot's response** (full text)  
+1. **Your message** (exactly as sent)
+2. **Bot's response** (full text)
 3. **Todoist check**
    - Did the task appear correctly in Todoist?
    - What due date/time does it show?

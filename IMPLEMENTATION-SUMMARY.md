@@ -7,36 +7,44 @@ Fixed critical bugs in TARDIS Telegram bot notifications, added missing features
 ## Issues Fixed
 
 ### 1. **Notifications Never Re-Fire** ❌ → ✅
+
 **Problem:** Notifications only fired once per task; cleanup logic never worked because notification keys didn't include the date.
 
 **Root Cause:**
+
 - Keys stored as `start_${taskId}` (no date)
 - Cleanup checked `key.includes(currentDate)` — date was never in key
 - After first notification, key stayed in Set forever
 
 **Fix:**
+
 - Changed keys to `start_${currentDate}_${taskId}`
 - Cleanup now correctly removes old keys and keeps today's
 - Notifications reset daily and can fire again for recurring tasks
 
 ### 2. **Notifications Missed Exact Time Window** ❌ → ✅
+
 **Problem:** Check runs every 60 seconds; exact-minute check (`=== 5`) could miss the window.
 
 **Example:**
+
 - Task starts at 9:00 AM
 - Monitor checks at 8:54:30 (5.5 min before) — misses because it's not exactly 5
 - Next check at 9:05:30 (too late, already passed the 5 min window)
 - Notification never fires
 
 **Fix:**
+
 - Changed from `minutesUntilStart === 5` to `minutesUntilStart > 0 && minutesUntilStart <= 5`
 - Notifications now reliably fire anytime in the 5-minute window
 - Applies to start, end, and overdue notifications
 
 ### 3. **Commands Require `/` Prefix** ❌ → ✅
+
 **Problem:** All Telegram commands needed `/list`, `/start`, etc. User wanted plain text `list`, `start`.
 
 **Fix:**
+
 - Replaced all `bot.command()` handlers with single `bot.on('text')` router
 - Parser strips leading `/` and handles both formats
 - Users can now type: `list` or `/list` — both work
@@ -44,9 +52,11 @@ Fixed critical bugs in TARDIS Telegram bot notifications, added missing features
 - Help text updated to show plain text usage
 
 ### 4. **Can't See/Start Todoist Tasks** ❌ → ✅
+
 **Problem:** No way to list available Todoist tasks or see their details before starting.
 
 **Fix:**
+
 - Added `tasks` command — lists all Todoist tasks
 - Shows: task name, due date, time window (if in description), priority
 - Example output:
@@ -58,9 +68,11 @@ Fixed critical bugs in TARDIS Telegram bot notifications, added missing features
 - Users can find and copy exact task names for `start` command
 
 ### 5. **Can't Add Tasks from Telegram** ❌ → ✅
+
 **Problem:** Can't create new Todoist tasks directly from Telegram bot.
 
 **Fix:**
+
 - Added `add` command with inline flag support
 - Syntax: `add <task name> [due:value] [p:1-4]`
 - Examples:
@@ -72,12 +84,14 @@ Fixed critical bugs in TARDIS Telegram bot notifications, added missing features
 ## Files Modified
 
 ### Core Logic
+
 - **`packages/server/src/core/time-window-monitor.ts`**
   - Fixed notification timing: range check instead of exact minute
   - Fixed notification keys: include currentDate
   - Cleanup now works correctly
 
 ### Telegram Bot
+
 - **`packages/server/src/integrations/telegram/bot.ts`**
   - Pass `ServerConfig` to `registerCommands` for Todoist access
   - No API changes, just wired up config
@@ -91,6 +105,7 @@ Fixed critical bugs in TARDIS Telegram bot notifications, added missing features
   - Backward compatible with all existing commands
 
 ### Deployment
+
 - **`scripts/deploy.sh`** (New)
   - One-command deploy: `./scripts/deploy.sh`
   - Pushes to git, SSHs to server, pulls, installs, restarts service
@@ -108,11 +123,15 @@ Fixed critical bugs in TARDIS Telegram bot notifications, added missing features
 ## How It Works Now
 
 ### Plain Text Commands
+
 User types in Telegram:
+
 ```
 list
 ```
+
 Not:
+
 ```
 /list
 ```
@@ -120,6 +139,7 @@ Not:
 Both work, but plain text is simpler.
 
 ### Task Management
+
 1. User: `tasks` → Bot lists Todoist tasks with details
 2. User: `add Buy groceries due:tomorrow p:2` → Bot creates task
 3. User: `start Buy groceries` → Bot starts tracking
@@ -127,12 +147,15 @@ Both work, but plain text is simpler.
 5. User: `stop` → Bot stops and shows duration
 
 ### Notifications
+
 With tasks like:
+
 ```
 Write report [9am-5pm]
 ```
 
 System now:
+
 - Sends notification anytime 4:55-5:00 AM (5 min before)
 - Sends another notification 4:55-5:00 PM (5 min before end)
 - Sends warning if still working after 5 PM
@@ -141,11 +164,13 @@ System now:
 ## Deployment
 
 ### Fast Deploy (30 seconds)
+
 ```bash
 ./scripts/deploy.sh
 ```
 
 This command:
+
 1. Pushes local git changes
 2. SSHs into Proxmox server
 3. Git pulls latest code
@@ -154,6 +179,7 @@ This command:
 6. Shows status and logs
 
 ### Manual Deploy
+
 ```bash
 ssh root@192.168.100.9
 cd /opt/tardis
@@ -195,6 +221,7 @@ After deployment, verify:
 ## Future Improvements
 
 Optional enhancements:
+
 - Multi-step conversation for task creation (instead of flags)
 - Task filtering (e.g., `tasks due:today`)
 - Weekly summary notifications
@@ -209,6 +236,7 @@ Optional enhancements:
 ## Summary
 
 **What changed:**
+
 - ✅ Fixed notification bugs (timing & cleanup)
 - ✅ Added plain text commands (no `/` prefix)
 - ✅ Added `tasks` and `add` commands

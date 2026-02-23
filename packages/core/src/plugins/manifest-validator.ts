@@ -15,19 +15,11 @@ export class ManifestValidationError extends Error {
 /**
  * Validate a parsed manifest object. Throws ManifestValidationError on failure.
  */
-export function validateManifest(
-  raw: unknown,
-  pluginDir: string,
-): PluginManifest {
+export function validateManifest(raw: unknown, pluginDir: string): PluginManifest {
   const result = PluginManifestSchema.safeParse(raw);
   if (!result.success) {
-    const issues = result.error.issues
-      .map((i) => `  ${i.path.join('.')}: ${i.message}`)
-      .join('\n');
-    throw new ManifestValidationError(
-      `Invalid manifest in ${pluginDir}:\n${issues}`,
-      pluginDir,
-    );
+    const issues = result.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');
+    throw new ManifestValidationError(`Invalid manifest in ${pluginDir}:\n${issues}`, pluginDir);
   }
   return result.data;
 }
@@ -45,7 +37,7 @@ export function checkDuplicateToolNames(manifests: PluginManifest[]): void {
       if (existing) {
         throw new ManifestValidationError(
           `Duplicate tool name "${tool.name}" found in plugins "${existing}" and "${manifest.name}"`,
-          manifest.name,
+          manifest.name
         );
       }
       seen.set(tool.name, manifest.name);
@@ -77,7 +69,7 @@ export function validatePermissions(manifest: PluginManifest): void {
   if (unknown.length > 0) {
     throw new ManifestValidationError(
       `Plugin "${manifest.name}" declares unknown permissions: ${unknown.join(', ')}`,
-      manifest.name,
+      manifest.name
     );
   }
 }

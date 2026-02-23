@@ -17,18 +17,22 @@ Complete reference for all TARDIS commands.
 Start tracking a new task.
 
 **Usage:**
+
 ```bash
 tardis start "Write documentation"
 tardis start "Code review" --time-window "[9am-5pm]"
 ```
 
 **Arguments:**
+
 - `task` (required) - Task name or search query
 
 **Options:**
+
 - `-t, --time-window <window>` - Time window (e.g., [9am-5pm])
 
 **Behavior:**
+
 1. Checks for duplicate active sessions
 2. Searches Todoist for matching tasks
 3. If multiple matches, shows picker
@@ -36,6 +40,7 @@ tardis start "Code review" --time-window "[9am-5pm]"
 5. Creates and saves active session
 
 **Examples:**
+
 ```bash
 # Start with exact task name
 tardis start "Write API documentation"
@@ -54,6 +59,7 @@ tardis start "Meeting" --time-window "[14:00-15:00]"
 Stop tracking a task.
 
 **Usage:**
+
 ```bash
 tardis stop
 tardis stop "Write documentation"
@@ -61,12 +67,15 @@ tardis stop --no-sync
 ```
 
 **Arguments:**
+
 - `task` (optional) - Task name to stop (uses current if omitted)
 
 **Options:**
+
 - `--no-sync` - Skip syncing to Todoist
 
 **Behavior:**
+
 1. Finds session to stop
 2. Calculates total duration
 3. Marks as COMPLETED
@@ -74,6 +83,7 @@ tardis stop --no-sync
 5. Archives session to date folder
 
 **Examples:**
+
 ```bash
 # Stop current session
 tardis stop
@@ -92,21 +102,25 @@ tardis stop --no-sync
 Pause an active task.
 
 **Usage:**
+
 ```bash
 tardis pause
 tardis pause "Write documentation"
 ```
 
 **Arguments:**
+
 - `task` (optional) - Task name to pause
 
 **Behavior:**
+
 1. Finds active session
 2. Records pause timestamp
 3. Changes status to PAUSED
 4. Preserves session data
 
 **Examples:**
+
 ```bash
 # Pause current session
 tardis pause
@@ -122,21 +136,25 @@ tardis pause "docs"
 Resume a paused task.
 
 **Usage:**
+
 ```bash
 tardis resume
 tardis resume "Write documentation"
 ```
 
 **Arguments:**
+
 - `task` (optional) - Task name to resume
 
 **Behavior:**
+
 1. Finds paused session
 2. Calculates pause duration
 3. Records resume timestamp
 4. Changes status back to ACTIVE
 
 **Examples:**
+
 ```bash
 # Resume most recent paused session
 tardis resume
@@ -152,15 +170,18 @@ tardis resume "docs"
 Show session status.
 
 **Usage:**
+
 ```bash
 tardis status
 tardis status "Write documentation"
 ```
 
 **Arguments:**
+
 - `task` (optional) - Specific task to show (shows all if omitted)
 
 **Output:**
+
 ```
 Write documentation
 Status:      ACTIVE
@@ -171,6 +192,7 @@ Todoist:     task-123
 ```
 
 **Examples:**
+
 ```bash
 # Show all active sessions
 tardis status
@@ -186,12 +208,14 @@ tardis status "docs"
 List all active sessions in table format.
 
 **Usage:**
+
 ```bash
 tardis list
 tardis ls
 ```
 
 **Output:**
+
 ```
 Active Sessions (2)
 
@@ -213,6 +237,7 @@ Use "tardis stop [task]" to end a session.
 View session history.
 
 **Usage:**
+
 ```bash
 tardis log
 tardis log 2024-01-15
@@ -220,9 +245,11 @@ tardis log all
 ```
 
 **Arguments:**
+
 - `date` (optional) - Date (YYYY-MM-DD), "all", or omit for today
 
 **Examples:**
+
 ```bash
 # View today's log
 tardis log
@@ -235,6 +262,7 @@ tardis log all
 ```
 
 **Output:**
+
 ```
 Sessions for 2024-01-15 (5h 30m)
 
@@ -256,6 +284,7 @@ Total duration: 5h 30m
 View tasks from Todoist.
 
 **Usage:**
+
 ```bash
 tardis tasks
 tardis tasks --tomorrow
@@ -263,10 +292,12 @@ tardis tasks --week
 ```
 
 **Options:**
+
 - `--tomorrow` - Show tomorrow's tasks (with time windows)
 - `--week` - Show this week's tasks (with time windows)
 
 **Output:**
+
 ```
 Todoist Tasks (5)
 
@@ -286,16 +317,19 @@ Start a task with: tardis start "<task name>"
 Manually sync completed sessions to Todoist.
 
 **Usage:**
+
 ```bash
 tardis sync
 ```
 
 **Behavior:**
+
 1. Finds unsynced completed sessions with task IDs
 2. Marks corresponding Todoist tasks as complete
 3. Shows progress and results
 
 **Output:**
+
 ```
 Found 3 unsynced session(s):
   - Write documentation
@@ -313,14 +347,17 @@ Syncing 3 session(s)...
 Mark a task as complete in Todoist (without stopping session).
 
 **Usage:**
+
 ```bash
 tardis complete "Write documentation"
 ```
 
 **Arguments:**
+
 - `task` (required) - Task name to complete
 
 **Examples:**
+
 ```bash
 # Complete task with fuzzy search
 tardis complete "docs"
@@ -338,25 +375,30 @@ tardis complete "Write API documentation"
 Delete a session by task name.
 
 **Usage:**
+
 ```bash
 tardis delete "Old task"
 ```
 
 **Arguments:**
+
 - `task` (required) - Task name to delete
 
 **Behavior:**
+
 1. Searches archived sessions (cannot delete active)
 2. Shows matching sessions
 3. Requires confirmation
 4. Deletes all matching sessions
 
 **Safety:**
+
 - Cannot delete active sessions (must stop first)
 - Shows preview before deletion
 - Requires explicit confirmation
 
 **Examples:**
+
 ```bash
 # Delete by task name
 tardis delete "Old task"
@@ -372,11 +414,13 @@ tardis delete "old task"
 Delete ALL sessions (active and archived).
 
 **Usage:**
+
 ```bash
 tardis wipe
 ```
 
 **Behavior:**
+
 1. Shows count of sessions to delete
 2. Requires THREE confirmations:
    - Initial yes/no
@@ -386,6 +430,7 @@ tardis wipe
 4. Cannot be undone
 
 **Safety:**
+
 - Triple confirmation required
 - Shows clear warnings
 - Displays session counts
@@ -399,11 +444,13 @@ tardis wipe
 Run interactive setup wizard.
 
 **Usage:**
+
 ```bash
 tardis setup
 ```
 
 **Flow:**
+
 1. Check for existing configuration
 2. Prompt for Todoist API token
 3. Validate token (format + API test)
@@ -411,6 +458,7 @@ tardis setup
 5. Show next steps
 
 **Output:**
+
 ```
 🚀 TARDIS Setup Wizard
 
@@ -437,6 +485,7 @@ Next Steps:
 Show or update configuration.
 
 **Usage:**
+
 ```bash
 tardis config
 tardis config --show
@@ -444,10 +493,12 @@ tardis config --todoist-token YOUR_TOKEN
 ```
 
 **Options:**
+
 - `--show` - Show current configuration (default)
 - `--todoist-token <token>` - Set Todoist API token
 
 **Examples:**
+
 ```bash
 # Show configuration
 tardis config
@@ -457,6 +508,7 @@ tardis config --todoist-token abc123...
 ```
 
 **Output:**
+
 ```
 TARDIS Configuration
 
@@ -480,6 +532,7 @@ All commands support these global options:
 - `--version` - Show version number
 
 **Examples:**
+
 ```bash
 # Show version
 tardis --version

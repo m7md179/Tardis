@@ -3,6 +3,7 @@
 ## What Was Removed
 
 ### 🗑️ Old Go Implementation
+
 - `cmd/` - Old Go commands
 - `internal/` - Old Go packages
 - `main.go` - Old Go entry point
@@ -11,6 +12,7 @@
 - `tardis-go` - Old Go binary
 
 ### 🗑️ Migration Files
+
 - `migration-chunks/` - Temporary migration work
 - `phase1.md` - Migration plan
 - `MIGRATION-COMPLETE.md` - Migration summary
@@ -20,6 +22,7 @@
 - `QUICK-START.md` - Temporary quick start
 
 ### 🗑️ Build Artifacts
+
 - `node_modules/` - Dependencies (reinstall with `bun install`)
 - `dist/` - Build output
 - `coverage/` - Test coverage reports
@@ -27,10 +30,12 @@
 - `.turbo/` - Turbo cache
 
 ### 🗑️ Test Artifacts
+
 - `.test-*` directories
 - Test output files
 
 ### 🗑️ User Data & Secrets
+
 - `credentials.json` - Todoist/Google credentials
 - `~/.tardis/` - Local session data
 - `.claude/` - Claude AI cache
@@ -160,6 +165,7 @@ bun test
 ## Repository Features
 
 ### ✅ Professional Setup
+
 - Monorepo with Turborepo
 - TypeScript strict mode
 - ESLint + Prettier
@@ -168,6 +174,7 @@ bun test
 - Automated binary builds
 
 ### ✅ Complete Documentation
+
 - Main README with quick start
 - Installation guide
 - All commands documented
@@ -175,6 +182,7 @@ bun test
 - Migration guide from Go
 
 ### ✅ Production Ready
+
 - 70%+ test coverage
 - Error handling
 - Type safety
@@ -199,6 +207,7 @@ bun test
    - `productivity`
 
 3. **Description:**
+
    > Time tracking CLI that syncs with Todoist. Built with TypeScript and Bun.
 
 4. **Website:**

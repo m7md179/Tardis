@@ -17,7 +17,13 @@ const MOCK_CONFIG: SystemConfig = {
   server: { host: '0.0.0.0', port: 3000, dataDir: '/tmp' },
   auth: { jwtSecret: 'a-very-long-secret-that-is-at-least-32-chars', jwtExpiry: '30d' },
   llm: { provider: 'ollama', model: 'qwen3:4b' },
-  agent: { maxSteps: 10, conversationHistoryLength: 10, memoryTokenBudget: 2000, enableFallbackIntent: true, actionOverrides: {} },
+  agent: {
+    maxSteps: 10,
+    conversationHistoryLength: 10,
+    memoryTokenBudget: 2000,
+    enableFallbackIntent: true,
+    actionOverrides: {},
+  },
   proactive: { enabled: true },
 };
 

@@ -73,6 +73,7 @@ echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
 ```
 
 **Binary sizes:**
+
 - macOS: ~40-50 MB
 - Linux: ~35-45 MB
 - Windows: ~40-50 MB
@@ -134,6 +135,7 @@ tardis setup
 ```
 
 This will guide you through:
+
 - Todoist API token configuration
 - Storage location setup
 - Initial configuration

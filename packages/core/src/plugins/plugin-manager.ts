@@ -1,7 +1,12 @@
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
-import type { PluginManifest, PluginInstance } from '@tardis/shared';
-import { validateManifest, validatePermissions, checkDuplicateToolNames, ManifestValidationError } from './manifest-validator.js';
+import type { PluginManifest, PluginInstance, ToolDefinition } from '@tardis/shared';
+import {
+  validateManifest,
+  validatePermissions,
+  checkDuplicateToolNames,
+  ManifestValidationError,
+} from './manifest-validator.js';
 
 export class PluginLoadError extends Error {
   readonly code = 'PLUGIN_LOAD_ERROR';
@@ -24,10 +29,7 @@ export class PluginManager {
   private readonly pluginsDir: string;
   private readonly pluginApiFactory: (manifest: PluginManifest) => unknown;
 
-  constructor(
-    pluginsDir: string,
-    pluginApiFactory: (manifest: PluginManifest) => unknown,
-  ) {
+  constructor(pluginsDir: string, pluginApiFactory: (manifest: PluginManifest) => unknown) {
     this.pluginsDir = resolve(pluginsDir);
     this.pluginApiFactory = pluginApiFactory;
   }
@@ -93,19 +95,25 @@ export class PluginManager {
     const entryPath = join(pluginDir, manifest.main);
 
     if (!existsSync(entryPath)) {
-      console.warn(`[PluginManager] Entry point not found: ${entryPath}, skipping plugin "${manifest.name}".`);
+      console.warn(
+        `[PluginManager] Entry point not found: ${entryPath}, skipping plugin "${manifest.name}".`
+      );
       return;
     }
 
     try {
-      const module = await import(entryPath) as Record<string, unknown>;
+      const module = (await import(entryPath)) as Record<string, unknown>;
 
       const onDeactivate = module['onDeactivate'] as PluginInstance['onDeactivate'] | undefined;
       const instance: PluginInstance = {
         manifest,
         onActivate: (module['onActivate'] as PluginInstance['onActivate']) ?? (async () => {}),
         ...(onDeactivate !== undefined ? { onDeactivate } : {}),
-        executeTool: (module['executeTool'] as PluginInstance['executeTool']) ?? (async (name: string) => { throw new Error(`Tool ${name} not implemented`); }),
+        executeTool:
+          (module['executeTool'] as PluginInstance['executeTool']) ??
+          (async (name: string) => {
+            throw new Error(`Tool ${name} not implemented`);
+          }),
       };
 
       const api = this.pluginApiFactory(manifest);
@@ -116,7 +124,7 @@ export class PluginManager {
     } catch (err) {
       console.warn(
         `[PluginManager] Failed to activate plugin "${manifest.name}":`,
-        err instanceof Error ? err.message : err,
+        err instanceof Error ? err.message : err
       );
     }
   }
@@ -139,13 +147,13 @@ export class PluginManager {
   /**
    * Execute a tool on the appropriate plugin.
    */
-  async executeTool(
-    toolName: string,
-    args: Record<string, unknown>,
-  ): Promise<unknown> {
+  async executeTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
     const [pluginName] = toolName.split('.');
     if (!pluginName) {
-      throw new PluginLoadError(`Invalid tool name format: "${toolName}" (expected "plugin.tool")`, '');
+      throw new PluginLoadError(
+        `Invalid tool name format: "${toolName}" (expected "plugin.tool")`,
+        ''
+      );
     }
 
     const active = this.activePlugins.get(pluginName);
@@ -176,7 +184,7 @@ export class PluginManager {
   /**
    * Get full tool definitions for a specific set of plugin names.
    */
-  getToolsForPlugins(pluginNames: string[]) {
+  getToolsForPlugins(pluginNames: string[]): ToolDefinition[] {
     return this.getAllManifests()
       .filter((m) => pluginNames.includes(m.name))
       .flatMap((m) => m.tools);

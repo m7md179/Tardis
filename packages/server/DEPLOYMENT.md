@@ -167,6 +167,7 @@ nano /var/lib/tardis/config.json
 ```
 
 Update the telegram section:
+
 ```json
 {
   "notifications": {
@@ -350,6 +351,7 @@ pct restart 200
 ### Disable Scheduler (if not needed)
 
 Edit `/var/lib/tardis/config.json`:
+
 ```json
 {
   "scheduler": {

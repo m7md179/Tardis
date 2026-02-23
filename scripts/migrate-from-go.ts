@@ -196,15 +196,14 @@ function convertGoSession(data: any): Session {
   const taskName = data.Task || data.taskName || 'Unknown Task';
   const status = mapStatus(data.Status || data.status || 'COMPLETED');
   const startTime = convertTimestamp(data.StartTime || data.startTime || Date.now() / 1000);
-  const endTime = data.EndTime || data.endTime
-    ? convertTimestamp(data.EndTime || data.endTime)
-    : undefined;
-  const pausedAt = data.PausedAt || data.pausedAt
-    ? convertTimestamp(data.PausedAt || data.pausedAt)
-    : undefined;
-  const resumedAt = data.ResumedAt || data.resumedAt
-    ? convertTimestamp(data.ResumedAt || data.resumedAt)
-    : undefined;
+  const endTime =
+    data.EndTime || data.endTime ? convertTimestamp(data.EndTime || data.endTime) : undefined;
+  const pausedAt =
+    data.PausedAt || data.pausedAt ? convertTimestamp(data.PausedAt || data.pausedAt) : undefined;
+  const resumedAt =
+    data.ResumedAt || data.resumedAt
+      ? convertTimestamp(data.ResumedAt || data.resumedAt)
+      : undefined;
   const duration = data.Duration || data.duration || 0;
   const timeWindow = data.TimeWindow || data.timeWindow;
   const todoistSynced = data.TodoistSynced || data.todoistSynced || false;

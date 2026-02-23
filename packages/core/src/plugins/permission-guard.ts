@@ -49,7 +49,7 @@ export class PermissionGuard {
 
   constructor(
     private readonly pluginName: string,
-    permissions: string[],
+    permissions: string[]
   ) {
     this.grantedPermissions = new Set(permissions);
   }

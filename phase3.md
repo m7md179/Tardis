@@ -31,6 +31,7 @@
 **Primary Goal:** Create a robust, secure, and developer-friendly plugin system that allows TARDIS to be extended with custom functionality while maintaining the core open-source vision.
 
 **Secondary Goals:**
+
 - Enable community contributions through plugins
 - Build foundation for "Jarvis-like" extensibility
 - Provide clear plugin development guidelines
@@ -53,6 +54,7 @@
 ### 1.3 In Scope
 
 **Core Plugin System:**
+
 - Plugin API definition
 - Plugin loader and lifecycle management
 - Sandboxing and isolation
@@ -62,6 +64,7 @@
 - Plugin dependency resolution
 
 **Developer Experience:**
+
 - Plugin development SDK
 - TypeScript types for plugin API
 - CLI scaffolding tool for new plugins
@@ -70,6 +73,7 @@
 - Comprehensive documentation
 
 **Example Plugins:**
+
 - Google Calendar sync
 - GitHub activity tracker
 - Pomodoro timer
@@ -77,6 +81,7 @@
 - Slack notifications
 
 **Plugin Distribution:**
+
 - Plugin registry/marketplace (simple)
 - Plugin installation via CLI
 - Plugin versioning
@@ -106,6 +111,7 @@ Week 4: Documentation + Marketplace
 ### 2.1 Phase 1 & 2 Completion
 
 **Required:**
+
 - [ ] Phase 1 fully complete (CLI working)
 - [ ] Phase 2 fully complete (Server + Telegram bot)
 - [ ] System stable and tested
@@ -115,12 +121,14 @@ Week 4: Documentation + Marketplace
 ### 2.2 Technical Requirements
 
 **Development:**
+
 - TypeScript 5.0+ knowledge
 - Understanding of plugin architectures
 - Event-driven programming experience
 - Security best practices knowledge
 
 **Infrastructure:**
+
 - Server running on Proxmox
 - Tailscale VPN configured
 - Git repository accessible
@@ -129,6 +137,7 @@ Week 4: Documentation + Marketplace
 ### 2.3 Design Decisions
 
 Before starting Phase 3, confirm:
+
 - Plugin isolation strategy (process vs. VM vs. sandboxing)
 - Plugin distribution method (npm vs. custom registry)
 - Plugin versioning approach
@@ -272,15 +281,15 @@ Before starting Phase 3, confirm:
   "author": "Mohammad <mohammad@weborbit.dev>",
   "license": "MIT",
   "repository": "https://github.com/yourusername/tardis-plugin-gcal",
-  
+
   "tardisVersion": ">=2.0.0",
-  
+
   "main": "index.ts",
-  
+
   "dependencies": {
     "googleapis": "^128.0.0"
   },
-  
+
   "permissions": [
     "sessions:read",
     "sessions:write",
@@ -288,21 +297,16 @@ Before starting Phase 3, confirm:
     "storage:write",
     "http:external"
   ],
-  
-  "hooks": [
-    "session:start",
-    "session:stop",
-    "session:pause",
-    "session:resume"
-  ],
-  
+
+  "hooks": ["session:start", "session:stop", "session:pause", "session:resume"],
+
   "commands": [
     {
       "name": "sync-calendar",
       "description": "Manually sync sessions to Google Calendar"
     }
   ],
-  
+
   "config": {
     "enabled": true,
     "autoSync": true,
@@ -322,13 +326,13 @@ export interface TardisPlugin {
    */
   readonly name: string;
   readonly version: string;
-  
+
   /**
    * Lifecycle hooks
    */
   onActivate?(api: PluginAPI): Promise<void>;
   onDeactivate?(): Promise<void>;
-  
+
   /**
    * Event hooks
    */
@@ -338,14 +342,14 @@ export interface TardisPlugin {
   onSessionResume?(session: Session, api: PluginAPI): Promise<void>;
   onTaskSync?(tasks: Task[], api: PluginAPI): Promise<void>;
   onNotification?(notification: Notification, api: PluginAPI): Promise<void>;
-  
+
   /**
    * Custom commands
    */
   commands?: {
     [commandName: string]: (args: string[], api: PluginAPI) => Promise<void>;
   };
-  
+
   /**
    * API routes (for server plugins)
    */
@@ -364,13 +368,13 @@ export interface PluginAPI {
     create(data: Partial<Session>): Promise<Session>;
     update(id: string, data: Partial<Session>): Promise<Session>;
   };
-  
+
   tasks: {
     getAll(): Promise<Task[]>;
     getById(id: string): Promise<Task | null>;
     sync(): Promise<void>;
   };
-  
+
   /**
    * Storage API - Plugin-specific persistent storage
    */
@@ -380,7 +384,7 @@ export interface PluginAPI {
     delete(key: string): Promise<void>;
     clear(): Promise<void>;
   };
-  
+
   /**
    * HTTP Client - Make external API calls
    */
@@ -390,14 +394,14 @@ export interface PluginAPI {
     put(url: string, body: any, options?: RequestInit): Promise<Response>;
     delete(url: string, options?: RequestInit): Promise<Response>;
   };
-  
+
   /**
    * Notification API - Send notifications
    */
   notifications: {
     send(message: string, channel?: 'telegram' | 'email'): Promise<void>;
   };
-  
+
   /**
    * Config API - Access plugin configuration
    */
@@ -406,7 +410,7 @@ export interface PluginAPI {
     set(key: string, value: any): Promise<void>;
     getAll(): Record<string, any>;
   };
-  
+
   /**
    * Logger - Plugin-specific logging
    */
@@ -416,7 +420,7 @@ export interface PluginAPI {
     error(message: string, ...args: any[]): void;
     debug(message: string, ...args: any[]): void;
   };
-  
+
   /**
    * Events - Emit custom events
    */
@@ -436,6 +440,7 @@ export interface PluginAPI {
 **Goal:** Build core plugin infrastructure
 
 **Tasks:**
+
 1. Design plugin API interface
 2. Create plugin manager
 3. Implement plugin discovery
@@ -446,6 +451,7 @@ export interface PluginAPI {
 8. Write plugin API types
 
 **Deliverables:**
+
 - [ ] Plugin manager working
 - [ ] Can load and activate plugins
 - [ ] Event system functional
@@ -461,6 +467,7 @@ export interface PluginAPI {
 **Goal:** Implement complete plugin API
 
 **Tasks:**
+
 1. Implement sessions API
 2. Implement tasks API
 3. Create plugin storage system
@@ -472,6 +479,7 @@ export interface PluginAPI {
 9. Add command registration
 
 **Deliverables:**
+
 - [ ] Full plugin API implemented
 - [ ] All hooks working
 - [ ] Plugin storage functional
@@ -487,6 +495,7 @@ export interface PluginAPI {
 **Goal:** Create example plugins and development tools
 
 **Tasks:**
+
 1. Build Google Calendar sync plugin
 2. Create GitHub activity tracker plugin
 3. Build Pomodoro timer plugin
@@ -497,6 +506,7 @@ export interface PluginAPI {
 8. Build plugin debugging tools
 
 **Deliverables:**
+
 - [ ] 3+ working example plugins
 - [ ] Plugin scaffolding tool (`tardis plugin create`)
 - [ ] Development mode with hot reload
@@ -511,6 +521,7 @@ export interface PluginAPI {
 **Goal:** Complete documentation and plugin distribution
 
 **Tasks:**
+
 1. Write plugin development guide
 2. Create API reference documentation
 3. Build plugin marketplace (simple registry)
@@ -521,6 +532,7 @@ export interface PluginAPI {
 8. Set up community contribution process
 
 **Deliverables:**
+
 - [ ] Complete plugin developer docs
 - [ ] API reference published
 - [ ] Plugin marketplace functional
@@ -549,12 +561,12 @@ export class PluginManager {
   private plugins: Map<string, LoadedPlugin> = new Map();
   private eventBus: EventBus;
   private pluginsDir: string;
-  
+
   constructor(pluginsDir: string = '~/.tardis/plugins') {
     this.pluginsDir = pluginsDir;
     this.eventBus = new EventBus();
   }
-  
+
   /**
    * Discover all plugins in plugins directory
    */
@@ -563,131 +575,131 @@ export class PluginManager {
       logger.warn(`Plugins directory not found: ${this.pluginsDir}`);
       return [];
     }
-    
+
     const pluginDirs = readdirSync(this.pluginsDir, { withFileTypes: true })
-      .filter(dirent => dirent.isDirectory())
-      .map(dirent => dirent.name);
-    
+      .filter((dirent) => dirent.isDirectory())
+      .map((dirent) => dirent.name);
+
     const manifests: PluginManifest[] = [];
-    
+
     for (const dir of pluginDirs) {
       const manifestPath = join(this.pluginsDir, dir, 'plugin.json');
-      
+
       if (!existsSync(manifestPath)) {
         logger.warn(`Plugin manifest not found: ${manifestPath}`);
         continue;
       }
-      
+
       try {
         const manifestContent = readFileSync(manifestPath, 'utf-8');
         const manifest: PluginManifest = JSON.parse(manifestContent);
-        
+
         // Validate manifest
         if (!this.validateManifest(manifest)) {
           logger.error(`Invalid plugin manifest: ${dir}`);
           continue;
         }
-        
+
         manifests.push(manifest);
       } catch (error) {
         logger.error(`Failed to load plugin manifest: ${dir}`, error);
       }
     }
-    
+
     return manifests;
   }
-  
+
   /**
    * Load and activate a plugin
    */
   async loadPlugin(name: string): Promise<void> {
     const pluginPath = join(this.pluginsDir, name);
     const manifestPath = join(pluginPath, 'plugin.json');
-    
+
     // Read manifest
     const manifestContent = readFileSync(manifestPath, 'utf-8');
     const manifest: PluginManifest = JSON.parse(manifestContent);
-    
+
     // Check TARDIS version compatibility
     if (!this.isCompatible(manifest.tardisVersion)) {
       throw new Error(`Plugin ${name} requires TARDIS ${manifest.tardisVersion}`);
     }
-    
+
     // Import plugin module
     const mainPath = join(pluginPath, manifest.main);
     const pluginModule = await import(mainPath);
     const plugin: TardisPlugin = pluginModule.default;
-    
+
     // Create plugin API instance
     const api = new PluginAPI(name, manifest, this.eventBus);
-    
+
     // Activate plugin
     try {
       if (plugin.onActivate) {
         await plugin.onActivate(api);
       }
-      
+
       // Register event hooks
       this.registerHooks(plugin, api, manifest);
-      
+
       // Register custom commands
       this.registerCommands(plugin, api, manifest);
-      
+
       // Store loaded plugin
       this.plugins.set(name, {
         manifest,
         instance: plugin,
         api,
       });
-      
+
       logger.info(`Plugin loaded: ${manifest.displayName} v${manifest.version}`);
     } catch (error) {
       logger.error(`Failed to activate plugin: ${name}`, error);
       throw error;
     }
   }
-  
+
   /**
    * Unload and deactivate a plugin
    */
   async unloadPlugin(name: string): Promise<void> {
     const loaded = this.plugins.get(name);
-    
+
     if (!loaded) {
       throw new Error(`Plugin not loaded: ${name}`);
     }
-    
+
     try {
       if (loaded.instance.onDeactivate) {
         await loaded.instance.onDeactivate();
       }
-      
+
       // Unregister hooks and commands
       this.eventBus.removeAllListeners(name);
-      
+
       this.plugins.delete(name);
-      
+
       logger.info(`Plugin unloaded: ${name}`);
     } catch (error) {
       logger.error(`Failed to deactivate plugin: ${name}`, error);
       throw error;
     }
   }
-  
+
   /**
    * Load all discovered plugins
    */
   async loadAll(): Promise<void> {
     const manifests = await this.discover();
-    
+
     logger.info(`Discovered ${manifests.length} plugins`);
-    
+
     for (const manifest of manifests) {
       if (!manifest.config?.enabled) {
         logger.info(`Plugin disabled: ${manifest.name}`);
         continue;
       }
-      
+
       try {
         await this.loadPlugin(manifest.name);
       } catch (error) {
@@ -695,53 +707,49 @@ export class PluginManager {
       }
     }
   }
-  
+
   /**
    * Get loaded plugin
    */
   getPlugin(name: string): LoadedPlugin | undefined {
     return this.plugins.get(name);
   }
-  
+
   /**
    * Get all loaded plugins
    */
   getAllPlugins(): LoadedPlugin[] {
     return Array.from(this.plugins.values());
   }
-  
+
   /**
    * Emit event to all plugins
    */
   async emitEvent(eventName: string, data: any): Promise<void> {
     await this.eventBus.emit(eventName, data);
   }
-  
+
   private validateManifest(manifest: PluginManifest): boolean {
-    return !!(
-      manifest.name &&
-      manifest.version &&
-      manifest.main &&
-      manifest.tardisVersion
-    );
+    return !!(manifest.name && manifest.version && manifest.main && manifest.tardisVersion);
   }
-  
+
   private isCompatible(requiredVersion: string): boolean {
     // Simple version check (can be improved with semver)
     const currentVersion = '2.0.0';
     return currentVersion >= requiredVersion.replace('>=', '');
   }
-  
+
   private registerHooks(plugin: TardisPlugin, api: PluginAPI, manifest: PluginManifest): void {
     if (!manifest.hooks) return;
-    
+
     for (const hook of manifest.hooks) {
-      const handlerName = `on${hook.split(':').map(s => 
-        s.charAt(0).toUpperCase() + s.slice(1)
-      ).join('')}` as keyof TardisPlugin;
-      
+      const handlerName = `on${hook
+        .split(':')
+        .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join('')}` as keyof TardisPlugin;
+
       const handler = plugin[handlerName];
-      
+
       if (typeof handler === 'function') {
         this.eventBus.on(hook, manifest.name, async (data: any) => {
           try {
@@ -753,10 +761,10 @@ export class PluginManager {
       }
     }
   }
-  
+
   private registerCommands(plugin: TardisPlugin, api: PluginAPI, manifest: PluginManifest): void {
     if (!plugin.commands) return;
-    
+
     for (const [commandName, handler] of Object.entries(plugin.commands)) {
       // Commands will be accessible as: tardis plugin run <plugin-name> <command>
       logger.info(`Registered command: ${manifest.name}:${commandName}`);
@@ -790,7 +798,7 @@ export class PluginAPI implements IPluginAPI {
   private pluginStorage: PluginStorage;
   private notificationService: NotificationService;
   private eventBus: EventBus;
-  
+
   constructor(
     private pluginName: string,
     private manifest: PluginManifest,
@@ -802,7 +810,7 @@ export class PluginAPI implements IPluginAPI {
     this.notificationService = new NotificationService({}); // Will use global config
     this.eventBus = eventBus;
   }
-  
+
   /**
    * Sessions API
    */
@@ -811,23 +819,23 @@ export class PluginAPI implements IPluginAPI {
       this.checkPermission('sessions:read');
       return this.sessionManager.getActiveSessions();
     },
-    
+
     getById: async (id: string) => {
       this.checkPermission('sessions:read');
       return this.sessionManager.getSessionById(id);
     },
-    
+
     create: async (data: any) => {
       this.checkPermission('sessions:write');
       return this.sessionManager.startSession(data);
     },
-    
+
     update: async (id: string, data: any) => {
       this.checkPermission('sessions:write');
       return this.sessionManager.updateSession(id, data);
     },
   };
-  
+
   /**
    * Tasks API
    */
@@ -836,19 +844,19 @@ export class PluginAPI implements IPluginAPI {
       this.checkPermission('tasks:read');
       return this.taskCache.getAllTasks();
     },
-    
+
     getById: async (id: string) => {
       this.checkPermission('tasks:read');
       return this.taskCache.getTaskById(id);
     },
-    
+
     sync: async () => {
       this.checkPermission('tasks:write');
       // Trigger Todoist sync
       await this.eventBus.emit('task:sync', {});
     },
   };
-  
+
   /**
    * Storage API
    */
@@ -857,23 +865,23 @@ export class PluginAPI implements IPluginAPI {
       this.checkPermission('storage:read');
       return this.pluginStorage.get(key);
     },
-    
+
     set: async (key: string, value: any) => {
       this.checkPermission('storage:write');
       return this.pluginStorage.set(key, value);
     },
-    
+
     delete: async (key: string) => {
       this.checkPermission('storage:write');
       return this.pluginStorage.delete(key);
     },
-    
+
     clear: async () => {
       this.checkPermission('storage:write');
       return this.pluginStorage.clear();
     },
   };
-  
+
   /**
    * HTTP Client
    */
@@ -882,7 +890,7 @@ export class PluginAPI implements IPluginAPI {
       this.checkPermission('http:external');
       return fetch(url, { ...options, method: 'GET' });
     },
-    
+
     post: async (url: string, body: any, options?: RequestInit) => {
       this.checkPermission('http:external');
       return fetch(url, {
@@ -895,7 +903,7 @@ export class PluginAPI implements IPluginAPI {
         body: JSON.stringify(body),
       });
     },
-    
+
     put: async (url: string, body: any, options?: RequestInit) => {
       this.checkPermission('http:external');
       return fetch(url, {
@@ -908,20 +916,20 @@ export class PluginAPI implements IPluginAPI {
         body: JSON.stringify(body),
       });
     },
-    
+
     delete: async (url: string, options?: RequestInit) => {
       this.checkPermission('http:external');
       return fetch(url, { ...options, method: 'DELETE' });
     },
   };
-  
+
   /**
    * Notifications API
    */
   notifications = {
     send: async (message: string, channel?: 'telegram' | 'email') => {
       this.checkPermission('notifications:send');
-      
+
       if (channel === 'telegram') {
         await this.notificationService.sendTelegram(message);
       } else if (channel === 'email') {
@@ -931,7 +939,7 @@ export class PluginAPI implements IPluginAPI {
       }
     },
   };
-  
+
   /**
    * Config API
    */
@@ -939,19 +947,19 @@ export class PluginAPI implements IPluginAPI {
     get: (key: string) => {
       return this.manifest.config?.[key];
     },
-    
+
     set: async (key: string, value: any) => {
       // Update plugin config file
       this.manifest.config = this.manifest.config || {};
       this.manifest.config[key] = value;
       await this.pluginStorage.set('_config', this.manifest.config);
     },
-    
+
     getAll: () => {
       return this.manifest.config || {};
     },
   };
-  
+
   /**
    * Logger
    */
@@ -959,20 +967,20 @@ export class PluginAPI implements IPluginAPI {
     info: (message: string, ...args: any[]) => {
       coreLogger.info(`[${this.pluginName}] ${message}`, ...args);
     },
-    
+
     warn: (message: string, ...args: any[]) => {
       coreLogger.warn(`[${this.pluginName}] ${message}`, ...args);
     },
-    
+
     error: (message: string, ...args: any[]) => {
       coreLogger.error(`[${this.pluginName}] ${message}`, ...args);
     },
-    
+
     debug: (message: string, ...args: any[]) => {
       coreLogger.debug(`[${this.pluginName}] ${message}`, ...args);
     },
   };
-  
+
   /**
    * Events API
    */
@@ -980,12 +988,12 @@ export class PluginAPI implements IPluginAPI {
     emit: (eventName: string, data: any) => {
       this.eventBus.emit(`plugin:${this.pluginName}:${eventName}`, data);
     },
-    
+
     on: (eventName: string, handler: (data: any) => void) => {
       this.eventBus.on(`plugin:${this.pluginName}:${eventName}`, this.pluginName, handler);
     },
   };
-  
+
   /**
    * Check if plugin has permission
    */
@@ -1006,7 +1014,7 @@ type EventHandler = (data: any) => void | Promise<void>;
 
 export class EventBus {
   private listeners: Map<string, Map<string, EventHandler[]>> = new Map();
-  
+
   /**
    * Register event listener
    */
@@ -1014,39 +1022,39 @@ export class EventBus {
     if (!this.listeners.has(eventName)) {
       this.listeners.set(eventName, new Map());
     }
-    
+
     const eventListeners = this.listeners.get(eventName)!;
-    
+
     if (!eventListeners.has(pluginName)) {
       eventListeners.set(pluginName, []);
     }
-    
+
     eventListeners.get(pluginName)!.push(handler);
   }
-  
+
   /**
    * Emit event to all listeners
    */
   async emit(eventName: string, data: any): Promise<void> {
     const eventListeners = this.listeners.get(eventName);
-    
+
     if (!eventListeners) return;
-    
+
     const promises: Promise<void>[] = [];
-    
+
     for (const [pluginName, handlers] of eventListeners) {
       for (const handler of handlers) {
         promises.push(
-          Promise.resolve(handler(data)).catch(error => {
+          Promise.resolve(handler(data)).catch((error) => {
             console.error(`Event handler error: ${pluginName}.${eventName}`, error);
           })
         );
       }
     }
-    
+
     await Promise.all(promises);
   }
-  
+
   /**
    * Remove all listeners for a plugin
    */
@@ -1055,13 +1063,13 @@ export class EventBus {
       eventListeners.delete(pluginName);
     }
   }
-  
+
   /**
    * Remove specific listener
    */
   removeListener(eventName: string, pluginName: string): void {
     const eventListeners = this.listeners.get(eventName);
-    
+
     if (eventListeners) {
       eventListeners.delete(pluginName);
     }
@@ -1081,30 +1089,30 @@ export class PluginStorage {
   private storageDir: string;
   private storageFile: string;
   private cache: Map<string, any> = new Map();
-  
+
   constructor(pluginName: string) {
     this.storageDir = join(process.env.HOME || '~', '.tardis', 'plugins', pluginName, 'storage');
     this.storageFile = join(this.storageDir, 'data.json');
-    
+
     this.ensureStorage();
     this.loadCache();
   }
-  
+
   private ensureStorage(): void {
     if (!existsSync(this.storageDir)) {
       mkdirSync(this.storageDir, { recursive: true });
     }
-    
+
     if (!existsSync(this.storageFile)) {
       writeFileSync(this.storageFile, JSON.stringify({}));
     }
   }
-  
+
   private loadCache(): void {
     try {
       const content = readFileSync(this.storageFile, 'utf-8');
       const data = JSON.parse(content);
-      
+
       for (const [key, value] of Object.entries(data)) {
         this.cache.set(key, value);
       }
@@ -1112,7 +1120,7 @@ export class PluginStorage {
       console.error('Failed to load plugin storage:', error);
     }
   }
-  
+
   private saveCache(): void {
     try {
       const data = Object.fromEntries(this.cache);
@@ -1121,21 +1129,21 @@ export class PluginStorage {
       console.error('Failed to save plugin storage:', error);
     }
   }
-  
+
   async get(key: string): Promise<any> {
     return this.cache.get(key);
   }
-  
+
   async set(key: string, value: any): Promise<void> {
     this.cache.set(key, value);
     this.saveCache();
   }
-  
+
   async delete(key: string): Promise<void> {
     this.cache.delete(key);
     this.saveCache();
   }
-  
+
   async clear(): Promise<void> {
     this.cache.clear();
     this.saveCache();
@@ -1158,27 +1166,27 @@ import { google } from 'googleapis';
 const plugin: TardisPlugin = {
   name: 'google-calendar-sync',
   version: '1.0.0',
-  
+
   async onActivate(api: PluginAPI) {
     api.logger.info('Google Calendar Sync activated');
-    
+
     // Check for OAuth credentials
     const credentials = await api.storage.get('oauth_credentials');
-    
+
     if (!credentials) {
       api.logger.warn('Google Calendar credentials not configured');
       api.logger.info('Run: tardis plugin run google-calendar-sync setup');
     }
   },
-  
+
   async onSessionStop(session: Session, api: PluginAPI) {
     const config = api.config.getAll();
-    
+
     if (!config.autoSync) {
       api.logger.debug('Auto-sync disabled, skipping');
       return;
     }
-    
+
     try {
       await this.syncToCalendar(session, api);
       api.logger.info(`Synced session to Google Calendar: ${session.taskName}`);
@@ -1186,25 +1194,25 @@ const plugin: TardisPlugin = {
       api.logger.error('Failed to sync to Google Calendar:', error);
     }
   },
-  
+
   async syncToCalendar(session: Session, api: PluginAPI) {
     const credentials = await api.storage.get('oauth_credentials');
-    
+
     if (!credentials) {
       throw new Error('OAuth credentials not configured');
     }
-    
+
     // Initialize Google Calendar API
     const auth = new google.auth.OAuth2(
       credentials.client_id,
       credentials.client_secret,
       'http://localhost:3000/oauth/callback'
     );
-    
+
     auth.setCredentials(credentials.tokens);
-    
+
     const calendar = google.calendar({ version: 'v3', auth });
-    
+
     // Create calendar event
     const event = {
       summary: session.taskName,
@@ -1216,39 +1224,39 @@ const plugin: TardisPlugin = {
         dateTime: session.endTime,
       },
     };
-    
+
     const calendarId = api.config.get('calendarId') || 'primary';
-    
+
     await calendar.events.insert({
       calendarId,
       requestBody: event,
     });
   },
-  
+
   formatDuration(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}m`;
   },
-  
+
   commands: {
-    'setup': async (args: string[], api: PluginAPI) => {
+    setup: async (args: string[], api: PluginAPI) => {
       api.logger.info('Starting Google Calendar OAuth setup...');
       api.logger.info('Visit: http://localhost:3000/oauth/setup');
       // OAuth setup flow would be implemented here
     },
-    
+
     'sync-all': async (args: string[], api: PluginAPI) => {
       api.logger.info('Syncing all sessions to Google Calendar...');
-      
+
       const sessions = await api.sessions.getActive();
-      
+
       for (const session of sessions) {
         if (session.status === 'COMPLETED') {
           await plugin.syncToCalendar(session, api);
         }
       }
-      
+
       api.logger.info(`Synced ${sessions.length} sessions`);
     },
   },
@@ -1272,15 +1280,8 @@ export default plugin;
   "dependencies": {
     "googleapis": "^128.0.0"
   },
-  "permissions": [
-    "sessions:read",
-    "storage:read",
-    "storage:write",
-    "http:external"
-  ],
-  "hooks": [
-    "session:stop"
-  ],
+  "permissions": ["sessions:read", "storage:read", "storage:write", "http:external"],
+  "hooks": ["session:stop"],
   "commands": [
     {
       "name": "setup",
@@ -1309,50 +1310,52 @@ import { TardisPlugin, PluginAPI, Session } from '@tardis/shared/types/plugin';
 const plugin: TardisPlugin = {
   name: 'pomodoro-timer',
   version: '1.0.0',
-  
+
   async onActivate(api: PluginAPI) {
     api.logger.info('Pomodoro Timer activated');
   },
-  
+
   async onSessionStart(session: Session, api: PluginAPI) {
     const config = api.config.getAll();
-    
+
     if (!config.enabled) return;
-    
+
     const workDuration = config.workDuration || 25; // minutes
     const breakDuration = config.breakDuration || 5; // minutes
-    
+
     // Schedule break notification
-    setTimeout(async () => {
-      await api.notifications.send(
-        `⏰ Pomodoro complete for "${session.taskName}"!\n` +
-        `Time for a ${breakDuration} minute break. 🧘`
-      );
-      
-      api.logger.info(`Pomodoro completed: ${session.taskName}`);
-    }, workDuration * 60 * 1000);
+    setTimeout(
+      async () => {
+        await api.notifications.send(
+          `⏰ Pomodoro complete for "${session.taskName}"!\n` +
+            `Time for a ${breakDuration} minute break. 🧘`
+        );
+
+        api.logger.info(`Pomodoro completed: ${session.taskName}`);
+      },
+      workDuration * 60 * 1000
+    );
   },
-  
+
   commands: {
-    'start': async (args: string[], api: PluginAPI) => {
+    start: async (args: string[], api: PluginAPI) => {
       const taskName = args.join(' ');
       const config = api.config.getAll();
       const workDuration = config.workDuration || 25;
-      
+
       api.logger.info(`Starting Pomodoro: ${workDuration} minutes`);
-      
+
       // Start a TARDIS session
       await api.sessions.create({
         taskName: taskName || 'Pomodoro Session',
       });
-      
+
       await api.notifications.send(
-        `🍅 Pomodoro started: ${workDuration} minutes\n` +
-        `Focus on: ${taskName || 'your task'}`
+        `🍅 Pomodoro started: ${workDuration} minutes\n` + `Focus on: ${taskName || 'your task'}`
       );
     },
-    
-    'config': async (args: string[], api: PluginAPI) => {
+
+    config: async (args: string[], api: PluginAPI) => {
       if (args.length === 0) {
         const config = api.config.getAll();
         api.logger.info('Current Pomodoro configuration:');
@@ -1360,7 +1363,7 @@ const plugin: TardisPlugin = {
         api.logger.info(`  Break duration: ${config.breakDuration || 5} minutes`);
         return;
       }
-      
+
       const [key, value] = args;
       await api.config.set(key, parseInt(value));
       api.logger.info(`Updated ${key} to ${value}`);
@@ -1381,78 +1384,75 @@ import { TardisPlugin, PluginAPI, Session } from '@tardis/shared/types/plugin';
 const plugin: TardisPlugin = {
   name: 'github-activity',
   version: '1.0.0',
-  
+
   async onSessionStop(session: Session, api: PluginAPI) {
     const config = api.config.getAll();
-    
+
     if (!config.trackGitHub) return;
-    
+
     try {
       // Get GitHub activity during session
       const activity = await this.fetchGitHubActivity(session, api);
-      
+
       if (activity.length > 0) {
         // Store in session metadata
         await api.storage.set(`github_${session.id}`, activity);
-        
+
         api.logger.info(`Tracked ${activity.length} GitHub events for: ${session.taskName}`);
       }
     } catch (error) {
       api.logger.error('Failed to track GitHub activity:', error);
     }
   },
-  
+
   async fetchGitHubActivity(session: Session, api: PluginAPI) {
     const config = api.config.getAll();
     const username = config.githubUsername;
     const token = await api.storage.get('github_token');
-    
+
     if (!username || !token) {
       throw new Error('GitHub credentials not configured');
     }
-    
-    const response = await api.http.get(
-      `https://api.github.com/users/${username}/events`,
-      {
-        headers: {
-          'Authorization': `token ${token}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
-      }
-    );
-    
+
+    const response = await api.http.get(`https://api.github.com/users/${username}/events`, {
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github.v3+json',
+      },
+    });
+
     const events = await response.json();
-    
+
     // Filter events within session time range
     const sessionStart = new Date(session.startTime).getTime();
     const sessionEnd = new Date(session.endTime!).getTime();
-    
+
     return events.filter((event: any) => {
       const eventTime = new Date(event.created_at).getTime();
       return eventTime >= sessionStart && eventTime <= sessionEnd;
     });
   },
-  
+
   commands: {
-    'setup': async (args: string[], api: PluginAPI) => {
+    setup: async (args: string[], api: PluginAPI) => {
       const [username, token] = args;
-      
+
       if (!username || !token) {
         api.logger.error('Usage: tardis plugin run github-activity setup <username> <token>');
         return;
       }
-      
+
       await api.config.set('githubUsername', username);
       await api.storage.set('github_token', token);
-      
+
       api.logger.info('GitHub credentials configured');
     },
-    
-    'report': async (args: string[], api: PluginAPI) => {
+
+    report: async (args: string[], api: PluginAPI) => {
       // Generate activity report
       api.logger.info('GitHub Activity Report');
       api.logger.info('=====================');
-      
+
       // Implementation would show stats
     },
   },
@@ -1565,7 +1565,7 @@ plugin
   .action(async () => {
     const manager = new PluginManager();
     const plugins = await manager.list();
-    
+
     console.log('Installed Plugins:');
     for (const p of plugins) {
       const status = p.enabled ? '✓' : '✗';
@@ -1597,48 +1597,48 @@ import { PluginAPI } from './api';
 
 describe('Plugin System', () => {
   let manager: PluginManager;
-  
+
   beforeEach(() => {
     manager = new PluginManager('./test-plugins');
   });
-  
+
   it('discovers plugins', async () => {
     const manifests = await manager.discover();
     expect(manifests.length).toBeGreaterThan(0);
   });
-  
+
   it('loads plugin successfully', async () => {
     await manager.loadPlugin('test-plugin');
     const plugin = manager.getPlugin('test-plugin');
     expect(plugin).toBeDefined();
   });
-  
+
   it('calls onActivate hook', async () => {
     let activated = false;
-    
+
     // Create test plugin with onActivate
     // ... test implementation
-    
+
     expect(activated).toBe(true);
   });
-  
+
   it('registers event hooks', async () => {
     await manager.loadPlugin('test-plugin');
-    
+
     // Emit event
     await manager.emitEvent('session:start', { taskName: 'Test' });
-    
+
     // Verify hook was called
   });
-  
+
   it('enforces permissions', async () => {
     await manager.loadPlugin('test-plugin');
     const plugin = manager.getPlugin('test-plugin');
-    
+
     // Try to access API without permission
-    await expect(
-      plugin?.api.sessions.create({ taskName: 'Test' })
-    ).rejects.toThrow('does not have permission');
+    await expect(plugin?.api.sessions.create({ taskName: 'Test' })).rejects.toThrow(
+      'does not have permission'
+    );
   });
 });
 ```
@@ -1652,19 +1652,19 @@ describe('Plugin API', () => {
     const sessions = await api.sessions.getActive();
     expect(Array.isArray(sessions)).toBe(true);
   });
-  
+
   it('provides storage access', async () => {
     const api = new PluginAPI('test', manifest, eventBus);
-    
+
     await api.storage.set('key', 'value');
     const value = await api.storage.get('key');
-    
+
     expect(value).toBe('value');
   });
-  
+
   it('provides HTTP client', async () => {
     const api = new PluginAPI('test', manifest, eventBus);
-    
+
     const response = await api.http.get('https://api.example.com/test');
     expect(response).toBeDefined();
   });
@@ -1678,7 +1678,7 @@ describe('Google Calendar Plugin', () => {
   it('syncs session to calendar', async () => {
     // Test implementation
   });
-  
+
   it('handles OAuth setup', async () => {
     // Test implementation
   });
@@ -1693,12 +1693,13 @@ describe('Google Calendar Plugin', () => {
 
 **File:** `docs/plugin-development.md`
 
-```markdown
+````markdown
 # TARDIS Plugin Development Guide
 
 ## Getting Started
 
 ### Prerequisites
+
 - TARDIS v2.0.0 or higher
 - TypeScript knowledge
 - Node.js/Bun installed
@@ -1706,17 +1707,21 @@ describe('Google Calendar Plugin', () => {
 ### Creating Your First Plugin
 
 1. **Create plugin directory:**
+
 ```bash
 mkdir -p ~/.tardis/plugins/my-plugin
 cd ~/.tardis/plugins/my-plugin
 ```
+````
 
 2. **Initialize package:**
+
 ```bash
 bun init -y
 ```
 
 3. **Create plugin.json:**
+
 ```json
 {
   "name": "my-plugin",
@@ -1731,17 +1736,18 @@ bun init -y
 ```
 
 4. **Create index.ts:**
+
 ```typescript
 import { TardisPlugin, PluginAPI } from '@tardis/shared/types/plugin';
 
 const plugin: TardisPlugin = {
   name: 'my-plugin',
   version: '1.0.0',
-  
+
   async onActivate(api: PluginAPI) {
     api.logger.info('My plugin activated!');
   },
-  
+
   async onSessionStart(session, api) {
     api.logger.info(`Session started: ${session.taskName}`);
   },
@@ -1751,6 +1757,7 @@ export default plugin;
 ```
 
 5. **Test your plugin:**
+
 ```bash
 # Enable plugin in TARDIS
 echo '{"enabled": true}' > config.json
@@ -1769,18 +1776,21 @@ tardis plugin run my-plugin
 ## Best Practices
 
 ### Security
+
 - Never store credentials in code
 - Use api.storage for sensitive data
 - Validate all user input
 - Handle errors gracefully
 
 ### Performance
+
 - Use async/await properly
 - Cache expensive operations
 - Limit API calls
 - Clean up resources in onDeactivate
 
 ### User Experience
+
 - Provide clear error messages
 - Log important events
 - Document configuration options
@@ -1792,6 +1802,7 @@ tardis plugin run my-plugin
 2. Add to plugin registry
 3. Submit pull request to tardis-plugin-registry
 4. Wait for review and approval
+
 ```
 
 ### 9.2 API Reference Documentation
@@ -1852,3 +1863,4 @@ Generate from TypeScript types using TypeDoc.
 ---
 
 **END OF PHASE 3 IMPLEMENTATION PLAN**
+```

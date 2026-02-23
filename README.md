@@ -51,6 +51,7 @@ tardis/
 > Work in progress — see `.claude/tasks/` for current build status.
 
 **Requirements:**
+
 - Bun 1.3.8+
 - Ollama (for local LLM) or an OpenAI-compatible API key
 
@@ -62,6 +63,7 @@ bun run build
 ## Plugins
 
 Plugins are self-contained TypeScript packages in `plugins/`. Each has:
+
 - `manifest.json` — metadata, permissions, tool definitions, skill summary
 - `index.ts` — entry point with `onActivate`, `onDeactivate`, `executeTool`
 

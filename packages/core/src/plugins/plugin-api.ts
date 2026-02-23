@@ -162,10 +162,14 @@ export function createPluginApi(params: {
 
   // ─── Logger (always available, no permission required) ───
   const logger: LoggerAPI = {
-    info: (msg, data) => console.log(`[${pluginName}] INFO:`, msg, ...(data !== undefined ? [data] : [])),
-    warn: (msg, data) => console.warn(`[${pluginName}] WARN:`, msg, ...(data !== undefined ? [data] : [])),
-    error: (msg, data) => console.error(`[${pluginName}] ERROR:`, msg, ...(data !== undefined ? [data] : [])),
-    debug: (msg, data) => console.debug(`[${pluginName}] DEBUG:`, msg, ...(data !== undefined ? [data] : [])),
+    info: (msg, data) =>
+      console.log(`[${pluginName}] INFO:`, msg, ...(data !== undefined ? [data] : [])),
+    warn: (msg, data) =>
+      console.warn(`[${pluginName}] WARN:`, msg, ...(data !== undefined ? [data] : [])),
+    error: (msg, data) =>
+      console.error(`[${pluginName}] ERROR:`, msg, ...(data !== undefined ? [data] : [])),
+    debug: (msg, data) =>
+      console.debug(`[${pluginName}] DEBUG:`, msg, ...(data !== undefined ? [data] : [])),
   };
 
   // ─── Config (MVP: no-op storage, returns null) ───
@@ -197,19 +201,49 @@ export function createPluginApi(params: {
   };
 
   const sessions: SessionsAPI = {
-    getActive: async () => { guard.assert('sessions:read'); throw new Error('PluginAPI.sessions not yet implemented'); },
-    start: async () => { guard.assert('sessions:write'); throw new Error('PluginAPI.sessions not yet implemented'); },
-    stop: async () => { guard.assert('sessions:write'); throw new Error('PluginAPI.sessions not yet implemented'); },
-    pause: async () => { guard.assert('sessions:write'); throw new Error('PluginAPI.sessions not yet implemented'); },
-    resume: async () => { guard.assert('sessions:write'); throw new Error('PluginAPI.sessions not yet implemented'); },
-    getHistory: async () => { guard.assert('sessions:read'); throw new Error('PluginAPI.sessions not yet implemented'); },
+    getActive: async () => {
+      guard.assert('sessions:read');
+      throw new Error('PluginAPI.sessions not yet implemented');
+    },
+    start: async () => {
+      guard.assert('sessions:write');
+      throw new Error('PluginAPI.sessions not yet implemented');
+    },
+    stop: async () => {
+      guard.assert('sessions:write');
+      throw new Error('PluginAPI.sessions not yet implemented');
+    },
+    pause: async () => {
+      guard.assert('sessions:write');
+      throw new Error('PluginAPI.sessions not yet implemented');
+    },
+    resume: async () => {
+      guard.assert('sessions:write');
+      throw new Error('PluginAPI.sessions not yet implemented');
+    },
+    getHistory: async () => {
+      guard.assert('sessions:read');
+      throw new Error('PluginAPI.sessions not yet implemented');
+    },
   };
 
   const memory: MemoryAPI = {
-    get: async () => { guard.assert('memory:read'); throw new Error('PluginAPI.memory not yet implemented'); },
-    set: async () => { guard.assert('memory:write'); throw new Error('PluginAPI.memory not yet implemented'); },
-    search: async () => { guard.assert('memory:read'); throw new Error('PluginAPI.memory not yet implemented'); },
-    delete: async () => { guard.assert('memory:write'); throw new Error('PluginAPI.memory not yet implemented'); },
+    get: async () => {
+      guard.assert('memory:read');
+      throw new Error('PluginAPI.memory not yet implemented');
+    },
+    set: async () => {
+      guard.assert('memory:write');
+      throw new Error('PluginAPI.memory not yet implemented');
+    },
+    search: async () => {
+      guard.assert('memory:read');
+      throw new Error('PluginAPI.memory not yet implemented');
+    },
+    delete: async () => {
+      guard.assert('memory:write');
+      throw new Error('PluginAPI.memory not yet implemented');
+    },
   };
 
   const http: HttpAPI = {
@@ -228,5 +262,16 @@ export function createPluginApi(params: {
     call: makeStubAsync('plugins.call') as PluginsAPI['call'],
   };
 
-  return { storage, config: configApi, logger, events, notifications, sessions, memory, http, llm, plugins };
+  return {
+    storage,
+    config: configApi,
+    logger,
+    events,
+    notifications,
+    sessions,
+    memory,
+    http,
+    llm,
+    plugins,
+  };
 }

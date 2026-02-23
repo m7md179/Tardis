@@ -36,7 +36,7 @@ export function parseTimeToSeconds(input: string): number | null {
  */
 export function parseTimeWindow(input: string): { start: string; end: string } | null {
   const match = /\[(\d{1,2}(?::\d{2})?(?:am|pm)?)\s*[-–]\s*(\d{1,2}(?::\d{2})?(?:am|pm)?)\]/i.exec(
-    input,
+    input
   );
   if (!match) return null;
 

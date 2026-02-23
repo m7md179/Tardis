@@ -16,8 +16,14 @@ export const TelegramConfigSchema = z.object({
 
 export const ProactiveConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  quietHoursStart: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  quietHoursEnd: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  quietHoursStart: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
+  quietHoursEnd: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
 });
 
 export const ServerConfigSchema = z.object({
