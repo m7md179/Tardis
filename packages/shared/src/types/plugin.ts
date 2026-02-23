@@ -1,43 +1,20 @@
-export type PluginTier = 1 | 2 | 3;
+import type { z } from 'zod';
+import type {
+  PluginTierSchema,
+  ActionTypeSchema,
+  ToolDefinitionSchema,
+  ProactiveTriggerSchema,
+  PluginManifestSchema,
+} from '../schemas/plugin.js';
 
-export type ActionType = 'direct' | 'workflow';
+// Types derived from Zod schemas to ensure exactOptionalPropertyTypes compatibility
+export type PluginTier = z.infer<typeof PluginTierSchema>;
+export type ActionType = z.infer<typeof ActionTypeSchema>;
+export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
+export type ProactiveTrigger = z.infer<typeof ProactiveTriggerSchema>;
+export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 
-export interface ToolDefinition {
-  name: string;                    // unique: "pluginName.toolName"
-  description: string;             // shown to the LLM (only after plugin is selected)
-  parameters: Record<string, unknown>; // JSON Schema
-  actionType: ActionType;          // direct = auto-execute, workflow = needs approval
-}
-
-export interface ProactiveTrigger {
-  name: string;
-  description: string;             // shown in Web UI settings
-  defaultSchedule: string;         // cron expression
-  defaultEnabled: boolean;
-  handler: string;                 // function name to invoke
-}
-
-export interface PluginManifest {
-  name: string;
-  version: string;
-  displayName: string;
-  description: string;
-  tier: PluginTier;
-  main: string;                    // entrypoint file
-  skillSummary: string;            // 1-3 sentence summary for skill-based selection
-  permissions: string[];
-  tools: ToolDefinition[];
-  proactive?: ProactiveTrigger[];
-  llm?: {
-    provider: string;
-    model: string;
-    temperature?: number;
-    systemPrompt?: string;
-  };
-  config?: Record<string, unknown>; // default config values
-  dependencies?: string[];          // other plugins this one can call
-}
-
+// PluginInstance is not schema-validated (has function members), so typed manually
 export interface PluginInstance {
   manifest: PluginManifest;
   onActivate: (api: unknown) => Promise<void>;
