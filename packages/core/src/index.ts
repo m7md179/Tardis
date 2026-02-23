@@ -29,3 +29,5 @@ export { OpenAIAdapter } from './llm/openai-adapter.js';
 export type { OpenAIAdapterConfig } from './llm/openai-adapter.js';
 export { OllamaAdapter } from './llm/ollama-adapter.js';
 export type { OllamaAdapterConfig } from './llm/ollama-adapter.js';
+export { ToolRouter } from './agent/tool-router.js';
+export type { ToolResult, ToolResultCode } from './agent/tool-router.js';
