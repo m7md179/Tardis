@@ -1,14 +1,5 @@
-export type SessionStatus = 'active' | 'paused' | 'completed';
+import type { z } from 'zod';
+import type { SessionStatusSchema, SessionSchema } from '../schemas/session.js';
 
-export interface Session {
-  id: string;
-  taskName: string;
-  status: SessionStatus;
-  startTime: number;               // unix ms
-  endTime?: number;
-  duration?: number;               // seconds
-  pausedAt?: number;
-  accumulatedTime: number;         // seconds, tracks time across pauses
-  metadata?: Record<string, unknown>;
-  createdAt: number;
-}
+export type SessionStatus = z.infer<typeof SessionStatusSchema>;
+export type Session = z.infer<typeof SessionSchema>;

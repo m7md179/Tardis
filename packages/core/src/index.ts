@@ -1,2 +1,3 @@
 // TARDIS v2 Core — AI engine, plugin system, memory, events
-// Exports will be added as each module is implemented.
+export { loadConfig, DEFAULT_DATA_DIR } from './config/config.js';
+export { ConfigError } from './config/errors.js';

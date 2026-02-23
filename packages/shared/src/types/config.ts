@@ -1,40 +1,17 @@
-import type { AgentConfig } from './agent.js';
+import type { z } from 'zod';
+import type {
+  SystemConfigSchema,
+  LLMProviderConfigSchema,
+  TelegramConfigSchema,
+  ProactiveConfigSchema,
+  ServerConfigSchema,
+  AuthConfigSchema,
+} from '../schemas/config.js';
 
-export interface LLMProviderConfig {
-  provider: 'ollama' | 'openai' | 'anthropic' | 'google';
-  model: string;
-  baseUrl?: string;
-  apiKey?: string;
-  temperature?: number;
-}
-
-export interface TelegramConfig {
-  botToken: string;
-  allowedChatIds: string[];
-}
-
-export interface ProactiveConfig {
-  enabled: boolean;
-  quietHoursStart?: string;  // "22:00"
-  quietHoursEnd?: string;    // "08:00"
-}
-
-export interface ServerConfig {
-  host: string;
-  port: number;
-  dataDir: string;
-}
-
-export interface AuthConfig {
-  jwtSecret: string;
-  jwtExpiry: string;
-}
-
-export interface SystemConfig {
-  server: ServerConfig;
-  auth: AuthConfig;
-  llm: LLMProviderConfig;
-  agent: AgentConfig & { personality?: string };
-  telegram?: TelegramConfig;
-  proactive: ProactiveConfig;
-}
+// Types are derived from Zod schemas to ensure compatibility with exactOptionalPropertyTypes
+export type LLMProviderConfig = z.infer<typeof LLMProviderConfigSchema>;
+export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
+export type ProactiveConfig = z.infer<typeof ProactiveConfigSchema>;
+export type ServerConfig = z.infer<typeof ServerConfigSchema>;
+export type AuthConfig = z.infer<typeof AuthConfigSchema>;
+export type SystemConfig = z.infer<typeof SystemConfigSchema>;

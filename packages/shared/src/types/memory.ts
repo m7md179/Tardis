@@ -1,13 +1,5 @@
-export type MemoryType = 'user_fact' | 'project' | 'preference' | 'plugin';
+import type { z } from 'zod';
+import type { MemoryTypeSchema, MemoryEntrySchema } from '../schemas/memory.js';
 
-export interface MemoryEntry {
-  id: string;
-  type: MemoryType;
-  key: string;
-  value: string;
-  source: string;
-  pluginName?: string;
-  createdAt: number;
-  updatedAt: number;
-  accessedAt?: number;
-}
+export type MemoryType = z.infer<typeof MemoryTypeSchema>;
+export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
