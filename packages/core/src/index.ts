@@ -25,3 +25,5 @@ export type {
 } from './plugins/plugin-api.js';
 export { LLMProviderError } from './llm/provider.js';
 export type { LLMMessage, LLMToolCall, LLMResponse, LLMProvider } from './llm/provider.js';
+export { OllamaAdapter } from './llm/ollama-adapter.js';
+export type { OllamaAdapterConfig } from './llm/ollama-adapter.js';
