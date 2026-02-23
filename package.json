@@ -1,11 +1,12 @@
 {
   "name": "tardis",
-  "version": "2.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Time tracking CLI that syncs with Todoist",
+  "description": "TARDIS v2 — self-hosted AI assistant framework",
   "packageManager": "bun@1.3.8",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "plugins/*"
   ],
   "scripts": {
     "build": "turbo run build",
@@ -15,7 +16,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
-    "dev": "bun run --watch packages/cli/bin/tardis.ts"
+    "dev": "bun run --watch packages/server/src/index.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.1.13",

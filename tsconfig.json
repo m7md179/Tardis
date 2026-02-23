@@ -46,10 +46,12 @@
     "baseUrl": ".",
     "paths": {
       "@tardis/shared": ["./packages/shared/src/index.ts"],
-      "@tardis/cli": ["./packages/cli/src/index.ts"],
-      "@tardis/db": ["./packages/db/src/index.ts"]
+      "@tardis/core": ["./packages/core/src/index.ts"],
+      "@tardis/db": ["./packages/db/src/index.ts"],
+      "@tardis/server": ["./packages/server/src/index.ts"],
+      "@tardis/cli": ["./packages/cli/src/index.ts"]
     }
   },
-  "include": ["packages/**/*"],
+  "include": ["packages/**/*", "plugins/**/*"],
   "exclude": ["node_modules", "dist", "build", "coverage", "**/*.test.ts", "**/*.spec.ts"]
 }
