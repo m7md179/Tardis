@@ -6,3 +6,5 @@ export { PluginManager, PluginLoadError } from './plugins/plugin-manager.js';
 export { ManifestValidationError, validateManifest, validatePermissions, checkDuplicateToolNames } from './plugins/manifest-validator.js';
 export { PermissionGuard, PermissionDeniedError, ALL_PERMISSIONS } from './plugins/permission-guard.js';
 export type { Permission } from './plugins/permission-guard.js';
+export { createPluginApi } from './plugins/plugin-api.js';
+export type { PluginAPI, StorageAPI, LoggerAPI, EventsAPI, ConfigAPI } from './plugins/plugin-api.js';
