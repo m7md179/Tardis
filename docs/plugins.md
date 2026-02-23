@@ -81,11 +81,13 @@ Pulls latest from git and reinstalls dependencies. Only works for git-installed 
 Plugin commands require the TARDIS server to be running. You can run them through:
 
 **CLI:**
+
 ```bash
 tardis plugin run <name> <command> [args...]
 ```
 
 **Telegram:**
+
 ```
 plugin <name> <command> [args...]
 ```
@@ -113,6 +115,7 @@ Full documentation: [skill-engine.md](./skill-engine.md)
 **Commands:** `add-skill`, `remove-skill`, `skills`, `train`, `complete-training`, `progress`, `weak-areas`, `stats`, `calibrate`, `config`
 
 **Quick start:**
+
 ```
 plugin skill-engine add-skill typescript tech
 plugin skill-engine train typescript
@@ -120,7 +123,7 @@ plugin skill-engine complete-training 85
 plugin skill-engine progress typescript
 ```
 
-Or via Gemini natural language: *"I want to learn Python"*, *"Let's practice TypeScript"*, *"I scored 80%"*
+Or via Gemini natural language: _"I want to learn Python"_, _"Let's practice TypeScript"_, _"I scored 80%"_
 
 ---
 
@@ -129,6 +132,7 @@ Or via Gemini natural language: *"I want to learn Python"*, *"Let's practice Typ
 AI-powered natural language interface. Turns plain text messages into TARDIS actions through Google Gemini's function calling API.
 
 **Setup:**
+
 ```
 plugin gemini-assistant config apiKey YOUR_GEMINI_KEY
 ```
@@ -161,39 +165,47 @@ tardis plugin list
 #### Commands
 
 **Start a pomodoro session:**
+
 ```bash
 tardis plugin run pomodoro-timer start <task name>
 ```
+
 ```
 plugin pomodoro-timer start Write documentation
 ```
+
 Starts a TARDIS session and schedules the pomodoro notification.
 
 **View or update settings:**
+
 ```bash
 tardis plugin run pomodoro-timer config
 tardis plugin run pomodoro-timer config workDuration 30
 tardis plugin run pomodoro-timer config breakDuration 10
 tardis plugin run pomodoro-timer config autoNotify false
 ```
+
 ```
 plugin pomodoro-timer config
 plugin pomodoro-timer config workDuration 30
 ```
 
-| Setting | Default | Description |
-|---|---|---|
-| `workDuration` | 25 | Minutes before break notification |
-| `breakDuration` | 5 | Break duration shown in the notification |
-| `autoNotify` | true | Auto-schedule timer on session start |
+| Setting         | Default | Description                              |
+| --------------- | ------- | ---------------------------------------- |
+| `workDuration`  | 25      | Minutes before break notification        |
+| `breakDuration` | 5       | Break duration shown in the notification |
+| `autoNotify`    | true    | Auto-schedule timer on session start     |
 
 **View stats:**
+
 ```bash
 tardis plugin run pomodoro-timer stats
 ```
+
 ```
 plugin pomodoro-timer stats
 ```
+
 Shows today's and all-time pomodoro completion count.
 
 ---
@@ -221,6 +233,7 @@ After deploying, run via CLI or Telegram:
 ```bash
 tardis plugin run google-calendar-sync setup <client_id> <client_secret>
 ```
+
 ```
 plugin google-calendar-sync setup <client_id> <client_secret>
 ```
@@ -237,6 +250,7 @@ This stores the credentials and gives you an authorization URL.
 ```bash
 tardis plugin run google-calendar-sync setup-token <auth_code>
 ```
+
 ```
 plugin google-calendar-sync setup-token <auth_code>
 ```
@@ -246,28 +260,34 @@ Setup is complete. Sessions will now sync automatically when stopped.
 #### Commands
 
 **Check status:**
+
 ```bash
 tardis plugin run google-calendar-sync status
 ```
+
 ```
 plugin google-calendar-sync status
 ```
+
 Shows whether credentials are configured, auto-sync state, calendar ID, total synced count, and last sync time.
 
 **Manually sync sessions:**
+
 ```bash
 tardis plugin run google-calendar-sync sync-all
 ```
+
 ```
 plugin google-calendar-sync sync-all
 ```
+
 Syncs all recent completed sessions to Google Calendar.
 
 #### Configuration
 
-| Setting | Default | Description |
-|---|---|---|
-| `autoSync` | true | Sync sessions to calendar on stop |
-| `calendarId` | "primary" | Google Calendar ID to sync to |
+| Setting      | Default   | Description                       |
+| ------------ | --------- | --------------------------------- |
+| `autoSync`   | true      | Sync sessions to calendar on stop |
+| `calendarId` | "primary" | Google Calendar ID to sync to     |
 
 To sync to a specific calendar instead of your primary one, find the calendar ID in Google Calendar settings and update the plugin config.

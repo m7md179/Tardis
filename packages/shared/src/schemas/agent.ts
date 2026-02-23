@@ -2,7 +2,14 @@ import { z } from 'zod';
 import { ActionTypeSchema } from './plugin.js';
 
 export const AgentStepSchema = z.object({
-  type: z.enum(['reasoning', 'tool_call', 'tool_result', 'approval_request', 'user_response', 'error']),
+  type: z.enum([
+    'reasoning',
+    'tool_call',
+    'tool_result',
+    'approval_request',
+    'user_response',
+    'error',
+  ]),
   timestamp: z.number().int().positive(),
   content: z.string(),
   toolName: z.string().optional(),

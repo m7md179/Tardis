@@ -4,7 +4,8 @@ import type { SystemConfig } from '@tardis/shared';
 import { SystemConfigSchema } from '@tardis/shared';
 import { ConfigError } from './errors.js';
 
-const DEFAULT_DATA_DIR = process.env['TARDIS_DATA_DIR'] ?? join(process.env['HOME'] ?? '/var/lib/tardis', '.tardis');
+const DEFAULT_DATA_DIR =
+  process.env['TARDIS_DATA_DIR'] ?? join(process.env['HOME'] ?? '/var/lib/tardis', '.tardis');
 
 /**
  * Apply environment variable overrides to the raw config object.
@@ -81,7 +82,7 @@ export function loadConfig(dataDir: string = DEFAULT_DATA_DIR): SystemConfig {
     } catch (err) {
       throw new ConfigError(
         `Failed to parse config.json at ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
-        'CONFIG_PARSE_ERROR',
+        'CONFIG_PARSE_ERROR'
       );
     }
   }

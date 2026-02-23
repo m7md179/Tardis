@@ -3,7 +3,12 @@ import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { PluginManager } from './plugin-manager.js';
-import { validateManifest, validatePermissions, checkDuplicateToolNames, ManifestValidationError } from './manifest-validator.js';
+import {
+  validateManifest,
+  validatePermissions,
+  checkDuplicateToolNames,
+  ManifestValidationError,
+} from './manifest-validator.js';
 import type { PluginManifest } from '@tardis/shared';
 
 // Each test gets its own uniquely-named plugins dir to avoid Bun module caching
@@ -42,7 +47,12 @@ const VALID_MANIFEST: PluginManifest = {
 };
 
 const mockApi = () => ({
-  storage: { get: async () => null, set: async () => {}, delete: async () => {}, list: async () => [] },
+  storage: {
+    get: async () => null,
+    set: async () => {},
+    delete: async () => {},
+    list: async () => [],
+  },
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   events: { emit: () => {}, on: () => {} },
   config: { get: async () => null, set: async () => {} },
@@ -75,7 +85,10 @@ describe('validatePermissions', () => {
   });
 
   it('rejects unknown permissions', () => {
-    const bad: PluginManifest = { ...VALID_MANIFEST, permissions: ['storage:read', 'fake:permission'] };
+    const bad: PluginManifest = {
+      ...VALID_MANIFEST,
+      permissions: ['storage:read', 'fake:permission'],
+    };
     expect(() => validatePermissions(bad)).toThrow(ManifestValidationError);
     expect(() => validatePermissions(bad)).toThrow('fake:permission');
   });
@@ -83,13 +96,26 @@ describe('validatePermissions', () => {
 
 describe('checkDuplicateToolNames', () => {
   it('passes when tool names are unique across plugins', () => {
-    const m1: PluginManifest = { ...VALID_MANIFEST, name: 'plugin-a', tools: [{ name: 'plugin-a.ping', description: 'ping', parameters: {}, actionType: 'direct' }] };
-    const m2: PluginManifest = { ...VALID_MANIFEST, name: 'plugin-b', tools: [{ name: 'plugin-b.ping', description: 'ping', parameters: {}, actionType: 'direct' }] };
+    const m1: PluginManifest = {
+      ...VALID_MANIFEST,
+      name: 'plugin-a',
+      tools: [{ name: 'plugin-a.ping', description: 'ping', parameters: {}, actionType: 'direct' }],
+    };
+    const m2: PluginManifest = {
+      ...VALID_MANIFEST,
+      name: 'plugin-b',
+      tools: [{ name: 'plugin-b.ping', description: 'ping', parameters: {}, actionType: 'direct' }],
+    };
     expect(() => checkDuplicateToolNames([m1, m2])).not.toThrow();
   });
 
   it('throws when two plugins declare the same tool name', () => {
-    const shared = { name: 'shared.tool', description: 'tool', parameters: {}, actionType: 'direct' as const };
+    const shared = {
+      name: 'shared.tool',
+      description: 'tool',
+      parameters: {},
+      actionType: 'direct' as const,
+    };
     const m1: PluginManifest = { ...VALID_MANIFEST, name: 'plugin-a', tools: [shared] };
     const m2: PluginManifest = { ...VALID_MANIFEST, name: 'plugin-b', tools: [shared] };
     expect(() => checkDuplicateToolNames([m1, m2])).toThrow(ManifestValidationError);

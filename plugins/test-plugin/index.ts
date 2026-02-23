@@ -11,7 +11,7 @@ export const onDeactivate = async (): Promise<void> => {
 
 export const executeTool = async (
   toolName: string,
-  args: Record<string, unknown>,
+  args: Record<string, unknown>
 ): Promise<unknown> => {
   if (toolName === 'test-plugin.ping') {
     const message = typeof args['message'] === 'string' ? args['message'] : '';

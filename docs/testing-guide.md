@@ -20,6 +20,7 @@ ssh root@192.168.100.9 "pct exec 106 -- journalctl -u tardis -n 30 --no-pager"
 ```
 
 You should see:
+
 - `Starting TARDIS Server v2.0.0`
 - `[plugin:skill-engine] Skill Engine activated`
 - `[plugin:gemini-assistant] Gemini Assistant v2 active`
@@ -98,6 +99,7 @@ plugin skill-engine help
 ```
 
 Should show:
+
 - Plugin name, version, description
 - All 10 commands with arguments
 - Hooks: `session:stop`
@@ -157,6 +159,7 @@ plugin skill-engine train typescript
 ```
 
 Should respond with:
+
 - Training started: typescript
 - Type: practice
 - Difficulty: 5/10 (default for new skills)
@@ -171,6 +174,7 @@ plugin skill-engine complete-training 85
 ```
 
 Should respond with:
+
 - Score: 85%
 - XP earned (should be ~85 XP for difficulty 5, score 0.85)
 - Current level
@@ -385,9 +389,11 @@ Todoist description should show `[09:30-10:00]`.
    ssh root@192.168.100.9 "pct exec 106 -- systemctl restart tardis"
    ```
 3. Check skills:
+
    ```
    plugin skill-engine skills
    ```
+
    Should still show your skills with the correct XP and level.
 
 4. Check progress:
@@ -411,18 +417,22 @@ Should show the SQLite file.
 ### Test: Weak area task creation
 
 1. Make sure `autoCreateTasks` is on:
+
    ```
    plugin skill-engine config autoCreateTasks true
    ```
 
 2. Complete 3 training sessions with scores below 50%:
+
    ```
    plugin skill-engine train typescript
    plugin skill-engine complete-training 30
    ```
+
    (repeat 3 times)
 
 3. Check Todoist:
+
    ```
    tasks
    ```

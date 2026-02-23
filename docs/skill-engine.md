@@ -48,14 +48,16 @@ plugin skill-engine help
 ```
 plugin skill-engine add-skill typescript tech
 ```
-Or via Gemini: *"I want to learn TypeScript"*
+
+Or via Gemini: _"I want to learn TypeScript"_
 
 **2. Start training:**
 
 ```
 plugin skill-engine train typescript
 ```
-Or via Gemini: *"Let's practice TypeScript"*
+
+Or via Gemini: _"Let's practice TypeScript"_
 
 The engine picks a difficulty level based on your history (starts at 5/10).
 
@@ -64,7 +66,8 @@ The engine picks a difficulty level based on your history (starts at 5/10).
 ```
 plugin skill-engine complete-training 85
 ```
-Or via Gemini: *"I scored 85% on that"*
+
+Or via Gemini: _"I scored 85% on that"_
 
 You'll see XP earned, your new level, and the recommended difficulty for next time.
 
@@ -73,7 +76,8 @@ You'll see XP earned, your new level, and the recommended difficulty for next ti
 ```
 plugin skill-engine progress typescript
 ```
-Or via Gemini: *"How's my TypeScript going?"*
+
+Or via Gemini: _"How's my TypeScript going?"_
 
 ---
 
@@ -111,6 +115,7 @@ plugin skill-engine skills
 ```
 
 Output:
+
 ```
 Skills:
 
@@ -146,6 +151,7 @@ plugin skill-engine complete-training 60
 ```
 
 What happens on completion:
+
 1. **XP is awarded** based on difficulty and score
 2. **Level may increase** (you'll be notified)
 3. **Difficulty adjusts** for next time
@@ -210,13 +216,13 @@ plugin skill-engine config autoCreateTasks false     # Set value
 
 ## Configuration
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `targetSuccessRate` | `0.85` | Target success rate for difficulty calibration (0.5-0.95) |
-| `autoCreateTasks` | `true` | Auto-create Todoist tasks for weak areas and stale skills |
-| `snapshotInterval` | `"daily"` | How often to take skill snapshots |
-| `notifyOnLevelUp` | `true` | Send notification on level-up |
-| `notifyOnWeakness` | `true` | Send notification when a weak area is detected |
+| Key                 | Default   | Description                                               |
+| ------------------- | --------- | --------------------------------------------------------- |
+| `targetSuccessRate` | `0.85`    | Target success rate for difficulty calibration (0.5-0.95) |
+| `autoCreateTasks`   | `true`    | Auto-create Todoist tasks for weak areas and stale skills |
+| `snapshotInterval`  | `"daily"` | How often to take skill snapshots                         |
+| `notifyOnLevelUp`   | `true`    | Send notification on level-up                             |
+| `notifyOnWeakness`  | `true`    | Send notification when a weak area is detected            |
 
 ---
 
@@ -243,22 +249,22 @@ level = floor(sqrt(xp / 100))
 ```
 
 | Level | XP Required |
-|-------|-------------|
-| 1 | 100 |
-| 5 | 2,500 |
-| 10 | 10,000 |
-| 20 | 40,000 |
-| 50 | 250,000 |
+| ----- | ----------- |
+| 1     | 100         |
+| 5     | 2,500       |
+| 10    | 10,000      |
+| 20    | 40,000      |
+| 50    | 250,000     |
 
 ### Adaptive Difficulty
 
 The engine analyzes your last 10 completed sessions for each skill:
 
-| Avg Score | Action |
-|-----------|--------|
-| > 90% | Increase difficulty by 1 |
-| 75% - 90% | Hold (in the zone) |
-| < 75% | Decrease difficulty by 1 |
+| Avg Score | Action                   |
+| --------- | ------------------------ |
+| > 90%     | Increase difficulty by 1 |
+| 75% - 90% | Hold (in the zone)       |
+| < 75%     | Decrease difficulty by 1 |
 
 Difficulty is clamped between 1 and 10. The default target is 85% success rate, adjustable via the `calibrate` command.
 
@@ -270,7 +276,7 @@ When you score below 50% on a topic, the engine flags it as a potential weak are
 - Scoring above 80% decreases severity by 0.2
 - Severity reaching 0 resolves the weak area
 
-If `autoCreateTasks` is enabled, a Todoist task is created: *"Practice [skill]: [topic]"* with priority 3.
+If `autoCreateTasks` is enabled, a Todoist task is created: _"Practice [skill]: [topic]"_ with priority 3.
 
 ### Streaks
 
@@ -286,15 +292,15 @@ When a TARDIS time-tracking session is stopped, the Skill Engine checks if the s
 
 The Gemini assistant knows about the Skill Engine and can route natural language commands automatically:
 
-| You say | What happens |
-|---------|-------------|
-| "I want to learn TypeScript" | Adds a new tech skill |
-| "Let's practice Python" | Starts a training session |
-| "I scored 85%" | Completes training with that score |
-| "How's my cooking going?" | Shows progress report |
-| "What skills am I tracking?" | Lists all skills |
-| "Show my weekly stats" | Shows analytics |
-| "What are my weak areas?" | Lists unresolved weak areas |
+| You say                      | What happens                       |
+| ---------------------------- | ---------------------------------- |
+| "I want to learn TypeScript" | Adds a new tech skill              |
+| "Let's practice Python"      | Starts a training session          |
+| "I scored 85%"               | Completes training with that score |
+| "How's my cooking going?"    | Shows progress report              |
+| "What skills am I tracking?" | Lists all skills                   |
+| "Show my weekly stats"       | Shows analytics                    |
+| "What are my weak areas?"    | Lists unresolved weak areas        |
 
 The assistant uses `run_plugin_command` to invoke skill-engine commands, so all functionality is available through natural conversation in Telegram.
 
@@ -304,12 +310,12 @@ The assistant uses `run_plugin_command` to invoke skill-engine commands, so all 
 
 The Skill Engine uses a shared SQLite database at `/var/lib/tardis/tardis.db`. Tables are created automatically on first use.
 
-| Table | Purpose |
-|-------|---------|
-| `skills` | Tracked skills with name, category, level, XP |
-| `training_sessions` | Training history with type, difficulty, score |
-| `weak_areas` | Detected weak points with severity tracking |
-| `skill_snapshots` | Periodic snapshots of skill levels for trend analysis |
-| `engine_config` | Engine calibration data |
+| Table               | Purpose                                               |
+| ------------------- | ----------------------------------------------------- |
+| `skills`            | Tracked skills with name, category, level, XP         |
+| `training_sessions` | Training history with type, difficulty, score         |
+| `weak_areas`        | Detected weak points with severity tracking           |
+| `skill_snapshots`   | Periodic snapshots of skill levels for trend analysis |
+| `engine_config`     | Engine calibration data                               |
 
 Data persists across server restarts and deploys. The database file is not backed up by the deploy script — back it up separately if needed.

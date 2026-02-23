@@ -27,7 +27,7 @@ export class EventBus {
    */
   off<T = unknown>(event: string, handler: EventHandler<T>): void {
     const index = this.subscriptions.findIndex(
-      (s) => s.event === event && s.handler === (handler as EventHandler),
+      (s) => s.event === event && s.handler === (handler as EventHandler)
     );
     if (index !== -1) {
       this.subscriptions.splice(index, 1);
@@ -39,9 +39,7 @@ export class EventBus {
    * errors in one handler are caught and logged, not propagated.
    */
   async emit<T = unknown>(event: string, data?: T): Promise<void> {
-    const handlers = this.subscriptions
-      .filter((s) => s.event === event)
-      .map((s) => s.handler);
+    const handlers = this.subscriptions.filter((s) => s.event === event).map((s) => s.handler);
 
     await Promise.all(
       handlers.map(async (handler) => {
@@ -50,7 +48,7 @@ export class EventBus {
         } catch (err) {
           console.error(`[EventBus] Error in handler for event "${event}":`, err);
         }
-      }),
+      })
     );
   }
 

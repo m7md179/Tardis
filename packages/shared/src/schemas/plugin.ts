@@ -5,9 +5,12 @@ export const PluginTierSchema = z.union([z.literal(1), z.literal(2), z.literal(3
 export const ActionTypeSchema = z.enum(['direct', 'workflow']);
 
 export const ToolDefinitionSchema = z.object({
-  name: z.string().min(1).regex(/^[a-z0-9-]+\.[a-z0-9-]+$/, {
-    message: 'Tool name must follow "plugin-name.tool-name" format',
-  }),
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-z0-9-]+\.[a-z0-9-]+$/, {
+      message: 'Tool name must follow "plugin-name.tool-name" format',
+    }),
   description: z.string().min(1),
   parameters: z.record(z.unknown()),
   actionType: ActionTypeSchema,
@@ -22,9 +25,12 @@ export const ProactiveTriggerSchema = z.object({
 });
 
 export const PluginManifestSchema = z.object({
-  name: z.string().min(1).regex(/^[a-z0-9-]+$/, {
-    message: 'Plugin name must be lowercase letters, numbers, and hyphens only',
-  }),
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-z0-9-]+$/, {
+      message: 'Plugin name must be lowercase letters, numbers, and hyphens only',
+    }),
   version: z.string().regex(/^\d+\.\d+\.\d+$/, { message: 'Version must be semver (e.g. 1.0.0)' }),
   displayName: z.string().min(1),
   description: z.string().min(1),

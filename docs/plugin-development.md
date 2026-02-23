@@ -67,9 +67,7 @@ export default plugin;
   "main": "index.ts",
   "permissions": ["sessions:read", "notifications:send"],
   "hooks": ["session:stop"],
-  "commands": [
-    { "name": "hello", "description": "Say hello" }
-  ],
+  "commands": [{ "name": "hello", "description": "Say hello" }],
   "config": {
     "enabled": true
   }
@@ -87,43 +85,43 @@ tardis plugin list   # Verify it appears
 
 ## Plugin Manifest Reference (`plugin.json`)
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | Yes | Unique plugin identifier (kebab-case) |
-| `version` | string | Yes | Semver version string |
-| `displayName` | string | Yes | Human-readable name |
-| `description` | string | No | Short description |
-| `author` | string | No | Author name/email |
-| `license` | string | No | License identifier |
-| `tardisVersion` | string | Yes | Required TARDIS version (semver range) |
-| `main` | string | Yes | Entry point file (relative to plugin dir) |
-| `permissions` | string[] | Yes | Required permissions (see below) |
-| `hooks` | string[] | Yes | Events to subscribe to |
-| `commands` | object[] | Yes | CLI/Telegram commands |
-| `config` | object | No | Default configuration values |
-| `dependencies` | object | No | npm dependencies (installed via `bun install`) |
+| Field           | Type     | Required | Description                                    |
+| --------------- | -------- | -------- | ---------------------------------------------- |
+| `name`          | string   | Yes      | Unique plugin identifier (kebab-case)          |
+| `version`       | string   | Yes      | Semver version string                          |
+| `displayName`   | string   | Yes      | Human-readable name                            |
+| `description`   | string   | No       | Short description                              |
+| `author`        | string   | No       | Author name/email                              |
+| `license`       | string   | No       | License identifier                             |
+| `tardisVersion` | string   | Yes      | Required TARDIS version (semver range)         |
+| `main`          | string   | Yes      | Entry point file (relative to plugin dir)      |
+| `permissions`   | string[] | Yes      | Required permissions (see below)               |
+| `hooks`         | string[] | Yes      | Events to subscribe to                         |
+| `commands`      | object[] | Yes      | CLI/Telegram commands                          |
+| `config`        | object   | No       | Default configuration values                   |
+| `dependencies`  | object   | No       | npm dependencies (installed via `bun install`) |
 
 ### Permissions
 
-| Permission | Description |
-|-----------|-------------|
-| `sessions:read` | Read session data (list, get by ID) |
-| `sessions:write` | Create and modify sessions |
-| `storage:read` | Read from plugin storage |
-| `storage:write` | Write to plugin storage |
-| `http:external` | Make HTTP requests to external services |
-| `notifications:send` | Send notifications via Telegram |
-| `tasks:read` | Read Todoist tasks |
-| `tasks:write` | Create/complete Todoist tasks |
+| Permission           | Description                             |
+| -------------------- | --------------------------------------- |
+| `sessions:read`      | Read session data (list, get by ID)     |
+| `sessions:write`     | Create and modify sessions              |
+| `storage:read`       | Read from plugin storage                |
+| `storage:write`      | Write to plugin storage                 |
+| `http:external`      | Make HTTP requests to external services |
+| `notifications:send` | Send notifications via Telegram         |
+| `tasks:read`         | Read Todoist tasks                      |
+| `tasks:write`        | Create/complete Todoist tasks           |
 
 ### Hooks
 
-| Hook | Lifecycle Method | Description |
-|------|-----------------|-------------|
-| `session:start` | `onSessionStart(session, api)` | Fired when a session starts |
-| `session:stop` | `onSessionStop(session, api)` | Fired when a session stops |
-| `session:pause` | `onSessionPause(session, api)` | Fired when a session is paused |
-| `session:resume` | `onSessionResume(session, api)` | Fired when a session resumes |
+| Hook             | Lifecycle Method                | Description                    |
+| ---------------- | ------------------------------- | ------------------------------ |
+| `session:start`  | `onSessionStart(session, api)`  | Fired when a session starts    |
+| `session:stop`   | `onSessionStop(session, api)`   | Fired when a session stops     |
+| `session:pause`  | `onSessionPause(session, api)`  | Fired when a session is paused |
+| `session:resume` | `onSessionResume(session, api)` | Fired when a session resumes   |
 
 ---
 

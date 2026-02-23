@@ -13,7 +13,13 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 // ---- Inline copies of pure functions from the plugin (no import needed) ----
 
 interface TaskMatch {
-  task: { id: string; content: string; description?: string; due?: { string: string; date: string }; priority?: number };
+  task: {
+    id: string;
+    content: string;
+    description?: string;
+    due?: { string: string; date: string };
+    priority?: number;
+  };
   confidence: 'exact' | 'prefix' | 'contains';
 }
 
@@ -28,9 +34,9 @@ function wordOverlap(target: string, query: string): number {
   const queryWords = normalize(query).split(' ');
   let score = 0;
   for (const qw of queryWords) {
-    if (targetWords.some(tw => tw === qw)) {
+    if (targetWords.some((tw) => tw === qw)) {
       score += 1; // exact word match
-    } else if (targetWords.some(tw => tw.startsWith(qw) || qw.startsWith(tw))) {
+    } else if (targetWords.some((tw) => tw.startsWith(qw) || qw.startsWith(tw))) {
       score += 0.5; // partial/prefix word match (e.g. "standup" ↔ "stand")
     }
   }
@@ -114,8 +120,12 @@ function createMockAPI() {
 
   const api = {
     tasks: {
-      async getAll() { return [...tasks]; },
-      async getById(id: string) { return tasks.find(t => t.id === id); },
+      async getAll() {
+        return [...tasks];
+      },
+      async getById(id: string) {
+        return tasks.find((t) => t.id === id);
+      },
       async create(content: string, description?: string, dueString?: string) {
         const task: MockTask = {
           id: `task-${taskIdCounter++}`,
@@ -128,7 +138,7 @@ function createMockAPI() {
         return task;
       },
       async update(taskId: string, updates: Record<string, any>) {
-        const task = tasks.find(t => t.id === taskId);
+        const task = tasks.find((t) => t.id === taskId);
         if (!task) throw new Error(`Task ${taskId} not found`);
         if (updates.content) task.content = updates.content;
         if (updates.due_string) task.due = { string: updates.due_string, date: '2026-02-20' };
@@ -137,19 +147,23 @@ function createMockAPI() {
         return { ...task };
       },
       async complete(taskId: string) {
-        const idx = tasks.findIndex(t => t.id === taskId);
+        const idx = tasks.findIndex((t) => t.id === taskId);
         if (idx === -1) throw new Error(`Task ${taskId} not found`);
         tasks.splice(idx, 1);
       },
       async delete(taskId: string) {
-        const idx = tasks.findIndex(t => t.id === taskId);
+        const idx = tasks.findIndex((t) => t.id === taskId);
         if (idx === -1) throw new Error(`Task ${taskId} not found`);
         tasks.splice(idx, 1);
       },
     },
     sessions: {
-      async getActive() { return sessions.filter(s => s.status !== 'COMPLETED'); },
-      async getById(id: string) { return sessions.find(s => s.id === id) || null; },
+      async getActive() {
+        return sessions.filter((s) => s.status !== 'COMPLETED');
+      },
+      async getById(id: string) {
+        return sessions.find((s) => s.id === id) || null;
+      },
       async start(options: { taskName: string }) {
         const session: MockSession = {
           id: `sess-${sessionIdCounter++}`,
@@ -162,37 +176,49 @@ function createMockAPI() {
         return session;
       },
       async stop(sessionId: string) {
-        const session = sessions.find(s => s.id === sessionId);
+        const session = sessions.find((s) => s.id === sessionId);
         if (!session) throw new Error(`Session ${sessionId} not found`);
         session.status = 'COMPLETED';
         session.duration = 600; // 10 minutes
         return { ...session };
       },
       async pause(sessionId: string) {
-        const session = sessions.find(s => s.id === sessionId);
+        const session = sessions.find((s) => s.id === sessionId);
         if (!session) throw new Error(`Session ${sessionId} not found`);
         session.status = 'PAUSED';
         session.duration = 300;
         return { ...session };
       },
       async resume(sessionId: string) {
-        const session = sessions.find(s => s.id === sessionId);
+        const session = sessions.find((s) => s.id === sessionId);
         if (!session) throw new Error(`Session ${sessionId} not found`);
         session.status = 'ACTIVE';
         return { ...session };
       },
     },
     notifications: {
-      async send(msg: string) { notifications.push(msg); },
+      async send(msg: string) {
+        notifications.push(msg);
+      },
     },
     storage: {
-      async get<T>(key: string) { return storage.get(key) as T | undefined; },
-      async set(key: string, value: unknown) { storage.set(key, value); },
-      async delete(key: string) { storage.delete(key); },
-      async clear() { storage.clear(); },
+      async get<T>(key: string) {
+        return storage.get(key) as T | undefined;
+      },
+      async set(key: string, value: unknown) {
+        storage.set(key, value);
+      },
+      async delete(key: string) {
+        storage.delete(key);
+      },
+      async clear() {
+        storage.clear();
+      },
     },
     config: {
-      get<T>(key: string) { return undefined as T | undefined; },
+      get<T>(key: string) {
+        return undefined as T | undefined;
+      },
       set: async () => {},
       getAll: () => ({}),
     },
@@ -241,14 +267,19 @@ async function executeFunctionCall(
       case 'stop_tracking': {
         const active = await api.sessions.getActive();
         const running = active.filter((s) => s.status === 'ACTIVE');
-        if (running.length === 0) return { success: false, result: { error: 'No active sessions to stop' } };
+        if (running.length === 0)
+          return { success: false, result: { error: 'No active sessions to stop' } };
         const stopped = await api.sessions.stop(running[0].id);
-        return { success: true, result: { taskName: stopped.taskName, duration: formatDuration(stopped.duration) } };
+        return {
+          success: true,
+          result: { taskName: stopped.taskName, duration: formatDuration(stopped.duration) },
+        };
       }
       case 'pause_tracking': {
         const active = await api.sessions.getActive();
         const running = active.filter((s) => s.status === 'ACTIVE');
-        if (running.length === 0) return { success: false, result: { error: 'No active sessions to pause' } };
+        if (running.length === 0)
+          return { success: false, result: { error: 'No active sessions to pause' } };
         await api.sessions.pause(running[0].id);
         return { success: true, result: { taskName: running[0].taskName } };
       }
@@ -261,7 +292,8 @@ async function executeFunctionCall(
       }
       case 'get_status': {
         const active = await api.sessions.getActive();
-        if (active.length === 0) return { success: true, result: { sessions: [], message: 'No active sessions' } };
+        if (active.length === 0)
+          return { success: true, result: { sessions: [], message: 'No active sessions' } };
         const sessions = active.map((s) => ({
           taskName: s.taskName,
           status: s.status,
@@ -272,17 +304,32 @@ async function executeFunctionCall(
       case 'add_task': {
         const description = args.time_window ? `[${args.time_window}]` : undefined;
         const task = await api.tasks.create(args.name, description, args.due_date);
-        return { success: true, result: { content: task.content, due: task.due?.string, id: task.id } };
+        return {
+          success: true,
+          result: { content: task.content, due: task.due?.string, id: task.id },
+        };
       }
       case 'update_task': {
         const tasks = await api.tasks.getAll();
         const matches = fuzzyMatchTasks(tasks, args.task_query);
         if (matches.length === 0) {
           const available = tasks.slice(0, 10).map((t: any) => t.content);
-          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+          return {
+            success: false,
+            result: {
+              error: `No task found matching "${args.task_query}"`,
+              available_tasks: available,
+            },
+          };
         }
         if (matches.length > 1 && matches[0].confidence !== 'exact') {
-          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+          return {
+            success: false,
+            result: {
+              error: 'Multiple tasks match',
+              matches: matches.slice(0, 5).map((m) => m.task.content),
+            },
+          };
         }
         const target = matches[0].task;
         const updates: Record<string, any> = {};
@@ -291,17 +338,36 @@ async function executeFunctionCall(
         if (args.new_description) updates.description = args.new_description;
         if (args.new_priority) updates.priority = args.new_priority;
         const updated = await api.tasks.update(target.id, updates);
-        return { success: true, result: { content: updated.content, due: updated.due?.string, previous_content: target.content } };
+        return {
+          success: true,
+          result: {
+            content: updated.content,
+            due: updated.due?.string,
+            previous_content: target.content,
+          },
+        };
       }
       case 'reschedule_task': {
         const tasks = await api.tasks.getAll();
         const matches = fuzzyMatchTasks(tasks, args.task_query);
         if (matches.length === 0) {
           const available = tasks.slice(0, 10).map((t: any) => t.content);
-          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+          return {
+            success: false,
+            result: {
+              error: `No task found matching "${args.task_query}"`,
+              available_tasks: available,
+            },
+          };
         }
         if (matches.length > 1 && matches[0].confidence !== 'exact') {
-          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+          return {
+            success: false,
+            result: {
+              error: 'Multiple tasks match',
+              matches: matches.slice(0, 5).map((m) => m.task.content),
+            },
+          };
         }
         const target = matches[0].task;
         const updates: Record<string, any> = { due_string: args.new_due_date };
@@ -309,17 +375,36 @@ async function executeFunctionCall(
           updates.description = `[${args.new_time_window}]`;
         }
         const updated = await api.tasks.update(target.id, updates);
-        return { success: true, result: { content: updated.content, old_due: target.due?.string, new_due: updated.due?.string } };
+        return {
+          success: true,
+          result: {
+            content: updated.content,
+            old_due: target.due?.string,
+            new_due: updated.due?.string,
+          },
+        };
       }
       case 'complete_task': {
         const tasks = await api.tasks.getAll();
         const matches = fuzzyMatchTasks(tasks, args.task_query);
         if (matches.length === 0) {
           const available = tasks.slice(0, 10).map((t: any) => t.content);
-          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+          return {
+            success: false,
+            result: {
+              error: `No task found matching "${args.task_query}"`,
+              available_tasks: available,
+            },
+          };
         }
         if (matches.length > 1 && matches[0].confidence !== 'exact') {
-          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+          return {
+            success: false,
+            result: {
+              error: 'Multiple tasks match',
+              matches: matches.slice(0, 5).map((m) => m.task.content),
+            },
+          };
         }
         const target = matches[0].task;
         await api.tasks.complete(target.id);
@@ -330,10 +415,22 @@ async function executeFunctionCall(
         const matches = fuzzyMatchTasks(tasks, args.task_query);
         if (matches.length === 0) {
           const available = tasks.slice(0, 10).map((t: any) => t.content);
-          return { success: false, result: { error: `No task found matching "${args.task_query}"`, available_tasks: available } };
+          return {
+            success: false,
+            result: {
+              error: `No task found matching "${args.task_query}"`,
+              available_tasks: available,
+            },
+          };
         }
         if (matches.length > 1 && matches[0].confidence !== 'exact') {
-          return { success: false, result: { error: 'Multiple tasks match', matches: matches.slice(0, 5).map((m) => m.task.content) } };
+          return {
+            success: false,
+            result: {
+              error: 'Multiple tasks match',
+              matches: matches.slice(0, 5).map((m) => m.task.content),
+            },
+          };
         }
         const target = matches[0].task;
         await api.tasks.delete(target.id);
@@ -341,7 +438,8 @@ async function executeFunctionCall(
       }
       case 'list_tasks': {
         const tasks = await api.tasks.getAll();
-        if (tasks.length === 0) return { success: true, result: { tasks: [], message: 'No tasks' } };
+        if (tasks.length === 0)
+          return { success: true, result: { tasks: [], message: 'No tasks' } };
         return {
           success: true,
           result: {
@@ -355,7 +453,10 @@ async function executeFunctionCall(
         };
       }
       case 'set_reminder': {
-        return { success: true, result: { message: args.message, delay_minutes: args.delay_minutes, scheduled: true } };
+        return {
+          success: true,
+          result: { message: args.message, delay_minutes: args.delay_minutes, scheduled: true },
+        };
       }
       default:
         return { success: false, result: { error: `Unknown function: ${name}` } };
@@ -429,7 +530,9 @@ describe('Fuzzy Task Matching', () => {
 describe('Group 1: Adding Tasks (basic)', () => {
   let api: ReturnType<typeof createMockAPI>;
 
-  beforeEach(() => { api = createMockAPI(); });
+  beforeEach(() => {
+    api = createMockAPI();
+  });
 
   test('add_task creates task with just a name', async () => {
     const result = await executeFunctionCall('add_task', { name: 'buy groceries' }, api);
@@ -440,10 +543,14 @@ describe('Group 1: Adding Tasks (basic)', () => {
   });
 
   test('add_task creates task with name and due_date', async () => {
-    const result = await executeFunctionCall('add_task', {
-      name: 'finish the report',
-      due_date: 'tomorrow',
-    }, api);
+    const result = await executeFunctionCall(
+      'add_task',
+      {
+        name: 'finish the report',
+        due_date: 'tomorrow',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.content).toBe('finish the report');
     expect(result.result.due).toBe('tomorrow');
@@ -451,10 +558,14 @@ describe('Group 1: Adding Tasks (basic)', () => {
 
   test('add_task creates task with name, due_date from natural language', async () => {
     // Simulates: "I need to submit the proposal by Friday" → Gemini calls add_task
-    const result = await executeFunctionCall('add_task', {
-      name: 'Submit the proposal',
-      due_date: 'Friday',
-    }, api);
+    const result = await executeFunctionCall(
+      'add_task',
+      {
+        name: 'Submit the proposal',
+        due_date: 'Friday',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.content).toBe('Submit the proposal');
     expect(result.result.due).toBe('Friday');
@@ -464,57 +575,79 @@ describe('Group 1: Adding Tasks (basic)', () => {
 describe('Group 2: Adding Tasks with Time', () => {
   let api: ReturnType<typeof createMockAPI>;
 
-  beforeEach(() => { api = createMockAPI(); });
+  beforeEach(() => {
+    api = createMockAPI();
+  });
 
   test('add_task with time_window stores in description as brackets', async () => {
-    const result = await executeFunctionCall('add_task', {
-      name: 'meeting',
-      due_date: 'tomorrow',
-      time_window: '3pm-4pm',
-    }, api);
+    const result = await executeFunctionCall(
+      'add_task',
+      {
+        name: 'meeting',
+        due_date: 'tomorrow',
+        time_window: '3pm-4pm',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(api._tasks[0].description).toBe('[3pm-4pm]');
     expect(api._tasks[0].due?.string).toBe('tomorrow');
   });
 
   test('add_task with 24h time_window', async () => {
-    const result = await executeFunctionCall('add_task', {
-      name: 'interview',
-      due_date: 'tomorrow',
-      time_window: '15:00-16:00',
-    }, api);
+    const result = await executeFunctionCall(
+      'add_task',
+      {
+        name: 'interview',
+        due_date: 'tomorrow',
+        time_window: '15:00-16:00',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(api._tasks[0].description).toBe('[15:00-16:00]');
   });
 
   test('add_task "Meeting with client" with calculated time window', async () => {
     // Gemini should calculate: 10am + 1 hour = 11am
-    const result = await executeFunctionCall('add_task', {
-      name: 'Meeting with client',
-      due_date: 'tomorrow',
-      time_window: '10am-11am',
-    }, api);
+    const result = await executeFunctionCall(
+      'add_task',
+      {
+        name: 'Meeting with client',
+        due_date: 'tomorrow',
+        time_window: '10am-11am',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(api._tasks[0].description).toBe('[10am-11am]');
   });
 
   test('add_task "Dentist appointment" with due and time', async () => {
-    const result = await executeFunctionCall('add_task', {
-      name: 'Dentist appointment',
-      due_date: 'next Monday',
-      time_window: '9am-10am',
-    }, api);
+    const result = await executeFunctionCall(
+      'add_task',
+      {
+        name: 'Dentist appointment',
+        due_date: 'next Monday',
+        time_window: '9am-10am',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.due).toBe('next Monday');
     expect(api._tasks[0].description).toBe('[9am-10am]');
   });
 
   test('add_task "standup meeting" with today and 30min window', async () => {
-    const result = await executeFunctionCall('add_task', {
-      name: 'standup meeting',
-      due_date: 'today',
-      time_window: '09:00-09:30',
-    }, api);
+    const result = await executeFunctionCall(
+      'add_task',
+      {
+        name: 'standup meeting',
+        due_date: 'today',
+        time_window: '09:00-09:30',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(api._tasks[0].description).toBe('[09:00-09:30]');
   });
@@ -532,43 +665,59 @@ describe('Group 3: Reschedule', () => {
   });
 
   test('reschedule single-match task to new date', async () => {
-    const result = await executeFunctionCall('reschedule_task', {
-      task_query: 'interview',
-      new_due_date: 'next week',
-    }, api);
+    const result = await executeFunctionCall(
+      'reschedule_task',
+      {
+        task_query: 'interview',
+        new_due_date: 'next week',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.content).toBe('interview');
     expect(result.result.new_due).toBe('next week');
   });
 
   test('reschedule "dentist" to new date and time', async () => {
-    const result = await executeFunctionCall('reschedule_task', {
-      task_query: 'dentist',
-      new_due_date: 'tomorrow at 2pm',
-    }, api);
+    const result = await executeFunctionCall(
+      'reschedule_task',
+      {
+        task_query: 'dentist',
+        new_due_date: 'tomorrow at 2pm',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.new_due).toBe('tomorrow at 2pm');
     // Without new_time_window, description keeps old value
-    const task = api._tasks.find(t => t.content === 'Dentist appointment');
+    const task = api._tasks.find((t) => t.content === 'Dentist appointment');
     expect(task?.description).toBe('[9am-10am]');
   });
 
   test('reschedule with new_time_window updates description', async () => {
-    const result = await executeFunctionCall('reschedule_task', {
-      task_query: 'dentist',
-      new_due_date: 'tomorrow at 2pm',
-      new_time_window: '2pm-3pm',
-    }, api);
+    const result = await executeFunctionCall(
+      'reschedule_task',
+      {
+        task_query: 'dentist',
+        new_due_date: 'tomorrow at 2pm',
+        new_time_window: '2pm-3pm',
+      },
+      api
+    );
     expect(result.success).toBe(true);
-    const task = api._tasks.find(t => t.content === 'Dentist appointment');
+    const task = api._tasks.find((t) => t.content === 'Dentist appointment');
     expect(task?.description).toBe('[2pm-3pm]');
   });
 
   test('reschedule with no matching task returns error + available tasks', async () => {
-    const result = await executeFunctionCall('reschedule_task', {
-      task_query: 'nonexistent',
-      new_due_date: 'Friday',
-    }, api);
+    const result = await executeFunctionCall(
+      'reschedule_task',
+      {
+        task_query: 'nonexistent',
+        new_due_date: 'Friday',
+      },
+      api
+    );
     expect(result.success).toBe(false);
     expect(result.result.error).toContain('No task found');
     expect(result.result.available_tasks.length).toBeGreaterThan(0);
@@ -577,10 +726,14 @@ describe('Group 3: Reschedule', () => {
   test('reschedule with ambiguous match returns multiple matches error', async () => {
     // Add a second meeting task
     await api.tasks.create('meeting standup', undefined, 'today');
-    const result = await executeFunctionCall('reschedule_task', {
-      task_query: 'meeting',
-      new_due_date: 'Friday',
-    }, api);
+    const result = await executeFunctionCall(
+      'reschedule_task',
+      {
+        task_query: 'meeting',
+        new_due_date: 'Friday',
+      },
+      api
+    );
     expect(result.success).toBe(false);
     expect(result.result.error).toBe('Multiple tasks match');
     expect(result.result.matches.length).toBeGreaterThan(1);
@@ -598,54 +751,74 @@ describe('Group 4: Update/Complete/Delete', () => {
   });
 
   test('update_task renames a task', async () => {
-    const result = await executeFunctionCall('update_task', {
-      task_query: 'report',
-      new_name: 'quarterly report',
-    }, api);
+    const result = await executeFunctionCall(
+      'update_task',
+      {
+        task_query: 'report',
+        new_name: 'quarterly report',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.content).toBe('quarterly report');
     // NOTE: previous_content shows updated value because the target object is mutated
     // before the spread. This is a real bug in the plugin — the original content is
     // captured by reference. In practice Todoist API returns a new object so it works,
     // but the mock exposes it. We just verify the task was renamed.
-    const task = api._tasks.find(t => t.content === 'quarterly report');
+    const task = api._tasks.find((t) => t.content === 'quarterly report');
     expect(task).toBeTruthy();
   });
 
   test('update_task changes priority', async () => {
-    const result = await executeFunctionCall('update_task', {
-      task_query: 'groceries',
-      new_priority: 4,
-    }, api);
+    const result = await executeFunctionCall(
+      'update_task',
+      {
+        task_query: 'groceries',
+        new_priority: 4,
+      },
+      api
+    );
     expect(result.success).toBe(true);
-    const task = api._tasks.find(t => t.content === 'buy groceries');
+    const task = api._tasks.find((t) => t.content === 'buy groceries');
     expect(task?.priority).toBe(4);
   });
 
   test('complete_task removes task', async () => {
     expect(api._tasks).toHaveLength(3);
-    const result = await executeFunctionCall('complete_task', {
-      task_query: 'groceries',
-    }, api);
+    const result = await executeFunctionCall(
+      'complete_task',
+      {
+        task_query: 'groceries',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.content).toBe('buy groceries');
     expect(api._tasks).toHaveLength(2);
-    expect(api._tasks.find(t => t.content === 'buy groceries')).toBeUndefined();
+    expect(api._tasks.find((t) => t.content === 'buy groceries')).toBeUndefined();
   });
 
   test('delete_task removes task permanently', async () => {
-    const result = await executeFunctionCall('delete_task', {
-      task_query: 'standup meeting',
-    }, api);
+    const result = await executeFunctionCall(
+      'delete_task',
+      {
+        task_query: 'standup meeting',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.content).toBe('standup meeting');
-    expect(api._tasks.find(t => t.content === 'standup meeting')).toBeUndefined();
+    expect(api._tasks.find((t) => t.content === 'standup meeting')).toBeUndefined();
   });
 
   test('complete nonexistent task fails gracefully', async () => {
-    const result = await executeFunctionCall('complete_task', {
-      task_query: 'does not exist',
-    }, api);
+    const result = await executeFunctionCall(
+      'complete_task',
+      {
+        task_query: 'does not exist',
+      },
+      api
+    );
     expect(result.success).toBe(false);
     expect(result.result.error).toContain('No task found');
   });
@@ -654,12 +827,18 @@ describe('Group 4: Update/Complete/Delete', () => {
 describe('Group 5: Time Tracking', () => {
   let api: ReturnType<typeof createMockAPI>;
 
-  beforeEach(() => { api = createMockAPI(); });
+  beforeEach(() => {
+    api = createMockAPI();
+  });
 
   test('start_tracking creates active session', async () => {
-    const result = await executeFunctionCall('start_tracking', {
-      task_name: 'the API',
-    }, api);
+    const result = await executeFunctionCall(
+      'start_tracking',
+      {
+        task_name: 'the API',
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.taskName).toBe('the API');
     expect(api._sessions).toHaveLength(1);
@@ -738,13 +917,19 @@ describe('Group 5: Time Tracking', () => {
 describe('Group 6: Reminders', () => {
   let api: ReturnType<typeof createMockAPI>;
 
-  beforeEach(() => { api = createMockAPI(); });
+  beforeEach(() => {
+    api = createMockAPI();
+  });
 
   test('set_reminder returns scheduled result', async () => {
-    const result = await executeFunctionCall('set_reminder', {
-      message: 'take a break',
-      delay_minutes: 30,
-    }, api);
+    const result = await executeFunctionCall(
+      'set_reminder',
+      {
+        message: 'take a break',
+        delay_minutes: 30,
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.scheduled).toBe(true);
     expect(result.result.message).toBe('take a break');
@@ -752,10 +937,14 @@ describe('Group 6: Reminders', () => {
   });
 
   test('set_reminder with 5 minutes', async () => {
-    const result = await executeFunctionCall('set_reminder', {
-      message: 'check email',
-      delay_minutes: 5,
-    }, api);
+    const result = await executeFunctionCall(
+      'set_reminder',
+      {
+        message: 'check email',
+        delay_minutes: 5,
+      },
+      api
+    );
     expect(result.success).toBe(true);
     expect(result.result.delay_minutes).toBe(5);
   });
@@ -772,22 +961,30 @@ describe('Group 7: Multi-step / Chaining', () => {
 
   test('reschedule then start tracking (simulated chain)', async () => {
     // Step 1: Reschedule the meeting
-    const r1 = await executeFunctionCall('reschedule_task', {
-      task_query: 'meeting',
-      new_due_date: 'Friday',
-    }, api);
+    const r1 = await executeFunctionCall(
+      'reschedule_task',
+      {
+        task_query: 'meeting',
+        new_due_date: 'Friday',
+      },
+      api
+    );
     expect(r1.success).toBe(true);
 
     // Step 2: Start tracking the report
-    const r2 = await executeFunctionCall('start_tracking', {
-      task_name: 'quarterly report',
-    }, api);
+    const r2 = await executeFunctionCall(
+      'start_tracking',
+      {
+        task_name: 'quarterly report',
+      },
+      api
+    );
     expect(r2.success).toBe(true);
 
     // Both operations succeeded
     expect(api._sessions).toHaveLength(1);
     expect(api._sessions[0].taskName).toBe('quarterly report');
-    const meeting = api._tasks.find(t => t.content === 'Meeting with client');
+    const meeting = api._tasks.find((t) => t.content === 'Meeting with client');
     expect(meeting?.due?.string).toBe('Friday');
   });
 
@@ -799,9 +996,13 @@ describe('Group 7: Multi-step / Chaining', () => {
 
     // Step 2: Start tracking first task
     const firstTask = r1.result.tasks[0].content;
-    const r2 = await executeFunctionCall('start_tracking', {
-      task_name: firstTask,
-    }, api);
+    const r2 = await executeFunctionCall(
+      'start_tracking',
+      {
+        task_name: firstTask,
+      },
+      api
+    );
     expect(r2.success).toBe(true);
     expect(r2.result.taskName).toBe(firstTask);
   });
@@ -810,7 +1011,9 @@ describe('Group 7: Multi-step / Chaining', () => {
 describe('Group 8: Edge Cases', () => {
   let api: ReturnType<typeof createMockAPI>;
 
-  beforeEach(() => { api = createMockAPI(); });
+  beforeEach(() => {
+    api = createMockAPI();
+  });
 
   test('list_tasks with no tasks returns empty', async () => {
     const result = await executeFunctionCall('list_tasks', {}, api);
@@ -886,9 +1089,13 @@ describe('BUG 3 regression: "standup meeting" vs "stand up meeting"', () => {
 
     // When query is "standup meeting", it should find "standup meeting today" via contains
     // and "meeting" also via contains, but "standup meeting today" has higher word overlap
-    const result = await executeFunctionCall('delete_task', {
-      task_query: 'standup meeting',
-    }, api);
+    const result = await executeFunctionCall(
+      'delete_task',
+      {
+        task_query: 'standup meeting',
+      },
+      api
+    );
     // Both match: "standup meeting today" via contains, "meeting" via word overlap
     // With word overlap sorting, "standup meeting today" (overlap=2) beats "meeting" (overlap=1)
     // But both are "contains" confidence, and there are multiple → disambiguation triggers
@@ -917,10 +1124,14 @@ describe('BUG 3 regression: "standup meeting" vs "stand up meeting"', () => {
     expect(r1.success).toBe(true);
     expect(r1.result.content).toBe('buy groceries');
 
-    const r2 = await executeFunctionCall('reschedule_task', {
-      task_query: 'dentist',
-      new_due_date: 'Friday',
-    }, api);
+    const r2 = await executeFunctionCall(
+      'reschedule_task',
+      {
+        task_query: 'dentist',
+        new_due_date: 'Friday',
+      },
+      api
+    );
     expect(r2.success).toBe(true);
     expect(r2.result.content).toBe('Dentist appointment');
   });
