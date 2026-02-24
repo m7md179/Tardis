@@ -29,3 +29,9 @@ export { OpenAIAdapter } from './llm/openai-adapter.js';
 export type { OpenAIAdapterConfig } from './llm/openai-adapter.js';
 export { OllamaAdapter } from './llm/ollama-adapter.js';
 export type { OllamaAdapterConfig } from './llm/ollama-adapter.js';
+export { runAgentLoop } from './agent/agent-loop.js';
+export type {
+  AgentLoopInput,
+  AgentLoopOutput,
+  PendingApproval,
+} from './agent/agent-loop.js';
