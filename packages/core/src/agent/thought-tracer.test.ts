@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { existsSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { ThoughtTracer } from './thought-tracer.js';
+import { runAgentLoop } from './agent-loop.js';
 import { createDb, migrate } from '@tardis/db';
-import type { ThoughtTrace, AgentStep } from '@tardis/shared';
+import type { ThoughtTrace, AgentStep, AgentConfig, ToolDefinition } from '@tardis/shared';
+import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 
 // ─── Test DB helpers ──────────────────────────────────────────────────────────
 
@@ -241,5 +243,158 @@ describe('ThoughtTracer.count()', () => {
     await tracer.save(makeTrace());
     await tracer.save(makeTrace());
     expect(await tracer.count()).toBe(3);
+  });
+});
+
+// ─── Integration: runAgentLoop → ThoughtTracer ────────────────────────────────
+
+const DEFAULT_CONFIG: AgentConfig = {
+  maxSteps: 10,
+  conversationHistoryLength: 10,
+  memoryTokenBudget: 2000,
+  enableFallbackIntent: false,
+  actionOverrides: {},
+};
+
+function makeScriptedLLM(responses: LLMResponse[]): LLMProvider {
+  let callIndex = 0;
+  return {
+    name: 'mock',
+    async chat() {
+      const response = responses[callIndex++];
+      if (!response) throw new Error(`Mock LLM exhausted (call #${callIndex})`);
+      return response;
+    },
+    async generate() { return ''; },
+  };
+}
+
+describe('ThoughtTracer: integration with runAgentLoop', () => {
+  let cleanup: () => void;
+  let tracer: ThoughtTracer;
+
+  beforeEach(() => {
+    const { db, cleanup: c } = makeTestDb();
+    cleanup = c;
+    tracer = new ThoughtTracer(db);
+  });
+
+  afterEach(() => cleanup());
+
+  it('saves and fully restores a 2-tool-chain trace from a real agent run', async () => {
+    const timerTool: ToolDefinition = {
+      name: 'time-tracker.start',
+      description: 'Start timer',
+      parameters: { type: 'object', properties: { taskName: { type: 'string' } } },
+      actionType: 'direct',
+    };
+    const notesTool: ToolDefinition = {
+      name: 'notes.save',
+      description: 'Save note',
+      parameters: { type: 'object', properties: { content: { type: 'string' } } },
+      actionType: 'direct',
+    };
+
+    const llm = makeScriptedLLM([
+      { type: 'tool_call', toolName: 'time-tracker.start', toolArgs: { taskName: 'integration test' }, toolCallId: 'call_1' },
+      { type: 'tool_call', toolName: 'notes.save', toolArgs: { content: 'test session started' }, toolCallId: 'call_2' },
+      { type: 'text', text: 'Timer started and note saved.' },
+    ]);
+
+    const result = await runAgentLoop({
+      userMessage: 'Start a session and note it',
+      conversationHistory: [],
+      memories: [],
+      availableTools: [timerTool, notesTool],
+      selectedPlugins: ['time-tracker', 'notes'],
+      config: DEFAULT_CONFIG,
+      llmProvider: llm,
+      executeTool: async (name) =>
+        name === 'time-tracker.start' ? { sessionId: 'sess_1' } : { saved: true },
+    });
+
+    // Sanity check the live result
+    expect(result.trace.steps).toHaveLength(5);
+    expect(result.response).toBe('Timer started and note saved.');
+
+    // Round-trip through the DB
+    await tracer.save(result.trace);
+    const loaded = await tracer.getById(result.trace.id);
+
+    expect(loaded).not.toBeNull();
+    expect(loaded?.userMessage).toBe('Start a session and note it');
+    expect(loaded?.finalResponse).toBe('Timer started and note saved.');
+    expect(loaded?.modelUsed).toBe('mock');
+    expect(loaded?.steps).toHaveLength(5);
+
+    // Verify step order and types are preserved
+    const types = loaded?.steps.map((s) => s.type);
+    expect(types).toEqual(['tool_call', 'tool_result', 'tool_call', 'tool_result', 'reasoning']);
+
+    // Verify tool call details survived the round-trip
+    expect(loaded?.steps[0]?.toolName).toBe('time-tracker.start');
+    expect(loaded?.steps[0]?.toolArgs).toEqual({ taskName: 'integration test' });
+    expect(loaded?.steps[1]?.toolResult).toEqual({ sessionId: 'sess_1' });
+    expect(loaded?.steps[2]?.toolName).toBe('notes.save');
+    expect(loaded?.steps[3]?.toolResult).toEqual({ saved: true });
+    expect(loaded?.steps[4]?.content).toBe('Timer started and note saved.');
+  });
+
+  it('saves a workflow-paused trace with null finalResponse', async () => {
+    const workflowTool: ToolDefinition = {
+      name: 'todoist.delete-task',
+      description: 'Delete task',
+      parameters: { type: 'object', properties: { taskId: { type: 'string' } } },
+      actionType: 'workflow',
+    };
+
+    const llm = makeScriptedLLM([
+      { type: 'tool_call', toolName: 'todoist.delete-task', toolArgs: { taskId: 'task_1' }, toolCallId: 'call_1' },
+    ]);
+
+    const result = await runAgentLoop({
+      userMessage: 'Delete that task',
+      conversationHistory: [],
+      memories: [],
+      availableTools: [workflowTool],
+      selectedPlugins: ['todoist'],
+      config: DEFAULT_CONFIG,
+      llmProvider: llm,
+      executeTool: async () => ({}),
+    });
+
+    expect(result.pendingApproval?.toolName).toBe('todoist.delete-task');
+    expect(result.trace.finalResponse).toBeNull();
+
+    await tracer.save(result.trace);
+    const loaded = await tracer.getById(result.trace.id);
+
+    expect(loaded?.finalResponse).toBeNull();
+    expect(loaded?.steps[0]?.type).toBe('tool_call');
+    expect(loaded?.steps[0]?.toolName).toBe('todoist.delete-task');
+    expect(loaded?.steps[0]?.toolArgs).toEqual({ taskId: 'task_1' });
+  });
+
+  it('saves a plain text response trace with a single reasoning step', async () => {
+    const llm = makeScriptedLLM([{ type: 'text', text: 'Hello! How can I help?' }]);
+
+    const result = await runAgentLoop({
+      userMessage: 'Hi',
+      conversationHistory: [],
+      memories: [],
+      availableTools: [],
+      selectedPlugins: [],
+      config: DEFAULT_CONFIG,
+      llmProvider: llm,
+      executeTool: async () => ({}),
+    });
+
+    await tracer.save(result.trace);
+    const loaded = await tracer.getById(result.trace.id);
+
+    expect(loaded?.steps).toHaveLength(1);
+    expect(loaded?.steps[0]?.type).toBe('reasoning');
+    expect(loaded?.steps[0]?.content).toBe('Hello! How can I help?');
+    expect(loaded?.finalResponse).toBe('Hello! How can I help?');
   });
 });
