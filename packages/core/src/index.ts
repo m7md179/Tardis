@@ -29,6 +29,7 @@ export { OpenAIAdapter } from './llm/openai-adapter.js';
 export type { OpenAIAdapterConfig } from './llm/openai-adapter.js';
 export { OllamaAdapter } from './llm/ollama-adapter.js';
 export type { OllamaAdapterConfig } from './llm/ollama-adapter.js';
+export { ThoughtTracer } from './agent/thought-tracer.js';
 export { selectPluginSkills } from './agent/skill-router.js';
 export type { SkillSelectionResult } from './agent/skill-router.js';
 export { ToolRouter } from './agent/tool-router.js';
