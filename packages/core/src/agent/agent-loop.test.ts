@@ -248,6 +248,45 @@ describe('runAgentLoop: multi-step', () => {
     const toolCallSteps = result.trace.steps.filter((s) => s.type === 'tool_call');
     expect(toolCallSteps).toHaveLength(2);
   });
+
+  it('trace has exactly 5 steps for a 2-tool chain: tool_call, tool_result, tool_call, tool_result, reasoning', async () => {
+    const calendarTool: ToolDefinition = {
+      name: 'google-calendar.list-events',
+      description: 'List calendar events',
+      parameters: { type: 'object', properties: { date: { type: 'string' } } },
+      actionType: 'direct',
+    };
+    const todoistTool: ToolDefinition = {
+      name: 'todoist.add-task',
+      description: 'Add a task',
+      parameters: { type: 'object', properties: { content: { type: 'string' } } },
+      actionType: 'direct',
+    };
+
+    const llm = makeScriptedLLM([
+      toolCallResponse('google-calendar.list-events', { date: '2026-02-24' }, 'call_1'),
+      toolCallResponse('todoist.add-task', { content: 'Prepare for meeting' }, 'call_2'),
+      textResponse('You have a meeting at 2pm. I added a task to prepare for it.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'Prepare me for tomorrow',
+        availableTools: [calendarTool, todoistTool],
+        executeTool: async (name) =>
+          name === 'google-calendar.list-events'
+            ? [{ title: 'Team meeting', time: '2pm' }]
+            : { taskId: 'task_123' },
+      })
+    );
+
+    expect(result.trace.steps).toHaveLength(5);
+    expect(result.trace.steps.map((s) => s.type)).toEqual([
+      'tool_call', 'tool_result', 'tool_call', 'tool_result', 'reasoning',
+    ]);
+    expect(result.response).toContain('meeting at 2pm');
+  });
 });
 
 // ─── Workflow (pending approval) ──────────────────────────────────────────────
@@ -375,6 +414,83 @@ describe('runAgentLoop: maxSteps limit', () => {
     );
 
     expect(toolCallCount).toBe(1);
+  });
+
+  it('response names the completed tool when maxSteps is hit mid-chain', async () => {
+    const llm = makeScriptedLLM(
+      Array(10).fill(null).map(() => toolCallResponse('time-tracker.start', { taskName: 'work' }))
+    );
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        config: { ...DEFAULT_CONFIG, maxSteps: 2 },
+        executeTool: async () => ({}),
+      })
+    );
+
+    expect(result.response).toContain('time-tracker.start');
+    expect(result.response).toContain('thinking limit');
+  });
+
+  it('response says "without completing any actions" when all tool calls had empty toolName', async () => {
+    // Malformed tool calls (empty toolName) are falsy and excluded from completedTools
+    const llm = makeScriptedLLM(
+      Array(5).fill({ type: 'tool_call' as const, toolArgs: {} })
+    );
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        config: { ...DEFAULT_CONFIG, maxSteps: 2 },
+        executeTool: async () => { throw new Error('bad'); },
+      })
+    );
+
+    expect(result.response).toContain('thinking limit');
+    expect(result.response).toContain('without completing');
+  });
+});
+
+// ─── Malformed tool call ──────────────────────────────────────────────────────
+
+describe('runAgentLoop: malformed tool call', () => {
+  it('does not crash when LLM returns tool_call with no toolName', async () => {
+    const llm = makeScriptedLLM([
+      { type: 'tool_call' as const, toolArgs: {} }, // toolName omitted
+      textResponse('Recovered from the bad response.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        executeTool: async () => { throw new Error('unknown tool'); },
+      })
+    );
+
+    expect(result.response).toBe('Recovered from the bad response.');
+    expect(result.pendingApproval).toBeUndefined();
+  });
+
+  it('records tool_call and error tool_result steps for the malformed call', async () => {
+    const llm = makeScriptedLLM([
+      { type: 'tool_call' as const, toolArgs: {} },
+      textResponse('Done.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        executeTool: async () => { throw new Error('bad tool'); },
+      })
+    );
+
+    const types = result.trace.steps.map((s) => s.type);
+    expect(types).toContain('tool_call');
+    expect(types).toContain('tool_result');
+    const resultStep = result.trace.steps.find((s) => s.type === 'tool_result');
+    expect((resultStep?.toolResult as { error: boolean })?.error).toBe(true);
   });
 });
 
