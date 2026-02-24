@@ -39,3 +39,10 @@ export type {
   AgentLoopOutput,
   PendingApproval,
 } from './agent/agent-loop.js';
+export {
+  detectIntent,
+  registerIntentPattern,
+  unregisterIntentPatterns,
+  getRegisteredPatterns,
+} from './llm/fallback-intent.js';
+export type { IntentPattern, IntentDetectionResult } from './llm/fallback-intent.js';
