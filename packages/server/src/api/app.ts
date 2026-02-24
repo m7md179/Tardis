@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { jwt } from 'hono/jwt';
 import { randomUUID } from 'crypto';
-import { eq, desc } from 'drizzle-orm';
-import { memories, thoughtTraces } from '@tardis/db';
+import { eq, desc, memories, thoughtTraces } from '@tardis/db';
 import { ThoughtTracer } from '@tardis/core';
 import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
