@@ -28,8 +28,15 @@ const TODOIST_ADD = makeTool('todoist.add-task');
 const TODOIST_LIST = makeTool('todoist.list-tasks');
 
 const ALL_TOOLS = [
-  TIMER_START, TIMER_STOP, TIMER_PAUSE, TIMER_RESUME, TIMER_STATUS,
-  NOTES_SAVE, REMINDERS_SET, TODOIST_ADD, TODOIST_LIST,
+  TIMER_START,
+  TIMER_STOP,
+  TIMER_PAUSE,
+  TIMER_RESUME,
+  TIMER_STATUS,
+  NOTES_SAVE,
+  REMINDERS_SET,
+  TODOIST_ADD,
+  TODOIST_LIST,
 ];
 
 // ─── Returns null when nothing matches ────────────────────────────────────────
@@ -127,14 +134,16 @@ describe('detectIntent: pause/resume timer', () => {
   });
 
   it('matches "continue timer"', () => {
-    expect(detectIntent('continue the timer', [TIMER_RESUME])?.toolName).toBe('time-tracker.resume');
+    expect(detectIntent('continue the timer', [TIMER_RESUME])?.toolName).toBe(
+      'time-tracker.resume'
+    );
   });
 });
 
 // ─── time-tracker.status ─────────────────────────────────────────────────────
 
 describe('detectIntent: timer status', () => {
-  it("matches \"what's the timer\"", () => {
+  it('matches "what\'s the timer"', () => {
     expect(detectIntent("what's the timer", [TIMER_STATUS])?.toolName).toBe('time-tracker.status');
   });
 

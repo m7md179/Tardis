@@ -35,11 +35,7 @@ export type { SkillSelectionResult } from './agent/skill-router.js';
 export { ToolRouter } from './agent/tool-router.js';
 export type { ToolResult, ToolResultCode } from './agent/tool-router.js';
 export { runAgentLoop } from './agent/agent-loop.js';
-export type {
-  AgentLoopInput,
-  AgentLoopOutput,
-  PendingApproval,
-} from './agent/agent-loop.js';
+export type { AgentLoopInput, AgentLoopOutput, PendingApproval } from './agent/agent-loop.js';
 export {
   detectIntent,
   registerIntentPattern,

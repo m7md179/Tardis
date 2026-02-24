@@ -34,7 +34,9 @@ describe('runConfigShow', () => {
   beforeEach(() => {
     ({ dataDir, cleanup } = makeTempDataDir());
     output = '';
-    console.log = (msg: unknown) => { output += String(msg) + '\n'; };
+    console.log = (msg: unknown) => {
+      output += String(msg) + '\n';
+    };
   });
 
   afterEach(() => {

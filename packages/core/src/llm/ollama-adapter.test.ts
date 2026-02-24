@@ -6,7 +6,10 @@ import type { ToolDefinition } from '@tardis/shared';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeTextResponse(text: string, usage?: { prompt_tokens: number; completion_tokens: number }) {
+function makeTextResponse(
+  text: string,
+  usage?: { prompt_tokens: number; completion_tokens: number }
+) {
   return {
     choices: [{ message: { role: 'assistant', content: text } }],
     usage,
@@ -50,9 +53,7 @@ function mockFetchOk(body: unknown) {
 }
 
 function mockFetchError(status: number, text = '') {
-  return mock(() =>
-    Promise.resolve(new Response(text, { status }))
-  );
+  return mock(() => Promise.resolve(new Response(text, { status })));
 }
 
 function mockFetchThrow(message: string) {
@@ -113,7 +114,9 @@ describe('OllamaAdapter.chat()', () => {
   });
 
   it('returns text response', async () => {
-    globalThis.fetch = mockFetchOk(makeTextResponse('Hello from Ollama!')) as unknown as typeof fetch;
+    globalThis.fetch = mockFetchOk(
+      makeTextResponse('Hello from Ollama!')
+    ) as unknown as typeof fetch;
 
     const adapter = new OllamaAdapter({ model: 'qwen3:4b' });
     const res = await adapter.chat({ messages: [{ role: 'user', content: 'Hi' }] });
@@ -227,7 +230,9 @@ describe('OllamaAdapter.chat()', () => {
       {
         role: 'assistant',
         content: null,
-        tool_calls: [{ id: 'call_1', name: 'time-tracker.start', arguments: { taskName: 'coding' } }],
+        tool_calls: [
+          { id: 'call_1', name: 'time-tracker.start', arguments: { taskName: 'coding' } },
+        ],
       },
       { role: 'tool', content: '{"started":true}', name: 'time-tracker.start' },
     ];

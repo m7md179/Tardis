@@ -50,7 +50,8 @@ const patternRegistry: IntentPattern[] = [
   },
   {
     label: 'timer status',
-    pattern: /(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:current\s+)?timer|show\s+timer\s+status|check\s+timer)/i,
+    pattern:
+      /(?:what(?:'s|\s+is)\s+(?:the\s+)?(?:current\s+)?timer|show\s+timer\s+status|check\s+timer)/i,
     toolName: 'time-tracker.status',
     extractArgs: () => ({}),
   },
@@ -113,9 +114,7 @@ export function detectIntent(
     const args = intent.extractArgs(match);
 
     // Skip if extracted args are empty strings for required-looking fields
-    const hasEmptyArg = Object.values(args).some(
-      (v) => typeof v === 'string' && v.trim() === ''
-    );
+    const hasEmptyArg = Object.values(args).some((v) => typeof v === 'string' && v.trim() === '');
     if (hasEmptyArg) continue;
 
     return {

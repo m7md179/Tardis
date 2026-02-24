@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
-const MANIFEST_TEMPLATE = (name: string, displayName: string) =>
+const MANIFEST_TEMPLATE = (name: string, displayName: string): string =>
   JSON.stringify(
     {
       name,
@@ -31,7 +31,10 @@ const MANIFEST_TEMPLATE = (name: string, displayName: string) =>
     2
   );
 
-const INDEX_TEMPLATE = (name: string, displayName: string) => `import type { PluginInstance, PluginAPI } from '@tardis/core';
+const INDEX_TEMPLATE = (
+  name: string,
+  displayName: string
+): string => `import type { PluginInstance, PluginAPI } from '@tardis/core';
 
 const plugin: PluginInstance = {
   async onActivate(api: PluginAPI) {

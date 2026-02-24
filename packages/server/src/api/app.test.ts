@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { existsSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { sign } from 'hono/jwt';
@@ -37,7 +37,12 @@ function makeManifest(name: string): PluginManifest {
     skillSummary: `${name} skill`,
     permissions: [],
     tools: [
-      { name: `${name}.tool`, description: 'A tool', parameters: { type: 'object', properties: {} }, actionType: 'direct' },
+      {
+        name: `${name}.tool`,
+        description: 'A tool',
+        parameters: { type: 'object', properties: {} },
+        actionType: 'direct',
+      },
     ],
   };
 }
@@ -59,7 +64,12 @@ function makeTestDb() {
   const path = `/tmp/tardis-api-app-test-${randomUUID()}.db`;
   migrate(path);
   const db = createDb(path);
-  return { db, cleanup: () => { if (existsSync(path)) unlinkSync(path); } };
+  return {
+    db,
+    cleanup: () => {
+      if (existsSync(path)) unlinkSync(path);
+    },
+  };
 }
 
 async function makeApp(overrides: Partial<AppDeps> = {}) {
@@ -91,10 +101,12 @@ describe('GET /api/health', () => {
     try {
       const res = await app.request('/api/health');
       expect(res.status).toBe(200);
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body['status']).toBe('ok');
       expect(typeof body['timestamp']).toBe('number');
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 });
 
@@ -106,7 +118,9 @@ describe('JWT authentication', () => {
     try {
       const res = await app.request('/api/plugins');
       expect(res.status).toBe(401);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('returns 401 when token is invalid', async () => {
@@ -116,7 +130,9 @@ describe('JWT authentication', () => {
         headers: { Authorization: 'Bearer not.a.valid.token' },
       });
       expect(res.status).toBe(401);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('returns 200 when valid token provided', async () => {
@@ -125,7 +141,9 @@ describe('JWT authentication', () => {
       const token = await makeToken();
       const res = await app.request('/api/plugins', { headers: authHeaders(token) });
       expect(res.status).toBe(200);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 });
 
@@ -138,7 +156,9 @@ describe('GET /api/plugins', () => {
       const token = await makeToken();
       const res = await app.request('/api/plugins', { headers: authHeaders(token) });
       expect(await res.json()).toEqual([]);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('returns plugin list with name, tier, skillSummary, toolCount', async () => {
@@ -148,12 +168,14 @@ describe('GET /api/plugins', () => {
     try {
       const token = await makeToken();
       const res = await app.request('/api/plugins', { headers: authHeaders(token) });
-      const body = await res.json() as Array<Record<string, unknown>>;
+      const body = (await res.json()) as Array<Record<string, unknown>>;
       expect(body).toHaveLength(2);
       expect(body[0]?.['name']).toBe('time-tracker');
       expect(body[0]?.['toolCount']).toBe(1);
       expect(body[1]?.['name']).toBe('todoist');
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 });
 
@@ -165,10 +187,12 @@ describe('GET /api/traces', () => {
     try {
       const token = await makeToken();
       const res = await app.request('/api/traces', { headers: authHeaders(token) });
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body['data']).toEqual([]);
       expect(body['total']).toBe(0);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('returns saved traces with stepCount', async () => {
@@ -188,13 +212,15 @@ describe('GET /api/traces', () => {
 
       const token = await makeToken();
       const res = await app.request('/api/traces', { headers: authHeaders(token) });
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect((body['data'] as unknown[]).length).toBe(1);
       expect(body['total']).toBe(1);
       const trace = (body['data'] as Array<Record<string, unknown>>)[0];
       expect(trace?.['stepCount']).toBe(1);
       expect(trace?.['userMessage']).toBe('hello');
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('respects limit and page query params', async () => {
@@ -203,18 +229,23 @@ describe('GET /api/traces', () => {
       const { schema } = await import('@tardis/db');
       for (let i = 0; i < 5; i++) {
         await deps.db.insert(schema.thoughtTraces).values({
-          id: randomUUID(), userMessage: `msg ${i}`,
-          steps: '[]', timestamp: Date.now() + i,
-          totalDurationMs: 10, modelUsed: 'mock',
+          id: randomUUID(),
+          userMessage: `msg ${i}`,
+          steps: '[]',
+          timestamp: Date.now() + i,
+          totalDurationMs: 10,
+          modelUsed: 'mock',
         });
       }
 
       const token = await makeToken();
       const res = await app.request('/api/traces?limit=2&page=1', { headers: authHeaders(token) });
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect((body['data'] as unknown[]).length).toBe(2);
       expect(body['total']).toBe(5);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 });
 
@@ -227,7 +258,9 @@ describe('GET /api/traces/:id', () => {
       const token = await makeToken();
       const res = await app.request('/api/traces/nonexistent-id', { headers: authHeaders(token) });
       expect(res.status).toBe(404);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 });
 
@@ -239,9 +272,11 @@ describe('Memory CRUD', () => {
     try {
       const token = await makeToken();
       const res = await app.request('/api/memory', { headers: authHeaders(token) });
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body['data']).toEqual([]);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('POST /api/memory creates a memory entry', async () => {
@@ -266,9 +301,11 @@ describe('Memory CRUD', () => {
       expect(postRes.status).toBe(201);
 
       const getRes = await app.request('/api/memory', { headers: authHeaders(token) });
-      const body = await getRes.json() as Record<string, unknown>;
+      const body = (await getRes.json()) as Record<string, unknown>;
       expect((body['data'] as unknown[]).length).toBe(1);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('POST /api/memory returns 400 for invalid body', async () => {
@@ -281,7 +318,9 @@ describe('Memory CRUD', () => {
         body: JSON.stringify({ invalid: true }),
       });
       expect(res.status).toBe(400);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('DELETE /api/memory/:id removes the entry', async () => {
@@ -290,8 +329,13 @@ describe('Memory CRUD', () => {
       const token = await makeToken();
       const id = randomUUID();
       const entry = {
-        id, type: 'user_fact', key: 'name', value: 'Test',
-        source: 'user', createdAt: Date.now(), updatedAt: Date.now(),
+        id,
+        type: 'user_fact',
+        key: 'name',
+        value: 'Test',
+        source: 'user',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       };
 
       await app.request('/api/memory', {
@@ -307,9 +351,11 @@ describe('Memory CRUD', () => {
       expect(delRes.status).toBe(200);
 
       const getRes = await app.request('/api/memory', { headers: authHeaders(token) });
-      const body = await getRes.json() as Record<string, unknown>;
+      const body = (await getRes.json()) as Record<string, unknown>;
       expect((body['data'] as unknown[]).length).toBe(0);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 });
 
@@ -326,17 +372,21 @@ describe('LLM config', () => {
     try {
       const token = await makeToken();
       const res = await app.request('/api/config/llm', { headers: authHeaders(token) });
-      const body = await res.json() as Record<string, unknown>;
+      const body = (await res.json()) as Record<string, unknown>;
       expect(body['provider']).toBe('openai');
       expect(body['model']).toBe('gpt-4o');
       expect(body['apiKey']).toBe('[redacted]');
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('PUT /api/config/llm updates and calls saveConfig', async () => {
     let saved: SystemConfig | null = null;
     const { app, cleanup } = await makeApp({
-      saveConfig: (c) => { saved = c; },
+      saveConfig: (c) => {
+        saved = c;
+      },
     });
     try {
       const token = await makeToken();
@@ -348,7 +398,9 @@ describe('LLM config', () => {
       expect(res.status).toBe(200);
       expect(saved).not.toBeNull();
       expect((saved as unknown as SystemConfig).llm.model).toBe('llama3:8b');
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 
   it('PUT /api/config/llm returns 400 for invalid body', async () => {
@@ -361,6 +413,8 @@ describe('LLM config', () => {
         body: JSON.stringify({ invalid: 'data' }),
       });
       expect(res.status).toBe(400);
-    } finally { cleanup(); }
+    } finally {
+      cleanup();
+    }
   });
 });

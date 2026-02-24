@@ -17,14 +17,22 @@ const DEFAULT_CONFIG: AgentConfig = {
 const DIRECT_TOOL: ToolDefinition = {
   name: 'time-tracker.start',
   description: 'Start a timer',
-  parameters: { type: 'object', properties: { taskName: { type: 'string' } }, required: ['taskName'] },
+  parameters: {
+    type: 'object',
+    properties: { taskName: { type: 'string' } },
+    required: ['taskName'],
+  },
   actionType: 'direct',
 };
 
 const WORKFLOW_TOOL: ToolDefinition = {
   name: 'todoist.delete-task',
   description: 'Delete a task permanently',
-  parameters: { type: 'object', properties: { taskName: { type: 'string' } }, required: ['taskName'] },
+  parameters: {
+    type: 'object',
+    properties: { taskName: { type: 'string' } },
+    required: ['taskName'],
+  },
   actionType: 'workflow',
 };
 
@@ -40,7 +48,8 @@ function makeScriptedLLM(responses: LLMResponse[]): LLMProvider {
     name: 'mock',
     async chat() {
       const response = responses[callIndex++];
-      if (!response) throw new Error(`Mock LLM has no more scripted responses (call #${callIndex})`);
+      if (!response)
+        throw new Error(`Mock LLM has no more scripted responses (call #${callIndex})`);
       return response;
     },
     async generate() {
@@ -210,7 +219,9 @@ describe('runAgentLoop: tool execution errors', () => {
 
     const errorStep = result.trace.steps.find((s) => s.type === 'tool_result');
     expect((errorStep?.toolResult as { error: boolean })?.error).toBe(true);
-    expect((errorStep?.toolResult as { message: string })?.message).toContain('DB connection failed');
+    expect((errorStep?.toolResult as { message: string })?.message).toContain(
+      'DB connection failed'
+    );
   });
 });
 
@@ -283,7 +294,11 @@ describe('runAgentLoop: multi-step', () => {
 
     expect(result.trace.steps).toHaveLength(5);
     expect(result.trace.steps.map((s) => s.type)).toEqual([
-      'tool_call', 'tool_result', 'tool_call', 'tool_result', 'reasoning',
+      'tool_call',
+      'tool_result',
+      'tool_call',
+      'tool_result',
+      'reasoning',
     ]);
     expect(result.response).toContain('meeting at 2pm');
   });
@@ -315,9 +330,7 @@ describe('runAgentLoop: workflow actions', () => {
 
   it('does NOT execute the tool for workflow actions', async () => {
     let toolExecuted = false;
-    const llm = makeScriptedLLM([
-      toolCallResponse('todoist.delete-task', { taskName: 'test' }),
-    ]);
+    const llm = makeScriptedLLM([toolCallResponse('todoist.delete-task', { taskName: 'test' })]);
 
     await runAgentLoop(
       makeInput({
@@ -335,9 +348,7 @@ describe('runAgentLoop: workflow actions', () => {
 
   it('actionOverrides can promote a direct tool to workflow', async () => {
     let toolExecuted = false;
-    const llm = makeScriptedLLM([
-      toolCallResponse('time-tracker.start', { taskName: 'coding' }),
-    ]);
+    const llm = makeScriptedLLM([toolCallResponse('time-tracker.start', { taskName: 'coding' })]);
 
     const result = await runAgentLoop(
       makeInput({
@@ -418,7 +429,9 @@ describe('runAgentLoop: maxSteps limit', () => {
 
   it('response names the completed tool when maxSteps is hit mid-chain', async () => {
     const llm = makeScriptedLLM(
-      Array(10).fill(null).map(() => toolCallResponse('time-tracker.start', { taskName: 'work' }))
+      Array(10)
+        .fill(null)
+        .map(() => toolCallResponse('time-tracker.start', { taskName: 'work' }))
     );
 
     const result = await runAgentLoop(
@@ -436,15 +449,15 @@ describe('runAgentLoop: maxSteps limit', () => {
 
   it('response says "without completing any actions" when all tool calls had empty toolName', async () => {
     // Malformed tool calls (empty toolName) are falsy and excluded from completedTools
-    const llm = makeScriptedLLM(
-      Array(5).fill({ type: 'tool_call' as const, toolArgs: {} })
-    );
+    const llm = makeScriptedLLM(Array(5).fill({ type: 'tool_call' as const, toolArgs: {} }));
 
     const result = await runAgentLoop(
       makeInput({
         llmProvider: llm,
         config: { ...DEFAULT_CONFIG, maxSteps: 2 },
-        executeTool: async () => { throw new Error('bad'); },
+        executeTool: async () => {
+          throw new Error('bad');
+        },
       })
     );
 
@@ -465,7 +478,9 @@ describe('runAgentLoop: malformed tool call', () => {
     const result = await runAgentLoop(
       makeInput({
         llmProvider: llm,
-        executeTool: async () => { throw new Error('unknown tool'); },
+        executeTool: async () => {
+          throw new Error('unknown tool');
+        },
       })
     );
 
@@ -482,7 +497,9 @@ describe('runAgentLoop: malformed tool call', () => {
     const result = await runAgentLoop(
       makeInput({
         llmProvider: llm,
-        executeTool: async () => { throw new Error('bad tool'); },
+        executeTool: async () => {
+          throw new Error('bad tool');
+        },
       })
     );
 
@@ -506,7 +523,9 @@ describe('runAgentLoop: conversation history', () => {
         sentMessages.push(...messages.map((m) => ({ role: m.role, content: m.content })));
         return textResponse('Hi');
       },
-      async generate() { return ''; },
+      async generate() {
+        return '';
+      },
     };
 
     await runAgentLoop(
@@ -541,7 +560,9 @@ describe('runAgentLoop: memories', () => {
         sentSystemPrompt = messages[0]?.content ?? '';
         return textResponse('ok');
       },
-      async generate() { return ''; },
+      async generate() {
+        return '';
+      },
     };
 
     await runAgentLoop(
@@ -579,7 +600,9 @@ describe('runAgentLoop: token tracking', () => {
           usage: { promptTokens: 100, completionTokens: 20 },
         };
       },
-      async generate() { return ''; },
+      async generate() {
+        return '';
+      },
     };
 
     const result = await runAgentLoop(makeInput({ llmProvider: llm }));
@@ -605,9 +628,7 @@ describe('runAgentLoop: trace', () => {
   });
 
   it('trace.finalResponse is null when pendingApproval is set', async () => {
-    const llm = makeScriptedLLM([
-      toolCallResponse('todoist.delete-task', { taskName: 'test' }),
-    ]);
+    const llm = makeScriptedLLM([toolCallResponse('todoist.delete-task', { taskName: 'test' })]);
 
     const result = await runAgentLoop(
       makeInput({ llmProvider: llm, availableTools: [WORKFLOW_TOOL] })
