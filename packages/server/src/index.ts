@@ -67,15 +67,13 @@ async function main(): Promise<void> {
     mkdirSync(pluginsDir, { recursive: true });
   }
 
-  const pluginManager = new PluginManager(
-    pluginsDir,
-    (manifest) =>
-      createPluginApi({
-        pluginName: manifest.name,
-        permissions: manifest.permissions,
-        db,
-        config,
-      })
+  const pluginManager = new PluginManager(pluginsDir, (manifest) =>
+    createPluginApi({
+      pluginName: manifest.name,
+      permissions: manifest.permissions,
+      db,
+      config,
+    })
   );
   await pluginManager.loadAll();
 
@@ -103,9 +101,7 @@ async function main(): Promise<void> {
     hostname: config.server.host,
   });
 
-  console.log(
-    `[tardis] HTTP server listening on http://${bunServer.hostname}:${bunServer.port}`
-  );
+  console.log(`[tardis] HTTP server listening on http://${bunServer.hostname}:${bunServer.port}`);
 
   // 6. Start Telegram bot (if configured)
   let telegramBot: TelegramBot | null = null;

@@ -50,8 +50,12 @@ function makeDeps(overrides: Partial<BotDeps> = {}): BotDeps {
     getAllManifests: () => [],
     llmProvider: {
       name: 'mock',
-      async chat() { return { type: 'text' as const, text: 'Hello from TARDIS!' }; },
-      async generate() { return '[]'; },
+      async chat() {
+        return { type: 'text' as const, text: 'Hello from TARDIS!' };
+      },
+      async generate() {
+        return '[]';
+      },
     } satisfies LLMProvider,
     toolRouter: {
       execute: async () => ({ success: true as const, data: { ok: true } }),
@@ -111,8 +115,12 @@ describe('handleUserMessage: normal flow', () => {
     const deps = makeDeps({
       llmProvider: {
         name: 'mock',
-        async chat() { return { type: 'text' as const, text: 'Sure, I can help!' }; },
-        async generate() { return '[]'; },
+        async chat() {
+          return { type: 'text' as const, text: 'Sure, I can help!' };
+        },
+        async generate() {
+          return '[]';
+        },
       },
     });
 
@@ -131,7 +139,9 @@ describe('handleUserMessage: normal flow', () => {
           capturedHistoryLength = messages.length;
           return { type: 'text' as const, text: 'Reply' };
         },
-        async generate() { return '[]'; },
+        async generate() {
+          return '[]';
+        },
       },
     });
 
@@ -151,8 +161,12 @@ describe('handleUserMessage: normal flow', () => {
       agentConfig: { ...DEFAULT_AGENT_CONFIG, conversationHistoryLength: 2 },
       llmProvider: {
         name: 'mock',
-        async chat() { return { type: 'text' as const, text: 'ok' }; },
-        async generate() { return '[]'; },
+        async chat() {
+          return { type: 'text' as const, text: 'ok' };
+        },
+        async generate() {
+          return '[]';
+        },
       },
     });
 
@@ -170,8 +184,12 @@ describe('handleUserMessage: normal flow', () => {
     const deps = makeDeps({
       llmProvider: {
         name: 'mock',
-        async chat() { throw new Error('LLM connection refused'); },
-        async generate() { return '[]'; },
+        async chat() {
+          throw new Error('LLM connection refused');
+        },
+        async generate() {
+          return '[]';
+        },
       },
     });
 
@@ -204,7 +222,9 @@ describe('handleUserMessage: workflow approval', () => {
           };
         },
         // generate() selects the todoist plugin so its workflow tool is loaded
-        async generate() { return '["todoist"]'; },
+        async generate() {
+          return '["todoist"]';
+        },
       },
     });
   });
@@ -236,7 +256,9 @@ describe('handleUserMessage: workflow approval', () => {
           toolExecuted = true;
           return { success: true as const, data: {} };
         },
-        asExecutor: () => async () => { throw new Error('should not be called'); },
+        asExecutor: () => async () => {
+          throw new Error('should not be called');
+        },
       } as unknown as ToolRouter,
     });
 
@@ -254,8 +276,12 @@ describe('handleUserMessage: workflow approval', () => {
     const normalDeps = makeDeps({
       llmProvider: {
         name: 'mock',
-        async chat() { return { type: 'text' as const, text: 'Normal reply' }; },
-        async generate() { return '[]'; },
+        async chat() {
+          return { type: 'text' as const, text: 'Normal reply' };
+        },
+        async generate() {
+          return '[]';
+        },
       },
     });
 
@@ -278,7 +304,11 @@ describe('handleUserMessage: workflow approval', () => {
     deps = makeDeps({
       ...deps,
       toolRouter: {
-        execute: async () => ({ success: false as const, error: 'Task not found', code: 'EXECUTION_ERROR' as const }),
+        execute: async () => ({
+          success: false as const,
+          error: 'Task not found',
+          code: 'EXECUTION_ERROR' as const,
+        }),
         asExecutor: () => async () => ({}),
       } as unknown as ToolRouter,
     });
@@ -336,10 +366,7 @@ describe('handlePluginsCommand', () => {
 
   it('lists plugin names and tiers', () => {
     const deps = makeDeps({
-      getAllManifests: () => [
-        makeManifest('time-tracker'),
-        makeManifest('todoist'),
-      ],
+      getAllManifests: () => [makeManifest('time-tracker'), makeManifest('todoist')],
     });
     const { text } = handlePluginsCommand(deps);
     expect(text).toContain('time-tracker');

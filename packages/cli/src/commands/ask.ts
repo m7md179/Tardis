@@ -1,4 +1,13 @@
-import { loadConfig, OllamaAdapter, OpenAIAdapter, PluginManager, ToolRouter, selectPluginSkills, runAgentLoop, createPluginApi } from '@tardis/core';
+import {
+  loadConfig,
+  OllamaAdapter,
+  OpenAIAdapter,
+  PluginManager,
+  ToolRouter,
+  selectPluginSkills,
+  runAgentLoop,
+  createPluginApi,
+} from '@tardis/core';
 import { createDb, migrate } from '@tardis/db';
 import { join } from 'path';
 
@@ -50,7 +59,7 @@ export async function runAsk(userMessage: string, dataDir: string): Promise<void
   }
 }
 
-function buildLLMProvider(config: ReturnType<typeof loadConfig>) {
+function buildLLMProvider(config: ReturnType<typeof loadConfig>): OllamaAdapter | OpenAIAdapter {
   const { provider, model, baseUrl, apiKey, temperature } = config.llm;
 
   if (provider === 'ollama') {

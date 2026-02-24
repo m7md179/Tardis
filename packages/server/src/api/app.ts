@@ -26,9 +26,7 @@ export function createApp(deps: AppDeps): Hono {
 
   // ─── Public routes ────────────────────────────────────────────────────────
 
-  app.get('/api/health', (c) =>
-    c.json({ status: 'ok', timestamp: Date.now() })
-  );
+  app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
 
   // ─── JWT-protected routes ─────────────────────────────────────────────────
 
@@ -80,8 +78,11 @@ export function createApp(deps: AppDeps): Hono {
         tokenCount: r.tokenCount,
         timestamp: r.timestamp,
         stepCount: (() => {
-          try { return (JSON.parse(r.steps) as unknown[]).length; }
-          catch { return 0; }
+          try {
+            return (JSON.parse(r.steps) as unknown[]).length;
+          } catch {
+            return 0;
+          }
         })(),
       })),
       total,

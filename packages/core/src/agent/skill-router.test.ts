@@ -77,7 +77,7 @@ describe('selectPluginSkills: empty plugin list', () => {
 describe('selectPluginSkills: LLM selection', () => {
   it('selects the correct plugins from LLM response', async () => {
     const llm = makeLLM('["google-calendar", "todoist"]');
-    const result = await selectPluginSkills("What do I have tomorrow?", ALL_PLUGINS, llm);
+    const result = await selectPluginSkills('What do I have tomorrow?', ALL_PLUGINS, llm);
 
     expect(result.method).toBe('llm');
     expect(result.selectedPlugins).toContain('google-calendar');
@@ -162,8 +162,12 @@ describe('selectPluginSkills: fallback on malformed response', () => {
   it('falls back to all plugins when LLM call throws', async () => {
     const failingLlm: LLMProvider = {
       name: 'mock',
-      async chat() { return { type: 'text' as const, text: '' }; },
-      async generate() { throw new Error('LLM unavailable'); },
+      async chat() {
+        return { type: 'text' as const, text: '' };
+      },
+      async generate() {
+        throw new Error('LLM unavailable');
+      },
     };
     const result = await selectPluginSkills('Do something', ALL_PLUGINS, failingLlm);
 
@@ -187,7 +191,9 @@ describe('selectPluginSkills: explicit plugin mention', () => {
     let llmCalled = false;
     const llm: LLMProvider = {
       name: 'mock',
-      async chat() { return { type: 'text' as const, text: '[]' }; },
+      async chat() {
+        return { type: 'text' as const, text: '[]' };
+      },
       async generate() {
         llmCalled = true;
         return '[]';
@@ -205,7 +211,9 @@ describe('selectPluginSkills: explicit plugin mention', () => {
     let llmCalled = false;
     const llm: LLMProvider = {
       name: 'mock',
-      async chat() { return { type: 'text' as const, text: '[]' }; },
+      async chat() {
+        return { type: 'text' as const, text: '[]' };
+      },
       async generate() {
         llmCalled = true;
         return '[]';

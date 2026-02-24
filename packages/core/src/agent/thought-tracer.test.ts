@@ -23,7 +23,11 @@ function makeTestDb() {
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-function makeStep(type: AgentStep['type'], content = 'test', extra: Partial<AgentStep> = {}): AgentStep {
+function makeStep(
+  type: AgentStep['type'],
+  content = 'test',
+  extra: Partial<AgentStep> = {}
+): AgentStep {
   return { type, content, timestamp: Date.now(), durationMs: 10, ...extra };
 }
 
@@ -265,7 +269,9 @@ function makeScriptedLLM(responses: LLMResponse[]): LLMProvider {
       if (!response) throw new Error(`Mock LLM exhausted (call #${callIndex})`);
       return response;
     },
-    async generate() { return ''; },
+    async generate() {
+      return '';
+    },
   };
 }
 
@@ -296,8 +302,18 @@ describe('ThoughtTracer: integration with runAgentLoop', () => {
     };
 
     const llm = makeScriptedLLM([
-      { type: 'tool_call', toolName: 'time-tracker.start', toolArgs: { taskName: 'integration test' }, toolCallId: 'call_1' },
-      { type: 'tool_call', toolName: 'notes.save', toolArgs: { content: 'test session started' }, toolCallId: 'call_2' },
+      {
+        type: 'tool_call',
+        toolName: 'time-tracker.start',
+        toolArgs: { taskName: 'integration test' },
+        toolCallId: 'call_1',
+      },
+      {
+        type: 'tool_call',
+        toolName: 'notes.save',
+        toolArgs: { content: 'test session started' },
+        toolCallId: 'call_2',
+      },
       { type: 'text', text: 'Timer started and note saved.' },
     ]);
 
@@ -349,7 +365,12 @@ describe('ThoughtTracer: integration with runAgentLoop', () => {
     };
 
     const llm = makeScriptedLLM([
-      { type: 'tool_call', toolName: 'todoist.delete-task', toolArgs: { taskId: 'task_1' }, toolCallId: 'call_1' },
+      {
+        type: 'tool_call',
+        toolName: 'todoist.delete-task',
+        toolArgs: { taskId: 'task_1' },
+        toolCallId: 'call_1',
+      },
     ]);
 
     const result = await runAgentLoop({

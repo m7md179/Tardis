@@ -102,7 +102,11 @@ function toOpenAITool(tool: ToolDefinition): OpenAITool {
 function parseResponse(body: OpenAIResponseBody, providerName: string): LLMResponse {
   const choice = body.choices[0];
   if (!choice) {
-    throw new LLMProviderError(providerName, 'EMPTY_RESPONSE', `${providerName} returned no choices`);
+    throw new LLMProviderError(
+      providerName,
+      'EMPTY_RESPONSE',
+      `${providerName} returned no choices`
+    );
   }
 
   const toolCalls = choice.message.tool_calls;
@@ -293,7 +297,11 @@ export class OpenAIAdapter implements LLMProvider {
     try {
       return (await response.json()) as OpenAIResponseBody;
     } catch {
-      throw new LLMProviderError(this.name, 'INVALID_JSON', `${this.name} returned non-JSON response`);
+      throw new LLMProviderError(
+        this.name,
+        'INVALID_JSON',
+        `${this.name} returned non-JSON response`
+      );
     }
   }
 }

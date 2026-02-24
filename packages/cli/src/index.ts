@@ -84,9 +84,7 @@ program
 
 // ─── tardis plugin create <name> ──────────────────────────────────────────────
 
-const pluginCmd = program
-  .command('plugin')
-  .description('Manage plugins');
+const pluginCmd = program.command('plugin').description('Manage plugins');
 
 pluginCmd
   .command('create <name>')

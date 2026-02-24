@@ -6,7 +6,10 @@ import type { ToolDefinition } from '@tardis/shared';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeTextResponse(text: string, usage?: { prompt_tokens: number; completion_tokens: number }) {
+function makeTextResponse(
+  text: string,
+  usage?: { prompt_tokens: number; completion_tokens: number }
+) {
   return {
     choices: [{ message: { role: 'assistant', content: text } }],
     usage,
@@ -167,7 +170,9 @@ describe('OpenAIAdapter authorization', () => {
 
 describe('OpenAIAdapter.chat()', () => {
   it('returns text response', async () => {
-    globalThis.fetch = mockFetchOk(makeTextResponse('Hello from OpenAI!')) as unknown as typeof fetch;
+    globalThis.fetch = mockFetchOk(
+      makeTextResponse('Hello from OpenAI!')
+    ) as unknown as typeof fetch;
 
     const adapter = new OpenAIAdapter({ apiKey: 'key', model: 'gpt-4o-mini' });
     const res = await adapter.chat({ messages: [{ role: 'user', content: 'Hi' }] });
@@ -212,7 +217,11 @@ describe('OpenAIAdapter.chat()', () => {
     const tool: ToolDefinition = {
       name: 'todoist.add-task',
       description: 'Create a task',
-      parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] },
+      parameters: {
+        type: 'object',
+        properties: { content: { type: 'string' } },
+        required: ['content'],
+      },
       actionType: 'direct',
     };
 
@@ -264,7 +273,9 @@ describe('OpenAIAdapter.chat()', () => {
       {
         role: 'assistant',
         content: null,
-        tool_calls: [{ id: 'call_1', name: 'todoist.add-task', arguments: { content: 'Buy milk' } }],
+        tool_calls: [
+          { id: 'call_1', name: 'todoist.add-task', arguments: { content: 'Buy milk' } },
+        ],
       },
       { role: 'tool', content: '{"id":"123"}', name: 'todoist.add-task' },
     ];
@@ -286,12 +297,14 @@ describe('OpenAIAdapter.chat()', () => {
 
 describe('OpenAIAdapter.generate()', () => {
   it('returns plain text', async () => {
-    globalThis.fetch = mockFetchOk(makeTextResponse('["google-calendar"]')) as unknown as typeof fetch;
+    globalThis.fetch = mockFetchOk(
+      makeTextResponse('["google-calendar"]')
+    ) as unknown as typeof fetch;
 
     const adapter = new OpenAIAdapter({ apiKey: 'key', model: 'gpt-4o-mini' });
     const result = await adapter.generate({
       systemPrompt: 'You are a router.',
-      userPrompt: "What do I have tomorrow?",
+      userPrompt: 'What do I have tomorrow?',
     });
     expect(result).toBe('["google-calendar"]');
   });

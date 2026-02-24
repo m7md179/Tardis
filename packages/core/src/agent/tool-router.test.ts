@@ -72,9 +72,7 @@ describe('ToolRouter: TOOL_NOT_FOUND', () => {
         actionType: 'direct',
       },
     ]);
-    const router = new ToolRouter(
-      makeMockManager([{ manifest, executeTool: async () => ({}) }])
-    );
+    const router = new ToolRouter(makeMockManager([{ manifest, executeTool: async () => ({}) }]));
 
     const result = await router.execute('time-tracker.nonexistent', {});
     expect(result.success).toBe(false);
@@ -138,9 +136,7 @@ describe('ToolRouter: VALIDATION_ERROR', () => {
         actionType: 'direct',
       },
     ]);
-    const router = new ToolRouter(
-      makeMockManager([{ manifest, executeTool: async () => ({}) }])
-    );
+    const router = new ToolRouter(makeMockManager([{ manifest, executeTool: async () => ({}) }]));
 
     const result = await router.execute('notes.save', {}); // both missing
     expect(result.success).toBe(false);
@@ -356,9 +352,7 @@ describe('ToolRouter.asExecutor()', () => {
         actionType: 'direct',
       },
     ]);
-    const router = new ToolRouter(
-      makeMockManager([{ manifest, executeTool: async () => ({}) }])
-    );
+    const router = new ToolRouter(makeMockManager([{ manifest, executeTool: async () => ({}) }]));
 
     const executor = router.asExecutor();
     let err: unknown;

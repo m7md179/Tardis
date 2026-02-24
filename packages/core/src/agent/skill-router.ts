@@ -67,7 +67,8 @@ export async function selectPluginSkills(
   let rawResponse: string;
   try {
     rawResponse = await llmProvider.generate({
-      systemPrompt: 'You are a plugin router. Return only a JSON array of plugin names. No explanation.',
+      systemPrompt:
+        'You are a plugin router. Return only a JSON array of plugin names. No explanation.',
       userPrompt: selectionPrompt,
       temperature: 0,
       maxTokens: 100,
@@ -115,10 +116,7 @@ export async function selectPluginSkills(
  * Check if the user message explicitly names a plugin.
  * Matches "use <plugin-name>" or just the plugin name appearing verbatim.
  */
-function findExplicitPlugin(
-  userMessage: string,
-  plugins: PluginManifest[]
-): PluginManifest | null {
+function findExplicitPlugin(userMessage: string, plugins: PluginManifest[]): PluginManifest | null {
   const lower = userMessage.toLowerCase();
   // Match "use <name>" pattern or bare plugin name surrounded by word boundaries
   for (const plugin of plugins) {

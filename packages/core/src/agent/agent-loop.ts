@@ -1,5 +1,11 @@
 import { randomUUID } from 'crypto';
-import type { AgentConfig, AgentStep, MemoryEntry, ThoughtTrace, ToolDefinition } from '@tardis/shared';
+import type {
+  AgentConfig,
+  AgentStep,
+  MemoryEntry,
+  ThoughtTrace,
+  ToolDefinition,
+} from '@tardis/shared';
 import type { LLMMessage, LLMProvider } from '../llm/provider.js';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -58,9 +64,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
     const stepStart = Date.now();
 
     // ─── REASON: Send to LLM ─────────────────────────────────────────────────
-    const llmResponse = await input.llmProvider.chat(
-      tools ? { messages, tools } : { messages }
-    );
+    const llmResponse = await input.llmProvider.chat(tools ? { messages, tools } : { messages });
 
     if (llmResponse.usage) {
       totalTokens += llmResponse.usage.promptTokens + llmResponse.usage.completionTokens;
@@ -89,7 +93,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
 
       // Determine effective action type (user overrides take precedence)
       const tool = input.availableTools.find((t) => t.name === toolName);
-      const effectiveActionType = input.config.actionOverrides[toolName] ?? tool?.actionType ?? 'direct';
+      const effectiveActionType =
+        input.config.actionOverrides[toolName] ?? tool?.actionType ?? 'direct';
 
       steps.push({
         type: 'tool_call',
@@ -188,9 +193,7 @@ function generatePreview(toolName: string, args: Record<string, unknown>): strin
   const argList = Object.entries(args)
     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
     .join(', ');
-  return argList
-    ? `About to run \`${toolName}\` with: ${argList}`
-    : `About to run \`${toolName}\``;
+  return argList ? `About to run \`${toolName}\` with: ${argList}` : `About to run \`${toolName}\``;
 }
 
 function buildTrace(

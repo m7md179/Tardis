@@ -112,12 +112,20 @@ describe('LLMMessage', () => {
   });
 
   it('allows name on tool messages', () => {
-    const msg: LLMMessage = { role: 'tool', content: '{"result":"ok"}', name: 'time-tracker.start' };
+    const msg: LLMMessage = {
+      role: 'tool',
+      content: '{"result":"ok"}',
+      name: 'time-tracker.start',
+    };
     expect(msg.name).toBe('time-tracker.start');
   });
 
   it('allows tool_calls on assistant messages', () => {
-    const call: LLMToolCall = { id: 'call_1', name: 'time-tracker.start', arguments: { taskName: 'coding' } };
+    const call: LLMToolCall = {
+      id: 'call_1',
+      name: 'time-tracker.start',
+      arguments: { taskName: 'coding' },
+    };
     const msg: LLMMessage = { role: 'assistant', content: null, tool_calls: [call] };
     expect(msg.tool_calls).toHaveLength(1);
     expect(msg.tool_calls?.[0]?.name).toBe('time-tracker.start');
