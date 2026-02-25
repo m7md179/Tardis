@@ -115,8 +115,14 @@ async function main(): Promise<void> {
       agentConfig: config.agent,
       allowedChatIds: new Set(allowedChatIds),
     });
-    await telegramBot.start();
-    console.log('[tardis] Telegram bot started');
+    try {
+      await telegramBot.start();
+      console.log('[tardis] Telegram bot started');
+    } catch (err) {
+      console.error('[tardis] Telegram bot failed to start:', err instanceof Error ? err.message : String(err));
+      console.error('[tardis] HTTP server still running — Telegram disabled');
+      telegramBot = null;
+    }
   } else {
     console.log('[tardis] Telegram not configured — skipping bot');
   }
