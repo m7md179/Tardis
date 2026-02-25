@@ -1,8 +1,8 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, desc, gte, lte } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { pluginStorage } from '@tardis/db';
+import { pluginStorage, sessions as sessionsTable } from '@tardis/db';
 import type { TardisDB } from '@tardis/db';
-import type { SystemConfig } from '@tardis/shared';
+import type { Session, SystemConfig } from '@tardis/shared';
 import { PermissionGuard } from './permission-guard.js';
 
 // ─── Types ───
@@ -36,12 +36,12 @@ export interface NotificationsAPI {
   send(message: string, options?: { urgent?: boolean }): Promise<void>;
 }
 export interface SessionsAPI {
-  getActive(): Promise<never[]>;
-  start(params: { taskName: string; metadata?: unknown }): Promise<never>;
-  stop(sessionId: string): Promise<never>;
-  pause(sessionId: string): Promise<never>;
-  resume(sessionId: string): Promise<never>;
-  getHistory(options?: { limit?: number; date?: string }): Promise<never[]>;
+  getActive(): Promise<Session[]>;
+  start(params: { taskName: string; metadata?: Record<string, unknown> }): Promise<Session>;
+  stop(sessionId: string): Promise<Session>;
+  pause(sessionId: string): Promise<Session>;
+  resume(sessionId: string): Promise<Session>;
+  getHistory(options?: { limit?: number; date?: string }): Promise<Session[]>;
 }
 export interface MemoryAPI {
   get(key: string): Promise<null>;
@@ -200,30 +200,123 @@ export function createPluginApi(params: {
     },
   };
 
+  // ─── Session helpers ───
+  function dbRowToSession(row: typeof sessionsTable.$inferSelect): Session {
+    return {
+      id: row.id,
+      taskName: row.taskName,
+      status: row.status as Session['status'],
+      startTime: row.startTime,
+      ...(row.endTime !== null ? { endTime: row.endTime } : {}),
+      ...(row.duration !== null ? { duration: row.duration } : {}),
+      ...(row.pausedAt !== null ? { pausedAt: row.pausedAt } : {}),
+      accumulatedTime: row.accumulatedTime ?? 0,
+      ...(row.metadata !== null ? { metadata: JSON.parse(row.metadata!) as Record<string, unknown> } : {}),
+      createdAt: row.createdAt,
+    };
+  }
+
+  async function getSessionOrThrow(id: string): Promise<typeof sessionsTable.$inferSelect> {
+    const rows = await db.select().from(sessionsTable).where(eq(sessionsTable.id, id)).all();
+    if (rows.length === 0) throw new Error(`Session "${id}" not found`);
+    return rows[0]!;
+  }
+
   const sessions: SessionsAPI = {
-    getActive: async () => {
+    async getActive() {
       guard.assert('sessions:read');
-      throw new Error('PluginAPI.sessions not yet implemented');
+      const rows = await db
+        .select()
+        .from(sessionsTable)
+        .where(or(eq(sessionsTable.status, 'active'), eq(sessionsTable.status, 'paused')))
+        .all();
+      return rows.map(dbRowToSession);
     },
-    start: async () => {
+
+    async start({ taskName, metadata }) {
       guard.assert('sessions:write');
-      throw new Error('PluginAPI.sessions not yet implemented');
+      const now = Date.now();
+      const id = randomUUID();
+      await db.insert(sessionsTable).values({
+        id,
+        taskName,
+        status: 'active',
+        startTime: now,
+        accumulatedTime: 0,
+        metadata: metadata !== undefined ? JSON.stringify(metadata) : null,
+        createdAt: now,
+      });
+      const row = await getSessionOrThrow(id);
+      return dbRowToSession(row);
     },
-    stop: async () => {
+
+    async stop(sessionId) {
       guard.assert('sessions:write');
-      throw new Error('PluginAPI.sessions not yet implemented');
+      const row = await getSessionOrThrow(sessionId);
+      if (row.status === 'completed') throw new Error(`Session "${sessionId}" is already completed`);
+      const now = Date.now();
+      const accumulated = row.accumulatedTime ?? 0;
+      const activeSeconds =
+        row.status === 'active' ? Math.round((now - row.startTime) / 1000) : 0;
+      const duration = accumulated + activeSeconds;
+      await db
+        .update(sessionsTable)
+        .set({ status: 'completed', endTime: now, duration })
+        .where(eq(sessionsTable.id, sessionId));
+      return dbRowToSession({ ...row, status: 'completed', endTime: now, duration });
     },
-    pause: async () => {
+
+    async pause(sessionId) {
       guard.assert('sessions:write');
-      throw new Error('PluginAPI.sessions not yet implemented');
+      const row = await getSessionOrThrow(sessionId);
+      if (row.status !== 'active') throw new Error(`Session "${sessionId}" is not active`);
+      const now = Date.now();
+      const elapsed = Math.round((now - row.startTime) / 1000);
+      const newAccumulated = (row.accumulatedTime ?? 0) + elapsed;
+      await db
+        .update(sessionsTable)
+        .set({ status: 'paused', pausedAt: now, accumulatedTime: newAccumulated })
+        .where(eq(sessionsTable.id, sessionId));
+      return dbRowToSession({
+        ...row,
+        status: 'paused',
+        pausedAt: now,
+        accumulatedTime: newAccumulated,
+      });
     },
-    resume: async () => {
+
+    async resume(sessionId) {
       guard.assert('sessions:write');
-      throw new Error('PluginAPI.sessions not yet implemented');
+      const row = await getSessionOrThrow(sessionId);
+      if (row.status !== 'paused') throw new Error(`Session "${sessionId}" is not paused`);
+      const now = Date.now();
+      // Reset startTime to now — it marks the start of the new active period
+      await db
+        .update(sessionsTable)
+        .set({ status: 'active', startTime: now, pausedAt: null })
+        .where(eq(sessionsTable.id, sessionId));
+      return dbRowToSession({ ...row, status: 'active', startTime: now, pausedAt: null });
     },
-    getHistory: async () => {
+
+    async getHistory({ limit = 10, date } = {}) {
       guard.assert('sessions:read');
-      throw new Error('PluginAPI.sessions not yet implemented');
+      const baseWhere =
+        date !== undefined
+          ? and(
+              eq(sessionsTable.status, 'completed'),
+              gte(sessionsTable.createdAt, new Date(date + 'T00:00:00').getTime()),
+              lte(sessionsTable.createdAt, new Date(date + 'T23:59:59.999').getTime())
+            )
+          : eq(sessionsTable.status, 'completed');
+
+      const rows = await db
+        .select()
+        .from(sessionsTable)
+        .where(baseWhere)
+        .orderBy(desc(sessionsTable.createdAt))
+        .limit(limit)
+        .all();
+      return rows.map(dbRowToSession);
     },
   };
 
@@ -247,10 +340,32 @@ export function createPluginApi(params: {
   };
 
   const http: HttpAPI = {
-    get: makeStubAsync('http.get') as HttpAPI['get'],
-    post: makeStubAsync('http.post') as HttpAPI['post'],
-    put: makeStubAsync('http.put') as HttpAPI['put'],
-    delete: makeStubAsync('http.delete') as HttpAPI['delete'],
+    async get(url, options) {
+      guard.assert('http:external');
+      return fetch(url, { ...options, method: 'GET' }) as Promise<never>;
+    },
+    async post(url, body, options) {
+      guard.assert('http:external');
+      return fetch(url, {
+        ...options,
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+      }) as Promise<never>;
+    },
+    async put(url, body, options) {
+      guard.assert('http:external');
+      return fetch(url, {
+        ...options,
+        method: 'PUT',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+      }) as Promise<never>;
+    },
+    async delete(url, options) {
+      guard.assert('http:external');
+      return fetch(url, { ...options, method: 'DELETE' }) as Promise<never>;
+    },
   };
 
   const llm: LLMPluginAPI = {
