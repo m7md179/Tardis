@@ -170,10 +170,13 @@ export class TelegramBot {
   readonly bot: Telegraf;
   private readonly state: BotState;
   private readonly deps: BotDeps;
+  private readonly token: string;
+  private polling = false;
 
   constructor(token: string, deps: BotDeps) {
     this.state = createBotState();
     this.deps = deps;
+    this.token = token;
     this.bot = new Telegraf(token);
     this.registerHandlers();
   }
@@ -205,10 +208,66 @@ export class TelegramBot {
   }
 
   async start(): Promise<void> {
-    await this.bot.launch();
+    // Use raw fetch for all startup calls — Telegraf's HTTP client shares a
+    // keep-alive connection that can cause Telegram to see concurrent sessions.
+    const base = `https://api.telegram.org/bot${this.token}`;
+    await fetch(`${base}/deleteWebhook?drop_pending_updates=true`);
+    // Short pause so Telegram can fully commit the session after deleteWebhook.
+    await new Promise((r) => setTimeout(r, 500));
+    this.polling = true;
+    this.runPollingLoop().catch((err) => {
+      console.error('[telegram] Polling loop crashed:', err instanceof Error ? err.message : String(err));
+    });
   }
 
-  stop(reason?: string): void {
-    this.bot.stop(reason);
+  private async rawGetUpdates(timeoutS: number, offset: number): Promise<unknown[]> {
+    const url =
+      `https://api.telegram.org/bot${this.token}/getUpdates` +
+      `?timeout=${timeoutS}&limit=100&offset=${offset}` +
+      `&allowed_updates=message,callback_query`;
+    const res = await fetch(url);
+    const body = (await res.json()) as { ok: boolean; result?: unknown[]; description?: string; error_code?: number };
+    if (!body.ok) {
+      const err = new Error(body.description ?? 'Telegram API error') as Error & { error_code: number | undefined };
+      err.error_code = body.error_code;
+      throw err;
+    }
+    return body.result ?? [];
+  }
+
+  private async runPollingLoop(): Promise<void> {
+    const TIMEOUT_S = 10;
+    let offset = 0;
+    let consecutive409 = 0;
+
+    while (this.polling) {
+      try {
+        const updates = await this.rawGetUpdates(TIMEOUT_S, offset);
+        consecutive409 = 0;
+        for (const update of updates) {
+          const u = update as Parameters<typeof this.bot.handleUpdate>[0];
+          offset = (u as { update_id: number }).update_id + 1;
+          this.bot.handleUpdate(u).catch((err) => {
+            console.error('[telegram] handleUpdate error:', err instanceof Error ? err.message : String(err));
+          });
+        }
+      } catch (err) {
+        if (!this.polling) break;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('409') || (err as { error_code?: number }).error_code === 409) {
+          consecutive409++;
+          const wait = Math.min(5_000 * consecutive409, 30_000);
+          console.warn(`[telegram] 409 Conflict (×${consecutive409}) — waiting ${wait / 1000}s…`);
+          await new Promise((r) => setTimeout(r, wait));
+        } else {
+          console.error('[telegram] getUpdates error:', msg);
+          await new Promise((r) => setTimeout(r, 3_000));
+        }
+      }
+    }
+  }
+
+  stop(_reason?: string): void {
+    this.polling = false;
   }
 }
