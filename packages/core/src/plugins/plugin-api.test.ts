@@ -608,17 +608,31 @@ describe('PluginAPI.notifications: permission enforcement', () => {
     cleanup();
   });
 
-  it('notifications.send() with notifications:send throws "not yet implemented"', async () => {
+  it('notifications.send() with notifications:send resolves (logs to console if no sender)', async () => {
     const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'p',
       permissions: ['notifications:send'],
       db,
       config: MOCK_CONFIG,
+      // No notificationSender — falls back to console.log
     });
-    const err = await api.notifications.send('hello').catch((e) => e);
-    expect(err).not.toBeInstanceOf(PermissionDeniedError);
-    expect(err.message).toContain('not yet implemented');
+    await expect(api.notifications.send('hello')).resolves.toBeUndefined();
+    cleanup();
+  });
+
+  it('notifications.send() calls provided notificationSender', async () => {
+    const { db, cleanup } = makeTestDb();
+    const sent: string[] = [];
+    const api = createPluginApi({
+      pluginName: 'p',
+      permissions: ['notifications:send'],
+      db,
+      config: MOCK_CONFIG,
+      notificationSender: async (msg) => { sent.push(msg); },
+    });
+    await api.notifications.send('test message');
+    expect(sent).toEqual(['test message']);
     cleanup();
   });
 });

@@ -1,0 +1,46 @@
+{
+  "name": "reminders",
+  "version": "1.0.0",
+  "displayName": "Reminders",
+  "description": "Set timed notifications and reminders delivered via Telegram.",
+  "skillSummary": "Set timed notifications and reminders. Supports 'in X minutes', 'in X hours', and specific delay amounts. Reminders are delivered via Telegram.",
+  "tier": 1,
+  "main": "index.ts",
+  "permissions": ["storage:read", "storage:write", "notifications:send"],
+  "tools": [
+    {
+      "name": "reminders.set-reminder",
+      "description": "Set a reminder to be delivered after a delay. The LLM should convert natural language like 'in 30 minutes' or 'in 2 hours' to a delayMinutes value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "description": "What to remind the user about" },
+          "delayMinutes": { "type": "number", "description": "How many minutes from now to send the reminder" }
+        },
+        "required": ["message", "delayMinutes"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "reminders.list-reminders",
+      "description": "List all pending reminders.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "reminders.cancel-reminder",
+      "description": "Cancel a pending reminder by its ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Reminder ID to cancel" }
+        },
+        "required": ["id"]
+      },
+      "actionType": "direct"
+    }
+  ]
+}
