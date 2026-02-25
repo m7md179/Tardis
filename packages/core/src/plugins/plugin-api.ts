@@ -100,8 +100,10 @@ export function createPluginApi(params: {
     emit: (event: string, data?: unknown) => void;
     on: (event: string, handler: (data: unknown) => void) => void;
   };
+  /** Called by notifications.send() — typically wired to Telegram sendMessage. */
+  notificationSender?: (message: string, options?: { urgent?: boolean }) => Promise<void>;
 }): PluginAPI {
-  const { pluginName, permissions, db, eventEmitter } = params;
+  const { pluginName, permissions, db, eventEmitter, notificationSender } = params;
   const guard = new PermissionGuard(pluginName, permissions);
 
   // ─── Storage ───
@@ -192,11 +194,16 @@ export function createPluginApi(params: {
     },
   };
 
-  // ─── Stubs (permission check runs, then "not yet implemented") ───
+  // ─── Notifications ───
   const notifications: NotificationsAPI = {
-    send: async () => {
+    async send(message, options) {
       guard.assert('notifications:send');
-      throw new Error('PluginAPI.notifications.send is not yet implemented');
+      if (notificationSender) {
+        await notificationSender(message, options);
+      } else {
+        // No sender configured — log to console as fallback
+        console.log(`[${pluginName}] NOTIFICATION: ${message}`);
+      }
     },
   };
 

@@ -67,12 +67,21 @@ async function main(): Promise<void> {
     mkdirSync(pluginsDir, { recursive: true });
   }
 
+  // Notification sender is wired after the Telegram bot starts.
+  // Using a ref so plugins created before the bot can still send later.
+  const notificationSenderRef = {
+    send: async (message: string): Promise<void> => {
+      console.log(`[tardis] NOTIFICATION (no sender configured): ${message}`);
+    },
+  };
+
   const pluginManager = new PluginManager(pluginsDir, (manifest) =>
     createPluginApi({
       pluginName: manifest.name,
       permissions: manifest.permissions,
       db,
       config,
+      notificationSender: (msg) => notificationSenderRef.send(msg),
     })
   );
   await pluginManager.loadAll();
@@ -115,6 +124,10 @@ async function main(): Promise<void> {
       agentConfig: config.agent,
       allowedChatIds: new Set(allowedChatIds),
     });
+
+    // Wire plugin notifications → Telegram
+    notificationSenderRef.send = (msg) => telegramBot!.notify(msg);
+
     try {
       await telegramBot.start();
       console.log('[tardis] Telegram bot started');

@@ -207,6 +207,31 @@ export class TelegramBot {
     });
   }
 
+  /**
+   * Send a proactive notification to all allowed chat IDs.
+   * Falls back to the first allowed chat ID if multiple are configured.
+   */
+  async notify(text: string): Promise<void> {
+    const base = `https://api.telegram.org/bot${this.token}`;
+    const chatIds =
+      this.deps.allowedChatIds.size > 0
+        ? Array.from(this.deps.allowedChatIds)
+        : [];
+
+    if (chatIds.length === 0) {
+      console.warn('[telegram] notify(): no allowed chat IDs configured, cannot send notification');
+      return;
+    }
+
+    // Send to first chat ID (single-user setup)
+    const chatId = chatIds[0]!;
+    await fetch(`${base}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+  }
+
   async start(): Promise<void> {
     // Use raw fetch for all startup calls — Telegraf's HTTP client shares a
     // keep-alive connection that can cause Telegram to see concurrent sessions.

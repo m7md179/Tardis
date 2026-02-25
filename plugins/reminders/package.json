@@ -1,0 +1,10 @@
+{
+  "name": "@tardis-plugin/reminders",
+  "version": "1.0.0",
+  "description": "Reminders plugin for TARDIS",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@tardis/core": "workspace:*"
+  }
+}
