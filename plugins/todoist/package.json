@@ -1,0 +1,11 @@
+{
+  "name": "@tardis-plugin/todoist",
+  "version": "1.0.0",
+  "description": "Todoist plugin for TARDIS",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@tardis/core": "workspace:*",
+    "@tardis/shared": "workspace:*"
+  }
+}
