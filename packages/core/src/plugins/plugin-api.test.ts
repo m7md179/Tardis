@@ -454,46 +454,81 @@ describe('PluginAPI.sessions: permission enforcement', () => {
   });
 });
 
-describe('PluginAPI.sessions: passes permission check then throws not-yet-implemented', () => {
-  it('sessions.start() with sessions:write throws "not yet implemented" (not permission denied)', async () => {
+describe('PluginAPI.sessions: CRUD behaviour', () => {
+  it('start() creates an active session and returns it', async () => {
     const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'time-tracker',
-      permissions: ['sessions:write'],
+      permissions: ['sessions:read', 'sessions:write'],
       db,
       config: MOCK_CONFIG,
     });
-    const err = await api.sessions.start({ taskName: 'coding' }).catch((e) => e);
-    expect(err).not.toBeInstanceOf(PermissionDeniedError);
-    expect(err.message).toContain('not yet implemented');
+    const session = await api.sessions.start({ taskName: 'coding' });
+    expect(session.taskName).toBe('coding');
+    expect(session.status).toBe('active');
+    expect(typeof session.id).toBe('string');
     cleanup();
   });
 
-  it('sessions.getActive() with sessions:read throws "not yet implemented"', async () => {
+  it('getActive() returns started sessions', async () => {
     const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'time-tracker',
-      permissions: ['sessions:read'],
+      permissions: ['sessions:read', 'sessions:write'],
       db,
       config: MOCK_CONFIG,
     });
-    const err = await api.sessions.getActive().catch((e) => e);
-    expect(err).not.toBeInstanceOf(PermissionDeniedError);
-    expect(err.message).toContain('not yet implemented');
+    await api.sessions.start({ taskName: 'task-a' });
+    const active = await api.sessions.getActive();
+    expect(active.length).toBe(1);
+    expect(active[0]!.taskName).toBe('task-a');
     cleanup();
   });
 
-  it('sessions.getHistory() with sessions:read throws "not yet implemented"', async () => {
+  it('stop() marks session completed and returns duration', async () => {
     const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'time-tracker',
-      permissions: ['sessions:read'],
+      permissions: ['sessions:read', 'sessions:write'],
       db,
       config: MOCK_CONFIG,
     });
-    const err = await api.sessions.getHistory().catch((e) => e);
-    expect(err).not.toBeInstanceOf(PermissionDeniedError);
-    expect(err.message).toContain('not yet implemented');
+    const session = await api.sessions.start({ taskName: 'task-b' });
+    const stopped = await api.sessions.stop(session.id);
+    expect(stopped.status).toBe('completed');
+    expect(typeof stopped.duration).toBe('number');
+    cleanup();
+  });
+
+  it('pause() and resume() cycle works', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'time-tracker',
+      permissions: ['sessions:read', 'sessions:write'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const session = await api.sessions.start({ taskName: 'task-c' });
+    const paused = await api.sessions.pause(session.id);
+    expect(paused.status).toBe('paused');
+    const resumed = await api.sessions.resume(session.id);
+    expect(resumed.status).toBe('active');
+    cleanup();
+  });
+
+  it('getHistory() returns completed sessions', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'time-tracker',
+      permissions: ['sessions:read', 'sessions:write'],
+      db,
+      config: MOCK_CONFIG,
+    });
+    const session = await api.sessions.start({ taskName: 'done-task' });
+    await api.sessions.stop(session.id);
+    const history = await api.sessions.getHistory();
+    expect(history.length).toBe(1);
+    expect(history[0]!.status).toBe('completed');
     cleanup();
   });
 });
@@ -588,30 +623,34 @@ describe('PluginAPI.notifications: permission enforcement', () => {
   });
 });
 
-// ─── HTTP (stub) ───
+// ─── HTTP ───
 
-describe('PluginAPI.http: stub behaviour', () => {
-  it('http.get() throws "not yet implemented" (no permission check)', async () => {
+describe('PluginAPI.http: permission enforcement', () => {
+  it('http.get() throws PermissionDeniedError without http:external', async () => {
     const { db, cleanup } = makeTestDb();
-    const api = createPluginApi({
-      pluginName: 'http-plugin',
-      permissions: ['http:external'],
-      db,
-      config: MOCK_CONFIG,
-    });
-    await expect(api.http.get('https://example.com')).rejects.toThrow('not yet implemented');
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.http.get('https://example.com')).rejects.toThrow(PermissionDeniedError);
     cleanup();
   });
 
-  it('http.post() throws "not yet implemented"', async () => {
+  it('http.post() throws PermissionDeniedError without http:external', async () => {
     const { db, cleanup } = makeTestDb();
-    const api = createPluginApi({
-      pluginName: 'http-plugin',
-      permissions: ['http:external'],
-      db,
-      config: MOCK_CONFIG,
-    });
-    await expect(api.http.post('https://example.com', {})).rejects.toThrow('not yet implemented');
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.http.post('https://example.com', {})).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('http.put() throws PermissionDeniedError without http:external', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.http.put('https://example.com', {})).rejects.toThrow(PermissionDeniedError);
+    cleanup();
+  });
+
+  it('http.delete() throws PermissionDeniedError without http:external', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({ pluginName: 'p', permissions: [], db, config: MOCK_CONFIG });
+    await expect(api.http.delete('https://example.com')).rejects.toThrow(PermissionDeniedError);
     cleanup();
   });
 });

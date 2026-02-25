@@ -1,0 +1,109 @@
+{
+  "name": "time-tracker",
+  "version": "1.0.0",
+  "displayName": "Time Tracker",
+  "description": "Track time spent on tasks with start/stop/pause/resume.",
+  "skillSummary": "Track time spent working on tasks. Start, stop, pause, and resume timers. View session history and daily summaries.",
+  "tier": 1,
+  "main": "index.ts",
+  "permissions": ["sessions:read", "sessions:write", "storage:read", "storage:write", "notifications:send"],
+  "tools": [
+    {
+      "name": "time-tracker.start",
+      "description": "Start tracking time for a task. Use when the user wants to begin working on something.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskName": { "type": "string", "description": "Name of the task to track" }
+        },
+        "required": ["taskName"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "time-tracker.stop",
+      "description": "Stop the active timer and record the session.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session ID to stop. If omitted, stops the most recent active session."
+          }
+        }
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "time-tracker.pause",
+      "description": "Pause the active timer without ending the session.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session ID to pause. If omitted, pauses the active session."
+          }
+        }
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "time-tracker.resume",
+      "description": "Resume a paused timer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session ID to resume. If omitted, resumes the paused session."
+          }
+        }
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "time-tracker.status",
+      "description": "Check currently active or paused time tracking sessions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "time-tracker.history",
+      "description": "Get time tracking history. Shows completed sessions with durations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Date to filter by (YYYY-MM-DD). Defaults to all recent sessions."
+          },
+          "limit": { "type": "number", "description": "Max results to return. Default 10." }
+        }
+      },
+      "actionType": "direct"
+    }
+  ],
+  "proactive": [
+    {
+      "name": "long-session-reminder",
+      "description": "Remind you to take a break after working for a long time",
+      "defaultSchedule": "*/15 * * * *",
+      "defaultEnabled": false,
+      "handler": "checkLongSession"
+    },
+    {
+      "name": "daily-summary",
+      "description": "Send a summary of today's tracked time at end of day",
+      "defaultSchedule": "0 18 * * *",
+      "defaultEnabled": false,
+      "handler": "sendDailySummary"
+    }
+  ],
+  "config": {
+    "longSessionThresholdMinutes": 120
+  }
+}

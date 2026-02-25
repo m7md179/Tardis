@@ -1,0 +1,11 @@
+{
+  "name": "@tardis-plugin/time-tracker",
+  "version": "1.0.0",
+  "description": "Time tracking plugin for TARDIS",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@tardis/core": "workspace:*",
+    "@tardis/shared": "workspace:*"
+  }
+}
