@@ -45,4 +45,5 @@ export const SystemConfigSchema = z.object({
   agent: AgentConfigSchema.extend({ personality: z.string().optional() }).default({}),
   telegram: TelegramConfigSchema.optional(),
   proactive: ProactiveConfigSchema.default({}),
+  plugins: z.record(z.string(), z.record(z.string(), z.any())).optional(),
 });

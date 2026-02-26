@@ -177,9 +177,13 @@ export function createPluginApi(params: {
       console.debug(`[${pluginName}] DEBUG:`, msg, ...(data !== undefined ? [data] : [])),
   };
 
-  // ─── Config (MVP: no-op storage, returns null) ───
+  // ─── Config ───
+  const pluginConfig = params.config.plugins?.[pluginName] ?? {};
   const configApi: ConfigAPI = {
-    async get<T = unknown>(_key: string): Promise<T | null> {
+    async get<T = unknown>(key: string): Promise<T | null> {
+      if (key in pluginConfig) {
+        return pluginConfig[key] as T;
+      }
       return null;
     },
     async set(_key: string, _value: unknown): Promise<void> {
