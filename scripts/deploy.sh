@@ -9,12 +9,20 @@ PCT_ID="106"
 REMOTE_DIR="/opt/Tardis"
 SERVICE="tardis"
 
-echo "==> Deploying TARDIS to PCT ${PCT_ID} via ${PROXMOX_HOST}..."
-
-# Push local changes to git first
-echo "==> Pushing local changes..."
 cd "$(dirname "$0")/.."
-git push origin main
+
+BRANCH=$(git branch --show-current)
+
+echo "==> Deploying TARDIS to PCT ${PCT_ID} via ${PROXMOX_HOST}..."
+echo "    Branch: ${BRANCH}"
+
+# Build web UI locally first
+echo "==> Building web UI..."
+(cd packages/web-ui && bun run build)
+
+# Push current branch to git
+echo "==> Pushing ${BRANCH}..."
+git push origin "${BRANCH}"
 
 # SSH into Proxmox host, then exec into the LXC container
 echo "==> Updating server inside container PCT ${PCT_ID}..."
@@ -24,16 +32,20 @@ set -euo pipefail
 pct exec ${PCT_ID} -- bash -c '
 set -euo pipefail
 
-export PATH="/root/.bun/bin:/usr/local/bin:$PATH"
+export PATH="/root/.bun/bin:/usr/local/bin:\$PATH"
 
 cd ${REMOTE_DIR}
 
-echo "  -> Resetting local changes..."
-git fetch origin main
-git reset --hard origin/main
+echo "  -> Pulling branch ${BRANCH}..."
+git fetch origin ${BRANCH}
+git checkout ${BRANCH} 2>/dev/null || git checkout -b ${BRANCH} origin/${BRANCH}
+git reset --hard origin/${BRANCH}
 
 echo "  -> Installing dependencies..."
 bun install --frozen-lockfile 2>/dev/null || bun install
+
+echo "  -> Building web UI..."
+(cd packages/web-ui && bun run build)
 
 echo "  -> Syncing plugins..."
 PDIR="/var/lib/tardis/plugins"
