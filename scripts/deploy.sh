@@ -63,7 +63,8 @@ if [ -d ${REMOTE_DIR}/plugins ]; then
       cp -r "/tmp/tardis-pstor-\$pname" "\$PDIR/\$pname/storage"
       rm -rf "/tmp/tardis-pstor-\$pname"
     fi
-    if [ -f "\$PDIR/\$pname/package.json" ]; then
+    # Skip bun install for plugins — workspace deps resolve from monorepo root
+    if [ -f "\$PDIR/\$pname/package.json" ] && ! grep -q "workspace:" "\$PDIR/\$pname/package.json"; then
       (cd "\$PDIR/\$pname" && bun install --frozen-lockfile 2>/dev/null || bun install)
     fi
     echo "    Synced plugin: \$pname"
