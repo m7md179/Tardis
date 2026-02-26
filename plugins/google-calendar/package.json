@@ -1,0 +1,10 @@
+{
+  "name": "@tardis-plugin/google-calendar",
+  "version": "1.0.0",
+  "description": "Google Calendar plugin for TARDIS",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@tardis/core": "workspace:*"
+  }
+}

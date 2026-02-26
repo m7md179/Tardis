@@ -1,0 +1,91 @@
+{
+  "name": "google-calendar",
+  "version": "1.0.0",
+  "displayName": "Google Calendar",
+  "description": "Manage Google Calendar events: list upcoming schedule, create events, check what's on a specific date.",
+  "skillSummary": "Manage Google Calendar events. Create new events, list upcoming schedule, and check what's happening on specific dates or tomorrow. Also handles Google Calendar OAuth2 authorization setup and exchanging authorization codes to connect the calendar.",
+  "tier": 1,
+  "main": "index.ts",
+  "permissions": ["http:external", "storage:read", "storage:write", "notifications:send"],
+  "tools": [
+    {
+      "name": "google-calendar.list-events",
+      "description": "List upcoming calendar events. Can filter by date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Date to check (YYYY-MM-DD). Defaults to today. Use 'tomorrow' or a specific date."
+          },
+          "days": {
+            "type": "number",
+            "description": "Number of days to look ahead (default 1). Use 7 for a week view."
+          },
+          "maxResults": {
+            "type": "number",
+            "description": "Maximum events to return (default 10)."
+          }
+        }
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "google-calendar.create-event",
+      "description": "Create a new calendar event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Event title/summary" },
+          "date": { "type": "string", "description": "Event date (YYYY-MM-DD)" },
+          "startTime": { "type": "string", "description": "Start time (HH:MM, 24h format). Omit for all-day event." },
+          "endTime": { "type": "string", "description": "End time (HH:MM, 24h format). Defaults to 1 hour after start." },
+          "description": { "type": "string", "description": "Optional event description" },
+          "location": { "type": "string", "description": "Optional event location" },
+          "attendees": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional list of attendee email addresses"
+          }
+        },
+        "required": ["title", "date"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "google-calendar.check-schedule",
+      "description": "Check if a specific time slot is free or busy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "description": "Date to check (YYYY-MM-DD)" },
+          "startTime": { "type": "string", "description": "Start time to check (HH:MM)" },
+          "endTime": { "type": "string", "description": "End time to check (HH:MM)" }
+        },
+        "required": ["date", "startTime", "endTime"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "google-calendar.setup-oauth",
+      "description": "Start the OAuth2 setup flow to connect Google Calendar. Call this if Google Calendar is not yet authorized.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "google-calendar.exchange-code",
+      "description": "Exchange the OAuth2 authorization code to complete Google Calendar connection. Call this immediately when the user provides a Google authorization code (typically starts with '4/1' or '4/'). Do not ask for more info — just call this tool with the code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "description": "The authorization code from Google (starts with '4/')" }
+        },
+        "required": ["code"]
+      },
+      "actionType": "direct"
+    }
+  ]
+}

@@ -118,12 +118,20 @@ export const executeTool = async (
 
       if (reminders.length === 0) return { reminders: [], message: 'No pending reminders.' };
 
-      const formatted = reminders.map((r) => ({
-        id: r.id,
-        message: r.message,
-        fireAt: r.fireAt,
-        inMinutes: Math.max(0, Math.round((r.fireAt - Date.now()) / 60000)),
-      }));
+      const formatted = reminders.map((r) => {
+        const inMinutes = Math.max(0, Math.round((r.fireAt - Date.now()) / 60000));
+        return {
+          id: r.id,
+          message: r.message,
+          fireAt: new Date(r.fireAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }),
+          inMinutes,
+          inMinutesLabel: inMinutes < 60
+            ? `${inMinutes} minute(s)`
+            : inMinutes < 1440
+              ? `${Math.round(inMinutes / 60)} hour(s)`
+              : `${Math.round(inMinutes / 1440)} day(s)`,
+        };
+      });
       return { reminders: formatted };
     }
 
