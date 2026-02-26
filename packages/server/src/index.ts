@@ -13,6 +13,7 @@ import {
   MemoryRetriever,
   MEMORY_TOOLS,
   createMemoryExecutor,
+  ProactiveScheduler,
 } from '@tardis/core';
 import { createDb, migrate } from '@tardis/db';
 import type { SystemConfig } from '@tardis/shared';
@@ -106,12 +107,24 @@ async function main(): Promise<void> {
   const memoryRetriever = new MemoryRetriever(memoryStore, config.agent.memoryTokenBudget);
   const memoryExecutor = createMemoryExecutor(memoryStore);
 
-  // 5. Start Hono HTTP server (Bun native)
+  // 5. Initialize proactive scheduler
+  const scheduler = new ProactiveScheduler(db);
+
+  // Register proactive triggers from all loaded plugins
+  for (const manifest of loadedPlugins) {
+    if (manifest.proactive && manifest.proactive.length > 0) {
+      const handlers = pluginManager.getProactiveHandlers(manifest.name);
+      await scheduler.registerPlugin(manifest.name, manifest.proactive, handlers);
+    }
+  }
+
+  // 6. Start Hono HTTP server (Bun native)
   const app = createApp({
     db,
     config,
     pluginManager,
     saveConfig: makeSaveConfig(dataDir),
+    scheduler,
   });
 
   const bunServer = Bun.serve({
@@ -153,13 +166,20 @@ async function main(): Promise<void> {
     console.log('[tardis] Telegram not configured — skipping bot');
   }
 
-  // 7. Proactive scheduler — placeholder, filled in Phase 5
-  console.log('[tardis] Proactive scheduler: not configured (Phase 5)');
+  // 8. Start proactive scheduler
+  if (config.proactive.enabled) {
+    scheduler.start();
+    console.log('[tardis] Proactive scheduler started (60s tick interval)');
+  } else {
+    console.log('[tardis] Proactive scheduler disabled in config');
+  }
 
   // ─── Graceful shutdown ──────────────────────────────────────────────────────
 
   async function shutdown(signal: string): Promise<void> {
     console.log(`\n[tardis] Received ${signal} — shutting down gracefully…`);
+
+    scheduler.stop();
 
     if (telegramBot) {
       telegramBot.stop(signal);

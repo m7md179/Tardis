@@ -20,8 +20,9 @@
     "clean": "rm -rf dist coverage"
   },
   "dependencies": {
-    "@tardis/shared": "workspace:*",
     "@tardis/db": "workspace:*",
+    "@tardis/shared": "workspace:*",
+    "cron-parser": "^5.5.0",
     "drizzle-orm": "^0.38.0",
     "zod": "^3.24.1"
   },

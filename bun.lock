@@ -37,6 +37,7 @@
       "dependencies": {
         "@tardis/db": "workspace:*",
         "@tardis/shared": "workspace:*",
+        "cron-parser": "^5.5.0",
         "drizzle-orm": "^0.38.0",
         "zod": "^3.24.1",
       },
@@ -84,9 +85,47 @@
         "typescript": "^5.7.2",
       },
     },
+    "plugins/google-calendar": {
+      "name": "@tardis-plugin/google-calendar",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@tardis/core": "workspace:*",
+      },
+    },
+    "plugins/notes": {
+      "name": "@tardis-plugin/notes",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@tardis/core": "workspace:*",
+        "@tardis/shared": "workspace:*",
+      },
+    },
+    "plugins/reminders": {
+      "name": "@tardis-plugin/reminders",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@tardis/core": "workspace:*",
+      },
+    },
     "plugins/test-plugin": {
       "name": "@tardis-plugin/test-plugin",
       "version": "1.0.0",
+    },
+    "plugins/time-tracker": {
+      "name": "@tardis-plugin/time-tracker",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@tardis/core": "workspace:*",
+        "@tardis/shared": "workspace:*",
+      },
+    },
+    "plugins/todoist": {
+      "name": "@tardis-plugin/todoist",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@tardis/core": "workspace:*",
+        "@tardis/shared": "workspace:*",
+      },
     },
   },
   "packages": {
@@ -202,7 +241,17 @@
 
     "@petamoriken/float16": ["@petamoriken/float16@3.9.3", "", {}, "sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g=="],
 
+    "@tardis-plugin/google-calendar": ["@tardis-plugin/google-calendar@workspace:plugins/google-calendar"],
+
+    "@tardis-plugin/notes": ["@tardis-plugin/notes@workspace:plugins/notes"],
+
+    "@tardis-plugin/reminders": ["@tardis-plugin/reminders@workspace:plugins/reminders"],
+
     "@tardis-plugin/test-plugin": ["@tardis-plugin/test-plugin@workspace:plugins/test-plugin"],
+
+    "@tardis-plugin/time-tracker": ["@tardis-plugin/time-tracker@workspace:plugins/time-tracker"],
+
+    "@tardis-plugin/todoist": ["@tardis-plugin/todoist@workspace:plugins/todoist"],
 
     "@tardis/cli": ["@tardis/cli@workspace:packages/cli"],
 
@@ -291,6 +340,8 @@
     "commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
 
     "concat-map": ["concat-map@0.0.1", "", {}, "sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg=="],
+
+    "cron-parser": ["cron-parser@5.5.0", "", { "dependencies": { "luxon": "^3.7.1" } }, "sha512-oML4lKUXxizYswqmxuOCpgFS8BNUJpIu6k/2HVHyaL8Ynnf3wdf9tkns0yRdJLSIjkJ+b0DXHMZEHGpMwjnPww=="],
 
     "cross-spawn": ["cross-spawn@7.0.6", "", { "dependencies": { "path-key": "^3.1.0", "shebang-command": "^2.0.0", "which": "^2.0.1" } }, "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA=="],
 
@@ -393,6 +444,8 @@
     "locate-path": ["locate-path@6.0.0", "", { "dependencies": { "p-locate": "^5.0.0" } }, "sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw=="],
 
     "lodash.merge": ["lodash.merge@4.6.2", "", {}, "sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ=="],
+
+    "luxon": ["luxon@3.7.2", "", {}, "sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew=="],
 
     "minimatch": ["minimatch@3.1.2", "", { "dependencies": { "brace-expansion": "^1.1.7" } }, "sha512-J7p63hRiAjw1NDEww1W7i37+ByIrOWO5XQQAzZ3VOcL0PNybwpfmV/N05zFAzwQ9USyEcX6t3UO+K5aqBQOIHw=="],
 
