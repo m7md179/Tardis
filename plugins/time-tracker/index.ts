@@ -59,7 +59,14 @@ export const executeTool = async (
       return {
         success: true,
         message: `Stopped "${session.taskName}" — tracked for ${formatDuration(session.duration ?? 0)}`,
-        session,
+        session: {
+          id: session.id,
+          taskName: session.taskName,
+          duration: session.duration,
+          durationFormatted: formatDuration(session.duration ?? 0),
+          startTime: session.startTime,
+          endTime: session.endTime,
+        },
       };
     }
 

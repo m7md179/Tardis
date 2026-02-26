@@ -114,6 +114,28 @@ async function getValidAccessToken(): Promise<string> {
 // ─── Calendar helpers ───
 
 function toRFC3339Date(dateStr: string): string {
+  return dateStr;
+}
+
+/** Resolve natural language dates to YYYY-MM-DD. */
+function resolveDate(dateArg: string): string {
+  const d = dateArg.toLowerCase().trim();
+  if (d === 'today') return new Date().toISOString().split('T')[0]!;
+  if (d === 'tomorrow') {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0]!;
+  }
+  return dateArg;
+}
+
+/** Add one hour to HH:MM, wrapping at 23:59. */
+function addOneHour(time: string): string {
+  const [h, m] = time.split(':').map(Number) as [number, number];
+  if (h >= 23) return '23:59';
+  return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
   // Returns YYYY-MM-DD for all-day or YYYY-MM-DDTHH:MM:SS for timed
   return dateStr;
 }
@@ -198,6 +220,7 @@ export const executeTool = async (
       const title = String(args['title'] ?? '').trim();
       if (!title) return { success: false, message: 'Event title is required.' };
 
+      const date = resolveDate(String(args['date'] ?? '').trim());
       const date = String(args['date'] ?? '').trim();
       if (!date) return { success: false, message: 'Event date is required.' };
 
@@ -246,6 +269,9 @@ export const executeTool = async (
     case 'google-calendar.check-schedule': {
       const token = await getValidAccessToken();
 
+      const date = resolveDate(String(args['date'] ?? '').trim());
+      const startTime = String(args['startTime'] ?? '').trim();
+      const endTime = String(args['endTime'] ?? '').trim() || addOneHour(startTime);
       const date = String(args['date'] ?? '').trim();
       const startTime = String(args['startTime'] ?? '').trim();
       const endTime = String(args['endTime'] ?? '').trim();
@@ -299,6 +325,13 @@ export const executeTool = async (
       };
     }
 
+    case 'google-calendar.exchange-code': {
+      const code = String(args['code'] ?? '').trim();
+      if (!code) return { success: false, message: 'Authorization code is required.' };
+      await exchangeOAuthCode(code);
+      return { success: true, message: 'Google Calendar connected successfully! You can now list events and create events.' };
+    }
+
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }
@@ -320,6 +353,10 @@ export async function exchangeOAuthCode(code: string): Promise<void> {
     { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
   );
 
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`OAuth code exchange failed: ${res.status} — ${errBody}`);
+  }
   if (!res.ok) throw new Error(`OAuth code exchange failed: ${res.status}`);
   const data = (await res.json()) as {
     access_token: string;

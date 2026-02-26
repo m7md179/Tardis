@@ -353,20 +353,28 @@ export function createPluginApi(params: {
     },
     async post(url, body, options) {
       guard.assert('http:external');
+      const isString = typeof body === 'string';
       return fetch(url, {
         ...options,
         method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+        body: isString ? body : JSON.stringify(body),
+        headers: {
+          'Content-Type': isString ? 'application/x-www-form-urlencoded' : 'application/json',
+          ...(options?.headers ?? {}),
+        },
       }) as Promise<never>;
     },
     async put(url, body, options) {
       guard.assert('http:external');
+      const isString = typeof body === 'string';
       return fetch(url, {
         ...options,
         method: 'PUT',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+        body: isString ? body : JSON.stringify(body),
+        headers: {
+          'Content-Type': isString ? 'application/x-www-form-urlencoded' : 'application/json',
+          ...(options?.headers ?? {}),
+        },
       }) as Promise<never>;
     },
     async delete(url, options) {
