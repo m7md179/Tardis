@@ -9,6 +9,7 @@ import {
   OllamaAdapter,
   OpenAIAdapter,
   ToolRouter,
+  MemoryStore,
 } from '@tardis/core';
 import { createDb, migrate } from '@tardis/db';
 import type { SystemConfig } from '@tardis/shared';
@@ -75,6 +76,9 @@ async function main(): Promise<void> {
     },
   };
 
+  // 3b. Initialize memory store
+  const memoryStore = new MemoryStore(db);
+
   const pluginManager = new PluginManager(pluginsDir, (manifest) =>
     createPluginApi({
       pluginName: manifest.name,
@@ -82,6 +86,7 @@ async function main(): Promise<void> {
       db,
       config,
       notificationSender: (msg) => notificationSenderRef.send(msg),
+      memoryStore,
     })
   );
   await pluginManager.loadAll();

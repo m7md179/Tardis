@@ -2,8 +2,9 @@ import { eq, and, or, desc, gte, lte } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { pluginStorage, sessions as sessionsTable } from '@tardis/db';
 import type { TardisDB } from '@tardis/db';
-import type { Session, SystemConfig } from '@tardis/shared';
+import type { Session, SystemConfig, MemoryEntry, MemoryType } from '@tardis/shared';
 import { PermissionGuard } from './permission-guard.js';
+import type { MemoryStore } from '../memory/memory-store.js';
 
 // ─── Types ───
 
@@ -44,10 +45,10 @@ export interface SessionsAPI {
   getHistory(options?: { limit?: number; date?: string }): Promise<Session[]>;
 }
 export interface MemoryAPI {
-  get(key: string): Promise<null>;
-  set(key: string, value: string, type?: string): Promise<void>;
-  search(query: string, limit?: number): Promise<never[]>;
-  delete(key: string): Promise<void>;
+  get(key: string): Promise<MemoryEntry | null>;
+  set(key: string, value: string, type?: MemoryType): Promise<void>;
+  search(query: string, limit?: number): Promise<MemoryEntry[]>;
+  delete(key: string): Promise<boolean>;
 }
 export interface HttpAPI {
   get(url: string, options?: RequestInit): Promise<never>;
@@ -102,6 +103,8 @@ export function createPluginApi(params: {
   };
   /** Called by notifications.send() — typically wired to Telegram sendMessage. */
   notificationSender?: (message: string, options?: { urgent?: boolean }) => Promise<void>;
+  /** Shared MemoryStore instance for plugin memory access. */
+  memoryStore?: MemoryStore;
 }): PluginAPI {
   const { pluginName, permissions, db, eventEmitter, notificationSender } = params;
   const guard = new PermissionGuard(pluginName, permissions);
@@ -328,21 +331,31 @@ export function createPluginApi(params: {
   };
 
   const memory: MemoryAPI = {
-    get: async () => {
+    async get(key: string): Promise<MemoryEntry | null> {
       guard.assert('memory:read');
-      throw new Error('PluginAPI.memory not yet implemented');
+      if (!params.memoryStore) throw new Error('MemoryStore not configured');
+      return params.memoryStore.getByKey(key);
     },
-    set: async () => {
+    async set(key: string, value: string, type?: MemoryType): Promise<void> {
       guard.assert('memory:write');
-      throw new Error('PluginAPI.memory not yet implemented');
+      if (!params.memoryStore) throw new Error('MemoryStore not configured');
+      await params.memoryStore.upsertByKey({
+        type: type ?? 'plugin',
+        key,
+        value,
+        source: pluginName,
+        pluginName,
+      });
     },
-    search: async () => {
+    async search(query: string, limit?: number): Promise<MemoryEntry[]> {
       guard.assert('memory:read');
-      throw new Error('PluginAPI.memory not yet implemented');
+      if (!params.memoryStore) throw new Error('MemoryStore not configured');
+      return params.memoryStore.search(query, limit);
     },
-    delete: async () => {
+    async delete(key: string): Promise<boolean> {
       guard.assert('memory:write');
-      throw new Error('PluginAPI.memory not yet implemented');
+      if (!params.memoryStore) throw new Error('MemoryStore not configured');
+      return params.memoryStore.delete(key);
     },
   };
 
