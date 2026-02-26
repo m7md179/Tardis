@@ -120,10 +120,16 @@ export class ProactiveScheduler {
   }
 
   /**
+   * Run a single scheduler tick with the given time. Useful for testing.
+   */
+  async tickNow(now: Date = new Date()): Promise<void> {
+    return this.tick(now);
+  }
+
+  /**
    * Single scheduler tick: check all enabled triggers against current time.
    */
-  private async tick(): Promise<void> {
-    const now = new Date();
+  private async tick(now: Date = new Date()): Promise<void> {
 
     const rows = await this.db
       .select()
