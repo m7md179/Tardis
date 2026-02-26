@@ -35,6 +35,7 @@ set -euo pipefail
 export PATH="/root/.bun/bin:/usr/local/bin:\$PATH"
 
 cd ${REMOTE_DIR}
+git config --global --add safe.directory ${REMOTE_DIR} 2>/dev/null || true
 
 echo "  -> Pulling branch ${BRANCH}..."
 git fetch origin ${BRANCH}
