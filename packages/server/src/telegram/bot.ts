@@ -1,8 +1,9 @@
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { runAgentLoop, selectPluginSkills } from '@tardis/core';
-import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage } from '@tardis/core';
-import type { AgentConfig, PluginManifest } from '@tardis/shared';
+import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever } from '@tardis/core';
+import type { MemoryExecutor } from '@tardis/core';
+import type { AgentConfig, PluginManifest, ToolDefinition } from '@tardis/shared';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,12 @@ export interface BotDeps {
    * Empty set = allow all (useful for single-user setups).
    */
   allowedChatIds: Set<string>;
+  /** Memory retriever for injecting relevant context. */
+  memoryRetriever?: MemoryRetriever;
+  /** Memory tools (save/recall/forget) definitions. */
+  memoryTools?: ToolDefinition[];
+  /** Executor for memory.* tool calls. */
+  memoryExecutor?: MemoryExecutor;
 }
 
 export interface BotState {
@@ -110,17 +117,34 @@ export async function handleUserMessage(
       deps.llmProvider
     );
 
+    // Retrieve relevant memories for context injection
+    const memories = deps.memoryRetriever
+      ? await deps.memoryRetriever.getRelevant(text)
+      : [];
+
+    // Combine plugin tools with always-available memory tools
+    const allTools = [...tools, ...(deps.memoryTools ?? [])];
+
+    // Build executor that routes memory.* to memoryExecutor, rest to toolRouter
+    const pluginExecutor = deps.toolRouter.asExecutor();
+    const combinedExecutor = async (toolName: string, args: Record<string, unknown>) => {
+      if (toolName.startsWith('memory.') && deps.memoryExecutor) {
+        return deps.memoryExecutor.execute(toolName, args);
+      }
+      return pluginExecutor(toolName, args);
+    };
+
     const history = state.conversationHistory.get(chatId) ?? [];
 
     const result = await runAgentLoop({
       userMessage: text,
       conversationHistory: history,
-      memories: [],
-      availableTools: tools,
+      memories,
+      availableTools: allTools,
       selectedPlugins,
       config: deps.agentConfig,
       llmProvider: deps.llmProvider,
-      executeTool: deps.toolRouter.asExecutor(),
+      executeTool: combinedExecutor,
     });
 
     // Update conversation history, capped at conversationHistoryLength * 2 (message + reply pairs)

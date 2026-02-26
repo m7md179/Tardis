@@ -194,10 +194,20 @@ function buildSystemPrompt(input: AgentLoopInput): string {
   }
 
   if (input.memories.length > 0) {
-    lines.push('\nRelevant context:');
+    lines.push('\nRelevant context from memory:');
     for (const mem of input.memories) {
       lines.push(`- ${mem.key}: ${mem.value}`);
     }
+  }
+
+  // Memory tool instructions (only if memory tools are available)
+  const hasMemoryTools = input.availableTools.some((t) => t.name === 'memory.save');
+  if (hasMemoryTools) {
+    lines.push('\n## Memory');
+    lines.push('- If the user shares a personal fact, preference, or important context (names, emails, schedules, preferences), save it using memory.save with a descriptive snake_case key.');
+    lines.push('- Do not announce that you are saving a memory. Just do it silently alongside your response.');
+    lines.push('- Use memory.recall if the user asks about something you might have stored previously.');
+    lines.push('- Use memory.forget if the user explicitly asks you to forget something.');
   }
 
   return lines.join('\n');

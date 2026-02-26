@@ -10,6 +10,9 @@ import {
   OpenAIAdapter,
   ToolRouter,
   MemoryStore,
+  MemoryRetriever,
+  MEMORY_TOOLS,
+  createMemoryExecutor,
 } from '@tardis/core';
 import { createDb, migrate } from '@tardis/db';
 import type { SystemConfig } from '@tardis/shared';
@@ -100,6 +103,8 @@ async function main(): Promise<void> {
   // 4. Build AI engine
   const llmProvider = buildLLMProvider(config);
   const toolRouter = new ToolRouter(pluginManager);
+  const memoryRetriever = new MemoryRetriever(memoryStore, config.agent.memoryTokenBudget);
+  const memoryExecutor = createMemoryExecutor(memoryStore);
 
   // 5. Start Hono HTTP server (Bun native)
   const app = createApp({
@@ -128,6 +133,9 @@ async function main(): Promise<void> {
       toolRouter,
       agentConfig: config.agent,
       allowedChatIds: new Set(allowedChatIds),
+      memoryRetriever,
+      memoryTools: MEMORY_TOOLS,
+      memoryExecutor,
     });
 
     // Wire plugin notifications → Telegram

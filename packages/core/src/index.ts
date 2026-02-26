@@ -27,6 +27,8 @@ export type {
 export { MemoryStore } from './memory/memory-store.js';
 export type { CreateMemoryParams } from './memory/memory-store.js';
 export { MemoryRetriever } from './memory/memory-retriever.js';
+export { MEMORY_TOOLS, createMemoryExecutor } from './memory/memory-tools.js';
+export type { MemoryExecutor } from './memory/memory-tools.js';
 export { LLMProviderError } from './llm/provider.js';
 export type { LLMMessage, LLMToolCall, LLMResponse, LLMProvider } from './llm/provider.js';
 export { OpenAIAdapter } from './llm/openai-adapter.js';
