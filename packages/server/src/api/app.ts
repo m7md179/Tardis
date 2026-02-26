@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { jwt } from 'hono/jwt';
+import { jwt, sign } from 'hono/jwt';
 import { randomUUID } from 'crypto';
-import { eq, desc, memories, thoughtTraces } from '@tardis/db';
-import { ThoughtTracer } from '@tardis/core';
+import { eq, desc, like, or, memories, thoughtTraces } from '@tardis/db';
+import { ThoughtTracer, OllamaAdapter, OpenAIAdapter } from '@tardis/core';
 import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
 import type { SystemConfig } from '@tardis/shared';
@@ -18,6 +18,10 @@ export interface AppDeps {
   saveConfig: (updated: SystemConfig) => void;
   /** Proactive scheduler instance (optional, added in Phase 5). */
   scheduler?: import('@tardis/core').ProactiveScheduler;
+  /** Password for web UI login (optional — uses jwtSecret if not provided). */
+  adminPassword?: string;
+  /** Absolute path to the web-ui dist folder for static file serving. */
+  webUiDistPath?: string;
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -30,11 +34,40 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
 
+  // ─── Auth login (public) ────────────────────────────────────────────────
+
+  app.post('/api/auth/login', async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const { password } = body as { password?: string };
+    if (!password) {
+      return c.json({ error: 'Password is required' }, 400);
+    }
+
+    // Compare against adminPassword if set, otherwise fall back to jwtSecret
+    const expected = deps.adminPassword ?? deps.config.auth.jwtSecret;
+    if (password !== expected) {
+      return c.json({ error: 'Invalid password' }, 401);
+    }
+
+    const token = await sign(
+      { sub: 'admin', role: 'admin', iat: Math.floor(Date.now() / 1000) },
+      deps.config.auth.jwtSecret,
+      'HS256'
+    );
+    return c.json({ token });
+  });
+
   // ─── JWT-protected routes ─────────────────────────────────────────────────
 
-  // Apply JWT middleware to everything under /api except /api/health
+  // Apply JWT middleware to everything under /api except /api/health and /api/auth/login
   app.use('/api/*', async (c, next) => {
-    if (c.req.path === '/api/health') return next();
+    if (c.req.path === '/api/health' || c.req.path === '/api/auth/login') return next();
     return jwt({ secret: deps.config.auth.jwtSecret, alg: 'HS256' })(c, next);
   });
 
@@ -105,16 +138,38 @@ export function createApp(deps: AppDeps): Hono {
     const limit = Math.min(parseInt(c.req.query('limit') ?? '50', 10), 200);
     const page = Math.max(parseInt(c.req.query('page') ?? '1', 10), 1);
     const typeFilter = c.req.query('type');
+    const search = c.req.query('search');
     const offset = (page - 1) * limit;
 
     let query = deps.db.select().from(memories).orderBy(desc(memories.updatedAt)).$dynamic();
 
+    const conditions = [];
     if (typeFilter) {
-      query = query.where(eq(memories.type, typeFilter));
+      conditions.push(eq(memories.type, typeFilter));
+    }
+    if (search) {
+      const pattern = `%${search}%`;
+      conditions.push(or(like(memories.key, pattern), like(memories.value, pattern))!);
+    }
+    if (conditions.length === 1) {
+      query = query.where(conditions[0]!);
+    } else if (conditions.length > 1) {
+      // Both type and search: both must match
+      query = query.where(conditions[0]!).where(conditions[1]!);
     }
 
     const rows = await query.limit(limit).offset(offset);
-    const total = (await deps.db.select().from(memories)).length;
+    // Count matching total (not all memories)
+    const allMatching = await (() => {
+      let countQuery = deps.db.select().from(memories).$dynamic();
+      if (conditions.length === 1) {
+        countQuery = countQuery.where(conditions[0]!);
+      } else if (conditions.length > 1) {
+        countQuery = countQuery.where(conditions[0]!).where(conditions[1]!);
+      }
+      return countQuery;
+    })();
+    const total = allMatching.length;
 
     return c.json({ data: rows, total, page, limit });
   });
@@ -158,6 +213,54 @@ export function createApp(deps: AppDeps): Hono {
     const id = c.req.param('id');
     await deps.db.delete(memories).where(eq(memories.id, id));
     return c.json({ success: true });
+  });
+
+  app.patch('/api/memory/:id', async (c) => {
+    const id = c.req.param('id');
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const { type, key, value, source } = body as {
+      type?: string;
+      key?: string;
+      value?: string;
+      source?: string;
+    };
+
+    const updates: Record<string, unknown> = { updatedAt: Date.now() };
+    if (type !== undefined) updates['type'] = type;
+    if (key !== undefined) updates['key'] = key;
+    if (value !== undefined) updates['value'] = value;
+    if (source !== undefined) updates['source'] = source;
+
+    await deps.db.update(memories).set(updates).where(eq(memories.id, id));
+    return c.json({ success: true });
+  });
+
+  app.get('/api/memory/export', async (c) => {
+    const rows = await deps.db
+      .select()
+      .from(memories)
+      .orderBy(desc(memories.updatedAt));
+
+    const lines: string[] = ['# TARDIS Memories Export', ''];
+    for (const m of rows) {
+      lines.push(`## [${m.type}] ${m.key}`);
+      lines.push('');
+      lines.push(m.value);
+      lines.push('');
+      if (m.source) lines.push(`*Source: ${m.source}*`);
+      lines.push(`*Updated: ${new Date(m.updatedAt).toISOString()}*`);
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+    }
+
+    return c.json({ markdown: lines.join('\n') });
   });
 
   // ─── LLM config ───────────────────────────────────────────────────────────
@@ -268,6 +371,45 @@ export function createApp(deps: AppDeps): Hono {
     (deps as { config: SystemConfig }).config = updated;
 
     return c.json({ success: true });
+  });
+
+  // ─── LLM connection test ────────────────────────────────────────────────
+
+  app.post('/api/config/llm/test', async (c) => {
+    const { provider, model, baseUrl, apiKey, temperature } = deps.config.llm;
+
+    try {
+      const adapter =
+        provider === 'ollama'
+          ? new OllamaAdapter({
+              model,
+              ...(baseUrl !== undefined ? { baseUrl } : {}),
+              ...(temperature !== undefined ? { temperature } : {}),
+            })
+          : new OpenAIAdapter({
+              model,
+              apiKey: apiKey ?? '',
+              ...(baseUrl !== undefined ? { baseUrl } : {}),
+              ...(temperature !== undefined ? { temperature } : {}),
+            });
+
+      const response = await adapter.chat({
+        messages: [
+          { role: 'user', content: 'Say "Hello from TARDIS" in one short sentence.' },
+        ],
+      });
+
+      if (response.type === 'text' && response.text) {
+        return c.json({ success: true, response: response.text });
+      }
+
+      return c.json({ success: true, response: 'LLM responded (non-text)' });
+    } catch (e) {
+      return c.json({
+        success: false,
+        error: e instanceof Error ? e.message : 'Connection failed',
+      });
+    }
   });
 
   return app;

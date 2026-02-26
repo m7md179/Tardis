@@ -418,3 +418,174 @@ describe('LLM config', () => {
     }
   });
 });
+
+// ─── POST /api/auth/login ──────────────────────────────────────────────────
+
+describe('POST /api/auth/login', () => {
+  it('returns token with correct password (defaults to jwtSecret)', async () => {
+    const { app, cleanup } = await makeApp();
+    try {
+      const res = await app.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: JWT_SECRET }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { token?: string };
+      expect(typeof body.token).toBe('string');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returns token with correct adminPassword when set', async () => {
+    const { app, cleanup } = await makeApp({ adminPassword: 'my-admin-pass' });
+    try {
+      const res = await app.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: 'my-admin-pass' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { token?: string };
+      expect(typeof body.token).toBe('string');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returns 401 with wrong password', async () => {
+    const { app, cleanup } = await makeApp();
+    try {
+      const res = await app.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: 'wrong' }),
+      });
+      expect(res.status).toBe(401);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returned token can be used for authenticated requests', async () => {
+    const { app, cleanup } = await makeApp();
+    try {
+      const loginRes = await app.request('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: JWT_SECRET }),
+      });
+      const { token } = (await loginRes.json()) as { token: string };
+
+      const pluginsRes = await app.request('/api/plugins', {
+        headers: authHeaders(token),
+      });
+      expect(pluginsRes.status).toBe(200);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ─── PATCH /api/memory/:id ───────────────────────────────────────────────────
+
+describe('PATCH /api/memory/:id', () => {
+  it('updates an existing memory', async () => {
+    const { app, cleanup } = await makeApp();
+    try {
+      const token = await makeToken();
+      const id = randomUUID();
+
+      await app.request('/api/memory', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          type: 'user_fact',
+          key: 'name',
+          value: 'Alice',
+          source: 'user',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      });
+
+      const patchRes = await app.request(`/api/memory/${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 'Bob', key: 'full_name' }),
+      });
+      expect(patchRes.status).toBe(200);
+
+      const getRes = await app.request('/api/memory', { headers: authHeaders(token) });
+      const body = (await getRes.json()) as { data: Array<{ key: string; value: string }> };
+      expect(body.data[0]?.value).toBe('Bob');
+      expect(body.data[0]?.key).toBe('full_name');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ─── GET /api/memory/export ──────────────────────────────────────────────────
+
+describe('GET /api/memory/export', () => {
+  it('returns markdown with all memories', async () => {
+    const { app, cleanup } = await makeApp();
+    try {
+      const token = await makeToken();
+
+      await app.request('/api/memory', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: randomUUID(),
+          type: 'user_fact',
+          key: 'name',
+          value: 'Mohammad',
+          source: 'test',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      });
+
+      const res = await app.request('/api/memory/export', { headers: authHeaders(token) });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { markdown: string };
+      expect(body.markdown).toContain('# TARDIS Memories Export');
+      expect(body.markdown).toContain('Mohammad');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ─── GET /api/memory?search= ────────────────────────────────────────────────
+
+describe('Memory search', () => {
+  it('filters memories by search query', async () => {
+    const { app, cleanup } = await makeApp();
+    try {
+      const token = await makeToken();
+
+      for (const entry of [
+        { id: randomUUID(), type: 'user_fact', key: 'name', value: 'Alice', source: 'test', createdAt: Date.now(), updatedAt: Date.now() },
+        { id: randomUUID(), type: 'preference', key: 'theme', value: 'dark mode', source: 'test', createdAt: Date.now(), updatedAt: Date.now() },
+      ]) {
+        await app.request('/api/memory', {
+          method: 'POST',
+          headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+          body: JSON.stringify(entry),
+        });
+      }
+
+      const res = await app.request('/api/memory?search=Alice', { headers: authHeaders(token) });
+      const body = (await res.json()) as { data: unknown[]; total: number };
+      expect(body.data).toHaveLength(1);
+      expect(body.total).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+});

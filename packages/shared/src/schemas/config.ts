@@ -35,6 +35,7 @@ export const ServerConfigSchema = z.object({
 export const AuthConfigSchema = z.object({
   jwtSecret: z.string().min(32),
   jwtExpiry: z.string().default('30d'),
+  adminPassword: z.string().min(1).optional(),
 });
 
 export const SystemConfigSchema = z.object({
