@@ -22,6 +22,8 @@ export class PluginLoadError extends Error {
 interface ActivePlugin {
   manifest: PluginManifest;
   instance: PluginInstance;
+  /** Raw module exports — used to extract proactive handler functions. */
+  moduleExports: Record<string, unknown>;
 }
 
 export class PluginManager {
@@ -119,7 +121,7 @@ export class PluginManager {
       const api = this.pluginApiFactory(manifest);
       await instance.onActivate(api);
 
-      this.activePlugins.set(manifest.name, { manifest, instance });
+      this.activePlugins.set(manifest.name, { manifest, instance, moduleExports: module });
       console.log(`[PluginManager] Activated plugin: ${manifest.name} v${manifest.version}`);
     } catch (err) {
       console.warn(
@@ -196,5 +198,27 @@ export class PluginManager {
 
   getPlugin(pluginName: string): ActivePlugin | undefined {
     return this.activePlugins.get(pluginName);
+  }
+
+  /**
+   * Extract proactive handler functions from a plugin's module exports.
+   * Returns a map of handler name → async function, matching the names
+   * declared in the plugin's manifest.proactive[].handler.
+   */
+  getProactiveHandlers(pluginName: string): Record<string, () => Promise<void>> {
+    const active = this.activePlugins.get(pluginName);
+    if (!active) return {};
+
+    const handlers: Record<string, () => Promise<void>> = {};
+    const triggers = active.manifest.proactive ?? [];
+
+    for (const trigger of triggers) {
+      const fn = active.moduleExports[trigger.handler];
+      if (typeof fn === 'function') {
+        handlers[trigger.handler] = fn as () => Promise<void>;
+      }
+    }
+
+    return handlers;
   }
 }

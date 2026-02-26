@@ -16,6 +16,8 @@ export interface AppDeps {
   pluginManager: PluginManager;
   /** Called when PUT /api/config/llm succeeds — persist the change. */
   saveConfig: (updated: SystemConfig) => void;
+  /** Proactive scheduler instance (optional, added in Phase 5). */
+  scheduler?: import('@tardis/core').ProactiveScheduler;
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -167,6 +169,85 @@ export function createApp(deps: AppDeps): Hono {
       apiKey: apiKey ? '[redacted]' : undefined,
     });
   });
+
+  // ─── Proactive triggers ──────────────────────────────────────────────────
+
+  app.get('/api/proactive/triggers', async (c) => {
+    if (!deps.scheduler) return c.json({ error: 'Scheduler not configured' }, 503);
+    const triggers = await deps.scheduler.listTriggers();
+    return c.json({ data: triggers });
+  });
+
+  app.put('/api/proactive/triggers/toggle', async (c) => {
+    if (!deps.scheduler) return c.json({ error: 'Scheduler not configured' }, 503);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const { pluginName, triggerName, enabled } = body as {
+      pluginName?: string;
+      triggerName?: string;
+      enabled?: boolean;
+    };
+    if (!pluginName || !triggerName || typeof enabled !== 'boolean') {
+      return c.json({ error: 'pluginName, triggerName, and enabled (boolean) are required' }, 400);
+    }
+    const found = await deps.scheduler.toggleTrigger(pluginName, triggerName, enabled);
+    if (!found) return c.json({ error: 'Trigger not found' }, 404);
+    return c.json({ success: true });
+  });
+
+  app.put('/api/proactive/triggers/schedule', async (c) => {
+    if (!deps.scheduler) return c.json({ error: 'Scheduler not configured' }, 503);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const { pluginName, triggerName, schedule } = body as {
+      pluginName?: string;
+      triggerName?: string;
+      schedule?: string;
+    };
+    if (!pluginName || !triggerName || !schedule) {
+      return c.json({ error: 'pluginName, triggerName, and schedule are required' }, 400);
+    }
+    const found = await deps.scheduler.updateSchedule(pluginName, triggerName, schedule);
+    if (!found) return c.json({ error: 'Trigger not found' }, 404);
+    return c.json({ success: true });
+  });
+
+  app.put('/api/proactive/triggers/quiet-hours', async (c) => {
+    if (!deps.scheduler) return c.json({ error: 'Scheduler not configured' }, 503);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const { pluginName, triggerName, start, end } = body as {
+      pluginName?: string;
+      triggerName?: string;
+      start?: string | null;
+      end?: string | null;
+    };
+    if (!pluginName || !triggerName) {
+      return c.json({ error: 'pluginName and triggerName are required' }, 400);
+    }
+    const found = await deps.scheduler.setQuietHours(
+      pluginName,
+      triggerName,
+      start ?? null,
+      end ?? null
+    );
+    if (!found) return c.json({ error: 'Trigger not found' }, 404);
+    return c.json({ success: true });
+  });
+
+  // ─── LLM config ───────────────────────────────────────────────────────────
 
   app.put('/api/config/llm', async (c) => {
     let body: unknown;

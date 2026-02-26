@@ -572,10 +572,10 @@ describe('PluginAPI.memory: permission enforcement', () => {
       db,
       config: MOCK_CONFIG,
     });
-    // Permission passes; these throw "not yet implemented" (not PermissionDeniedError)
+    // Permission passes; throws "MemoryStore not configured" (not PermissionDeniedError)
     const getErr = await api.memory.get('key').catch((e) => e);
     expect(getErr).not.toBeInstanceOf(PermissionDeniedError);
-    expect(getErr.message).toContain('not yet implemented');
+    expect(getErr.message).toContain('MemoryStore not configured');
 
     await expect(api.memory.set('key', 'val')).rejects.toThrow(PermissionDeniedError);
     cleanup();
@@ -591,7 +591,7 @@ describe('PluginAPI.memory: permission enforcement', () => {
     });
     const setErr = await api.memory.set('key', 'val').catch((e) => e);
     expect(setErr).not.toBeInstanceOf(PermissionDeniedError);
-    expect(setErr.message).toContain('not yet implemented');
+    expect(setErr.message).toContain('MemoryStore not configured');
 
     await expect(api.memory.get('key')).rejects.toThrow(PermissionDeniedError);
     cleanup();
