@@ -1,35 +1,22 @@
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 3000,
-    "dataDir": "/var/lib/tardis"
+    "port": 3000
   },
   "auth": {
-    "jwtSecret": "REPLACE_WITH_32_CHAR_SECRET_FROM_GENERATE_SCRIPT",
+    "jwtSecret": "REPLACE_WITH_32_CHAR_SECRET_HERE_",
     "jwtExpiry": "30d",
-    "apiKeyLength": 32
+    "adminPassword": "REPLACE_WITH_ADMIN_PASSWORD"
   },
-  "rateLimit": {
-    "enabled": true,
-    "windowMs": 60000,
-    "maxRequests": 100
+  "llm": {
+    "provider": "ollama",
+    "model": "llama3"
   },
-  "scheduler": {
-    "enabled": true,
-    "todoistSyncInterval": 300,
-    "timeWindowCheckInterval": 60
+  "telegram": {
+    "botToken": "YOUR_TELEGRAM_BOT_TOKEN",
+    "allowedChatIds": ["YOUR_CHAT_ID"]
   },
-  "todoist": {
-    "apiToken": "YOUR_TODOIST_API_TOKEN_HERE"
-  },
-  "notifications": {
-    "enabled": true,
-    "channels": {
-      "telegram": {
-        "enabled": true,
-        "botToken": "YOUR_TELEGRAM_BOT_TOKEN_HERE",
-        "chatId": "YOUR_TELEGRAM_CHAT_ID_HERE"
-      }
-    }
+  "proactive": {
+    "enabled": true
   }
 }
