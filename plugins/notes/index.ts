@@ -109,6 +109,7 @@ export const executeTool = async (
       const IGNORE_TAGS = new Set(['all', 'any', '*', 'every', 'everything']);
       const rawTag = typeof args['tag'] === 'string' ? args['tag'].toLowerCase().trim() : null;
       const tagFilter = rawTag && !IGNORE_TAGS.has(rawTag) ? rawTag : null;
+      const tagFilter = typeof args['tag'] === 'string' ? args['tag'].toLowerCase() : null;
       const limit = typeof args['limit'] === 'number' ? Math.min(args['limit'], 100) : 20;
 
       let all = await getAllNotes();
