@@ -1,0 +1,11 @@
+{
+  "name": "@tardis-plugin/notes",
+  "version": "1.0.0",
+  "description": "Notes plugin for TARDIS — personal knowledge base",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@tardis/core": "workspace:*",
+    "@tardis/shared": "workspace:*"
+  }
+}

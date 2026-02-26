@@ -169,10 +169,24 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(input: AgentLoopInput): string {
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0]!; // YYYY-MM-DD
+  const timeStr = now.toUTCString(); // human-readable
+
   const lines: string[] = [
     'You are TARDIS, a helpful AI assistant. You have access to plugin tools to help respond to the user.',
     'Use the provided tools when they are relevant to the user request.',
     'When you have enough information, respond directly to the user.',
+    `\nToday's date is ${dateStr} (${timeStr}).`,
+    'When tools require a date, always pass it as YYYY-MM-DD format using today\'s actual date.',
+    `Tomorrow is ${new Date(now.getTime() + 86400000).toISOString().split('T')[0]!}.`,
+    '\n## Response style',
+    '- Be concise. Confirm the action, share only relevant info, stop.',
+    '- Do NOT offer follow-up options or menus after every response.',
+    '- Do NOT use emojis unless the user uses them first.',
+    '- Never show internal IDs, raw timestamps, or technical details. Format all dates and times in human-readable form.',
+    '- Match the user\'s energy. Short command = short confirmation. Detailed question = detailed answer.',
+    '- You are a capable assistant, not a customer service bot. No cheerfulness, no upselling, no "Would you like to..." after every action.',
   ];
 
   if (input.selectedPlugins.length > 0) {

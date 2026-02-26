@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Google Calendar",
   "description": "Manage Google Calendar events: list upcoming schedule, create events, check what's on a specific date.",
-  "skillSummary": "Manage Google Calendar events. Create new events, list upcoming schedule, and check what's happening on specific dates or tomorrow.",
+  "skillSummary": "Manage Google Calendar events. Create new events, list upcoming schedule, and check what's happening on specific dates or tomorrow. Also handles Google Calendar OAuth2 authorization setup and exchanging authorization codes to connect the calendar.",
   "tier": 1,
   "main": "index.ts",
   "permissions": ["http:external", "storage:read", "storage:write", "notifications:send"],
@@ -72,6 +72,18 @@
       "parameters": {
         "type": "object",
         "properties": {}
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "google-calendar.exchange-code",
+      "description": "Exchange the OAuth2 authorization code to complete Google Calendar connection. Call this immediately when the user provides a Google authorization code (typically starts with '4/1' or '4/'). Do not ask for more info — just call this tool with the code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "description": "The authorization code from Google (starts with '4/')" }
+        },
+        "required": ["code"]
       },
       "actionType": "direct"
     }

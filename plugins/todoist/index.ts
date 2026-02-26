@@ -17,7 +17,7 @@ interface TodoistTask {
 
 let api: PluginAPI;
 let apiToken = '';
-const BASE = 'https://api.todoist.com/rest/v2';
+const BASE = 'https://api.todoist.com/api/v1';
 
 // ─── Lifecycle ───
 
@@ -60,7 +60,8 @@ async function fetchTasks(filter?: string): Promise<TodoistTask[]> {
       : `${BASE}/tasks`;
   const res = await api.http.get(url, { headers: headers() });
   if (!res.ok) throw new Error(`Todoist API error: ${res.status} ${res.statusText}`);
-  return (await res.json()) as TodoistTask[];
+  const data = (await res.json()) as { results?: TodoistTask[] } | TodoistTask[];
+  return Array.isArray(data) ? data : (data.results ?? []);
 }
 
 async function findTaskByName(name: string): Promise<TodoistTask | null> {

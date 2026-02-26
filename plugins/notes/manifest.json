@@ -1,0 +1,79 @@
+{
+  "name": "notes",
+  "version": "1.0.0",
+  "displayName": "Notes",
+  "description": "Save and recall quick notes and facts. Acts as a personal knowledge base.",
+  "skillSummary": "Save and recall quick notes and facts. Acts as a personal knowledge base the assistant can reference later. Supports tagging and full-text search.",
+  "tier": 1,
+  "main": "index.ts",
+  "permissions": ["storage:read", "storage:write"],
+  "tools": [
+    {
+      "name": "notes.save-note",
+      "description": "Save a new note or overwrite an existing one with the same title. Use when the user wants to remember something.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Short title / key for the note (used to retrieve it later)" },
+          "content": { "type": "string", "description": "The note content" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional tags to categorize the note (e.g. [\"work\", \"contacts\"])"
+          }
+        },
+        "required": ["title", "content"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "notes.get-note",
+      "description": "Retrieve a specific note by its exact title.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Title of the note to retrieve" }
+        },
+        "required": ["title"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "notes.search-notes",
+      "description": "Search notes by keyword (searches title, content, and tags).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search keyword or phrase" },
+          "tag": { "type": "string", "description": "Optional: filter results by this tag" }
+        },
+        "required": ["query"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "notes.list-notes",
+      "description": "List all saved notes. Do NOT pass a 'tag' argument unless the user specifically asks to filter by tag. Omit the tag field entirely for a general list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag": { "type": "string", "description": "Only set this if user explicitly asks to filter by a specific tag" },
+          "limit": { "type": "number", "description": "Max notes to return (default 20)" }
+        }
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "notes.delete-note",
+      "description": "Permanently delete a note by its title.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Title of the note to delete" }
+        },
+        "required": ["title"]
+      },
+      "actionType": "workflow"
+    }
+  ]
+}

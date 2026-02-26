@@ -64,7 +64,7 @@
     },
     {
       "name": "time-tracker.status",
-      "description": "Check currently active or paused time tracking sessions.",
+      "description": "Check currently running or paused sessions. Only shows IN-PROGRESS sessions, not past history.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -73,7 +73,7 @@
     },
     {
       "name": "time-tracker.history",
-      "description": "Get time tracking history. Shows completed sessions with durations.",
+      "description": "Get past completed sessions with durations. Use this for 'show history', 'what did I work on', 'how long did I track'. Do NOT use time-tracker.status for history.",
       "parameters": {
         "type": "object",
         "properties": {

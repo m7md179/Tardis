@@ -65,6 +65,18 @@ export async function handleUserMessage(
     return { text: 'Unauthorized.' };
   }
 
+  // ─── OAuth code exchange (bypass LLM — pattern match directly) ─────────
+  const oauthMatch = text.match(/(?:my\s+)?google\s+calendar\s+(?:code\s+is\s+|code:\s*)(4\/[^\s]+)/i)
+    ?? text.match(/^(4\/1[A-Za-z0-9_\-]+)$/); // bare code pasted alone
+  if (oauthMatch) {
+    const code = oauthMatch[1]!;
+    const result = await deps.toolRouter.execute('google-calendar.exchange-code', { code });
+    if (result.success) {
+      return { text: '✅ Google Calendar connected! You can now ask about your events.' };
+    }
+    return { text: `Failed to connect Google Calendar: ${result.error}` };
+  }
+
   // ─── Pending workflow approval ─────────────────────────────────────────
   const pending = state.pendingApprovals.get(chatId);
   if (pending) {
@@ -74,8 +86,11 @@ export async function handleUserMessage(
       try {
         const result = await deps.toolRouter.execute(pending.toolName, pending.args);
         if (result.success) {
-          const formatted = JSON.stringify(result.data, null, 2);
-          return { text: `Done.\n\`\`\`\n${formatted}\n\`\`\`` };
+          const data = result.data as Record<string, unknown> | null;
+          const msg = typeof data?.['message'] === 'string'
+            ? data['message']
+            : JSON.stringify(data, null, 2);
+          return { text: msg };
         }
         return { text: `Failed: ${result.error}` };
       } catch (err) {
@@ -154,10 +169,25 @@ export function handleStatusCommand(chatId: number, state: BotState): BotRespons
   const historyLen = (state.conversationHistory.get(chatId)?.length ?? 0) / 2;
   const lines = [
     '*TARDIS Status*',
+    `Chat ID: \`${chatId}\``,
     `History: ${historyLen} exchange${historyLen !== 1 ? 's' : ''}`,
   ];
   if (hasPending) lines.push('⏳ Waiting for your approval');
   return { text: lines.join('\n') };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Strip markdown bold/italic markers that wrap URLs so Telegram's
+ * auto-link detection doesn't include the markers in the clickable URL.
+ * e.g. **https://example.com** → https://example.com
+ */
+function cleanUrls(text: string): string {
+  return text
+    .replace(/\*\*(https?:\/\/[^\s*]+)\*\*/g, '$1')
+    .replace(/__(https?:\/\/[^\s_]+)__/g, '$1')
+    .replace(/\*(https?:\/\/[^\s*]+)\*/g, '$1');
 }
 
 // ─── Telegraf wrapper ─────────────────────────────────────────────────────────
@@ -203,7 +233,7 @@ export class TelegramBot {
       const chatId = ctx.message.chat.id;
       const text = ctx.message.text;
       const response = await handleUserMessage(chatId, text, this.state, this.deps);
-      await ctx.reply(response.text);
+      await ctx.reply(cleanUrls(response.text));
     });
   }
 
