@@ -1,6 +1,7 @@
 // TARDIS v2 Server — entrypoint
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
+import { join, resolve } from 'path';
+import { serveStatic } from 'hono/bun';
 import {
   loadConfig,
   DEFAULT_DATA_DIR,
@@ -125,7 +126,27 @@ async function main(): Promise<void> {
     pluginManager,
     saveConfig: makeSaveConfig(dataDir),
     scheduler,
+    adminPassword: config.auth.adminPassword,
   });
+
+  // Serve web-ui static files (built assets from packages/web-ui/dist)
+  const webUiDist = resolve(import.meta.dir, '../../web-ui/dist');
+  if (existsSync(webUiDist)) {
+    app.use('/*', serveStatic({ root: webUiDist }));
+
+    // SPA fallback: serve index.html for non-API, non-file routes
+    app.get('*', (c) => {
+      if (c.req.path.startsWith('/api')) {
+        return c.json({ error: 'Not found' }, 404);
+      }
+      const html = readFileSync(join(webUiDist, 'index.html'), 'utf-8');
+      return c.html(html);
+    });
+
+    console.log(`[tardis] Web UI served from ${webUiDist}`);
+  } else {
+    console.log('[tardis] Web UI not built — skipping static file serving');
+  }
 
   const bunServer = Bun.serve({
     fetch: app.fetch,

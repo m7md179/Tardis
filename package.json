@@ -16,7 +16,8 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
-    "dev": "bun run --watch packages/server/src/index.ts"
+    "dev": "bun run --watch packages/server/src/index.ts",
+    "dev:ui": "cd packages/web-ui && bun run dev"
   },
   "devDependencies": {
     "@types/bun": "^1.1.13",
