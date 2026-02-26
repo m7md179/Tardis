@@ -136,6 +136,10 @@ function addOneHour(time: string): string {
   return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+  // Returns YYYY-MM-DD for all-day or YYYY-MM-DDTHH:MM:SS for timed
+  return dateStr;
+}
+
 function formatEvent(event: GoogleEvent): string {
   const start = event.start.dateTime
     ? new Date(event.start.dateTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -217,6 +221,7 @@ export const executeTool = async (
       if (!title) return { success: false, message: 'Event title is required.' };
 
       const date = resolveDate(String(args['date'] ?? '').trim());
+      const date = String(args['date'] ?? '').trim();
       if (!date) return { success: false, message: 'Event date is required.' };
 
       const startTime = typeof args['startTime'] === 'string' ? args['startTime'] : null;
@@ -267,6 +272,9 @@ export const executeTool = async (
       const date = resolveDate(String(args['date'] ?? '').trim());
       const startTime = String(args['startTime'] ?? '').trim();
       const endTime = String(args['endTime'] ?? '').trim() || addOneHour(startTime);
+      const date = String(args['date'] ?? '').trim();
+      const startTime = String(args['startTime'] ?? '').trim();
+      const endTime = String(args['endTime'] ?? '').trim();
 
       const params = new URLSearchParams({
         timeMin: `${date}T${startTime}:00Z`,
@@ -349,6 +357,7 @@ export async function exchangeOAuthCode(code: string): Promise<void> {
     const errBody = await res.text().catch(() => '');
     throw new Error(`OAuth code exchange failed: ${res.status} — ${errBody}`);
   }
+  if (!res.ok) throw new Error(`OAuth code exchange failed: ${res.status}`);
   const data = (await res.json()) as {
     access_token: string;
     refresh_token: string;
