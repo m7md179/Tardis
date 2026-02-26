@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import type { PluginManifest, PluginInstance, ToolDefinition } from '@tardis/shared';
 import {
@@ -47,7 +47,19 @@ export class PluginManager {
     }
 
     const entries = readdirSync(this.pluginsDir, { withFileTypes: true });
-    const pluginDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const pluginDirs = entries
+      .filter((e) => {
+        if (e.isDirectory()) return true;
+        if (e.isSymbolicLink()) {
+          try {
+            return statSync(join(this.pluginsDir, e.name)).isDirectory();
+          } catch {
+             return false;
+          }
+        }
+        return false;
+      })
+      .map((e) => e.name);
 
     const manifests: PluginManifest[] = [];
     const toLoad: { dir: string; manifest: PluginManifest }[] = [];

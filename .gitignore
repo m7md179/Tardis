@@ -45,3 +45,6 @@ migrations/
 
 # Temporary files
 *.tmp
+
+# Plugin storage
+plugins/*/storage/
