@@ -117,14 +117,29 @@ function toRFC3339Date(dateStr: string): string {
   return dateStr;
 }
 
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getLocalTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+function toLocalDateTimeISOString(date: string, time: string): string {
+  return new Date(`${date}T${time}:00`).toISOString();
+}
+
 /** Resolve natural language dates to YYYY-MM-DD. */
 function resolveDate(dateArg: string): string {
   const d = dateArg.toLowerCase().trim();
-  if (d === 'today') return new Date().toISOString().split('T')[0]!;
+  if (d === 'today') return formatLocalDate(new Date());
   if (d === 'tomorrow') {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split('T')[0]!;
+    return formatLocalDate(tomorrow);
   }
   return dateArg;
 }
@@ -226,18 +241,19 @@ export const executeTool = async (
       let endObj: GoogleEvent['end'];
 
       if (startTime) {
-        startObj = { dateTime: `${date}T${startTime}:00`, timeZone: 'UTC' };
+        const timeZone = getLocalTimeZone();
+        startObj = { dateTime: `${date}T${startTime}:00`, timeZone };
         const end = endTime ?? (() => {
           const [h, m] = startTime.split(':').map(Number) as [number, number];
           return `${String((h + 1) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
         })();
-        endObj = { dateTime: `${date}T${end}:00`, timeZone: 'UTC' };
+        endObj = { dateTime: `${date}T${end}:00`, timeZone };
       } else {
         // All-day event
         startObj = { date: toRFC3339Date(date) };
         const nextDay = new Date(date + 'T00:00:00');
         nextDay.setDate(nextDay.getDate() + 1);
-        endObj = { date: nextDay.toISOString().split('T')[0]! };
+        endObj = { date: formatLocalDate(nextDay) };
       }
 
       const body: Record<string, unknown> = { summary: title, start: startObj, end: endObj };
@@ -269,8 +285,8 @@ export const executeTool = async (
       const endTime = String(args['endTime'] ?? '').trim() || addOneHour(startTime);
 
       const params = new URLSearchParams({
-        timeMin: `${date}T${startTime}:00Z`,
-        timeMax: `${date}T${endTime}:00Z`,
+        timeMin: toLocalDateTimeISOString(date, startTime),
+        timeMax: toLocalDateTimeISOString(date, endTime),
         singleEvents: 'true',
       });
 
