@@ -5,7 +5,7 @@ import { eq, desc, like, or, memories, thoughtTraces } from '@tardis/db';
 import { ThoughtTracer, OllamaAdapter, OpenAIAdapter } from '@tardis/core';
 import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
-import type { SystemConfig } from '@tardis/shared';
+import type { LLMProviderConfig, SystemConfig } from '@tardis/shared';
 import type { PluginManager } from '@tardis/core';
 
 // ─── App dependencies ─────────────────────────────────────────────────────────
@@ -22,6 +22,79 @@ export interface AppDeps {
   adminPassword?: string;
   /** Absolute path to the web-ui dist folder for static file serving. */
   webUiDistPath?: string;
+}
+
+interface OllamaTagsResponse {
+  models?: Array<{ name?: string }>;
+}
+
+interface OpenAIModelsResponse {
+  data?: Array<{ id?: string }>;
+}
+
+const OPENAI_COMPATIBLE_BASE_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  together: 'https://api.together.xyz/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+};
+
+function resolveProviderBaseUrl(provider: string, baseUrl?: string): string {
+  if (baseUrl) return baseUrl.replace(/\/$/, '');
+  if (provider === 'ollama') return 'http://localhost:11434';
+  return (OPENAI_COMPATIBLE_BASE_URLS[provider] ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+}
+
+function mergeLlmConfig(
+  current: LLMProviderConfig,
+  overrides: Partial<LLMProviderConfig>
+): LLMProviderConfig {
+  const provider = overrides.provider?.trim() || current.provider;
+  const model = overrides.model?.trim() || current.model;
+  const merged: LLMProviderConfig = { provider, model };
+
+  const baseUrl = overrides.baseUrl?.trim() || current.baseUrl;
+  if (baseUrl) merged.baseUrl = baseUrl;
+
+  const apiKey = overrides.apiKey?.trim() || current.apiKey;
+  if (apiKey) merged.apiKey = apiKey;
+
+  const temperature = overrides.temperature ?? current.temperature;
+  if (temperature !== undefined) merged.temperature = temperature;
+
+  return merged;
+}
+
+async function fetchAvailableModels(config: LLMProviderConfig): Promise<string[]> {
+  const provider = config.provider.trim().toLowerCase();
+  const baseUrl = resolveProviderBaseUrl(provider, config.baseUrl);
+
+  if (provider === 'ollama') {
+    const response = await fetch(`${baseUrl}/api/tags`);
+    if (!response.ok) {
+      throw new Error(`Provider returned ${response.status} while loading models`);
+    }
+    const body = (await response.json()) as OllamaTagsResponse;
+    return (body.models ?? [])
+      .map((model) => model.name?.trim() ?? '')
+      .filter((name): name is string => name.length > 0)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  const headers: HeadersInit = {};
+  if (config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`;
+  }
+
+  const response = await fetch(`${baseUrl}/models`, { headers });
+  if (!response.ok) {
+    throw new Error(`Provider returned ${response.status} while loading models`);
+  }
+  const body = (await response.json()) as OpenAIModelsResponse;
+  return (body.data ?? [])
+    .map((model) => model.id?.trim() ?? '')
+    .filter((id): id is string => id.length > 0)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -371,6 +444,56 @@ export function createApp(deps: AppDeps): Hono {
     (deps as { config: SystemConfig }).config = updated;
 
     return c.json({ success: true });
+  });
+
+  app.post('/api/config/llm/models', async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+    const overrides: Partial<LLMProviderConfig> = {};
+    if (typeof raw['provider'] === 'string' && raw['provider'].trim()) {
+      overrides.provider = raw['provider'].trim();
+    }
+    if (typeof raw['model'] === 'string' && raw['model'].trim()) {
+      overrides.model = raw['model'].trim();
+    }
+    if (typeof raw['baseUrl'] === 'string' && raw['baseUrl'].trim()) {
+      overrides.baseUrl = raw['baseUrl'].trim();
+    }
+    if (typeof raw['apiKey'] === 'string' && raw['apiKey'].trim()) {
+      overrides.apiKey = raw['apiKey'].trim();
+    }
+    if (typeof raw['temperature'] === 'number') {
+      overrides.temperature = raw['temperature'];
+    }
+
+    const merged = mergeLlmConfig(deps.config.llm, overrides);
+    const baseUrl = resolveProviderBaseUrl(merged.provider.trim().toLowerCase(), merged.baseUrl);
+
+    try {
+      const models = await fetchAvailableModels(merged);
+      return c.json({
+        success: true,
+        provider: merged.provider,
+        baseUrl,
+        models,
+      });
+    } catch (e) {
+      return c.json(
+        {
+          success: false,
+          provider: merged.provider,
+          baseUrl,
+          error: e instanceof Error ? e.message : 'Failed to load models',
+        },
+        502
+      );
+    }
   });
 
   // ─── LLM connection test ────────────────────────────────────────────────

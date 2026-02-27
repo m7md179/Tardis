@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, mock } from 'bun:test';
 import { existsSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { sign } from 'hono/jwt';
@@ -414,6 +414,71 @@ describe('LLM config', () => {
       });
       expect(res.status).toBe(400);
     } finally {
+      cleanup();
+    }
+  });
+
+  it('POST /api/config/llm/models returns Ollama models', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      expect(String(url)).toBe('http://localhost:11434/api/tags');
+      return new Response(
+        JSON.stringify({ models: [{ name: 'llama3:8b' }, { name: 'qwen3:4b' }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    const { app, cleanup } = await makeApp();
+    try {
+      const token = await makeToken();
+      const res = await app.request('/api/config/llm/models', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'ollama' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body['success']).toBe(true);
+      expect(body['baseUrl']).toBe('http://localhost:11434');
+      expect(body['models']).toEqual(['llama3:8b', 'qwen3:4b']);
+    } finally {
+      globalThis.fetch = originalFetch;
+      cleanup();
+    }
+  });
+
+  it('POST /api/config/llm/models uses unsaved overrides for OpenAI-compatible providers', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://api.groq.com/openai/v1/models');
+      expect((init?.headers as Record<string, string>)['Authorization']).toBe('Bearer gsk-test');
+      return new Response(
+        JSON.stringify({ data: [{ id: 'llama-3.1-8b-instant' }, { id: 'mixtral-8x7b' }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    const { app, cleanup } = await makeApp();
+    try {
+      const token = await makeToken();
+      const res = await app.request('/api/config/llm/models', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'groq', apiKey: 'gsk-test' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body['success']).toBe(true);
+      expect(body['baseUrl']).toBe('https://api.groq.com/openai/v1');
+      expect(body['models']).toEqual(['llama-3.1-8b-instant', 'mixtral-8x7b']);
+    } finally {
+      globalThis.fetch = originalFetch;
       cleanup();
     }
   });

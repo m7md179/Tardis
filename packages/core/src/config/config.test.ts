@@ -79,6 +79,20 @@ describe('loadConfig: valid config file', () => {
     expect(config.proactive.enabled).toBe(false);
     expect(config.proactive.quietHoursStart).toBe('23:00');
   });
+
+  it('accepts custom OpenAI-compatible provider ids', () => {
+    writeConfig(TEST_DIR, {
+      llm: {
+        provider: 'openrouter',
+        model: 'openai/gpt-4o-mini',
+        baseUrl: 'https://openrouter.ai/api/v1',
+      },
+      auth: { jwtSecret: 'a-very-long-secret-that-is-at-least-32-chars' },
+    });
+    const config = loadConfig(TEST_DIR);
+    expect(config.llm.provider).toBe('openrouter');
+    expect(config.llm.baseUrl).toBe('https://openrouter.ai/api/v1');
+  });
 });
 
 // ─── Missing config.json ───
