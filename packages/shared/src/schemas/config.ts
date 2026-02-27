@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AgentConfigSchema } from './agent.js';
 
 export const LLMProviderConfigSchema = z.object({
-  provider: z.enum(['ollama', 'openai', 'anthropic', 'google']),
+  provider: z.string().min(1),
   model: z.string().min(1),
   baseUrl: z.string().url().optional(),
   apiKey: z.string().optional(),

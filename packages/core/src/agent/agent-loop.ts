@@ -170,16 +170,22 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
 
 function buildSystemPrompt(input: AgentLoopInput): string {
   const now = new Date();
-  const dateStr = now.toISOString().split('T')[0]!; // YYYY-MM-DD
-  const timeStr = now.toUTCString(); // human-readable
+  const dateStr = formatLocalDate(now);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local';
+  const timeStr = new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'full',
+    timeStyle: 'long',
+  }).format(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
   const lines: string[] = [
     'You are TARDIS, a helpful AI assistant. You have access to plugin tools to help respond to the user.',
     'Use the provided tools when they are relevant to the user request.',
     'When you have enough information, respond directly to the user.',
-    `\nToday's date is ${dateStr} (${timeStr}).`,
+    `\nToday's local date is ${dateStr}. Current local time is ${timeStr} (${timeZone}).`,
     'When tools require a date, always pass it as YYYY-MM-DD format using today\'s actual date.',
-    `Tomorrow is ${new Date(now.getTime() + 86400000).toISOString().split('T')[0]!}.`,
+    `Tomorrow is ${formatLocalDate(tomorrow)}.`,
     '\n## Response style',
     '- Be concise. Confirm the action, share only relevant info, stop.',
     '- Do NOT offer follow-up options or menus after every response.',
@@ -211,6 +217,13 @@ function buildSystemPrompt(input: AgentLoopInput): string {
   }
 
   return lines.join('\n');
+}
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function generatePreview(toolName: string, args: Record<string, unknown>): string {
