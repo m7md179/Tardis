@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     pluginManager,
     saveConfig: makeSaveConfig(dataDir),
     scheduler,
-    adminPassword: config.auth.adminPassword,
+    ...(config.auth.adminPassword !== undefined ? { adminPassword: config.auth.adminPassword } : {}),
   });
 
   // Serve web-ui static files (built assets from packages/web-ui/dist)
