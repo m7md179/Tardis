@@ -179,7 +179,7 @@ export class ProactiveScheduler {
   }
 
   async toggleTrigger(pluginName: string, triggerName: string, enabled: boolean): Promise<boolean> {
-    const result = await this.db
+    await this.db
       .update(proactiveSettings)
       .set({ enabled: enabled ? 1 : 0 })
       .where(

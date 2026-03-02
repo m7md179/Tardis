@@ -81,7 +81,7 @@ async function fetchAvailableModels(config: LLMProviderConfig): Promise<string[]
       .sort((a, b) => a.localeCompare(b));
   }
 
-  const headers: HeadersInit = {};
+  const headers: Record<string, string> = {};
   if (config.apiKey) {
     headers['Authorization'] = `Bearer ${config.apiKey}`;
   }

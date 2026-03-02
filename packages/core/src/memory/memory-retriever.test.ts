@@ -71,7 +71,7 @@ describe('MemoryRetriever', () => {
 
   it('should rank recently accessed memories higher than stale ones', async () => {
     // Create two memories with same keyword match strength
-    const old = await store.create({
+    await store.create({
       type: 'user_fact',
       key: 'project_alpha',
       value: 'Alpha project deadline is Friday',
