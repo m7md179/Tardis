@@ -117,6 +117,46 @@ function toRFC3339Date(dateStr: string): string {
   return dateStr;
 }
 
+/** Extract YYYY-MM-DD from a dateTime string (handles bare, Z, and offset formats). */
+function extractDatePart(dateTimeStr: string): string {
+  return dateTimeStr.split('T')[0] ?? '';
+}
+
+/** Extract HH:MM from a dateTime string (handles bare, Z, and offset formats). */
+function extractTimePart(dateTimeStr: string): string {
+  const after = dateTimeStr.split('T')[1] ?? '';
+  return after.substring(0, 5);
+}
+
+/** Find an upcoming event by fuzzy title match (searches next 60 days). */
+async function findEventByTitle(token: string, title: string): Promise<GoogleEvent | null> {
+  const now = new Date();
+  const future = new Date(now);
+  future.setDate(future.getDate() + 60);
+
+  const params = new URLSearchParams({
+    q: title,
+    timeMin: now.toISOString(),
+    timeMax: future.toISOString(),
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '10',
+  });
+
+  const res = await api.http.get(
+    `${CALENDAR_BASE}/calendars/primary/events?${params}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Google Calendar API error: ${res.status}`);
+  const data = (await res.json()) as { items?: GoogleEvent[] };
+  const events = data.items ?? [];
+  if (events.length === 0) return null;
+
+  return (
+    events.find((e) => e.summary.toLowerCase() === title.toLowerCase()) ??
+    events.find((e) => e.summary.toLowerCase().includes(title.toLowerCase())) ??
+    events[0]!
+  );
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -246,6 +286,7 @@ export const executeTool = async (
       let endObj: GoogleEvent['end'];
 
       if (startTime) {
+        startObj = { dateTime: `${date}T${startTime}:00` };
         const timeZone = getLocalTimeZone();
         startObj = { dateTime: `${date}T${startTime}:00`, timeZone };
         const end = endTime ?? (() => {
@@ -346,6 +387,79 @@ export const executeTool = async (
       if (!code) return { success: false, message: 'Authorization code is required.' };
       await exchangeOAuthCode(code);
       return { success: true, message: 'Google Calendar connected successfully! You can now list events and create events.' };
+    }
+
+    case 'google-calendar.update-event': {
+      const token = await getValidAccessToken();
+
+      const eventTitle = String(args['eventTitle'] ?? '').trim();
+      if (!eventTitle) return { success: false, message: 'eventTitle is required.' };
+
+      const event = await findEventByTitle(token, eventTitle);
+      if (!event) return { success: false, message: `No upcoming event found matching "${eventTitle}".` };
+
+      // Determine current date and time from existing event
+      const currentDateTime = event.start.dateTime ?? '';
+      const currentDate = currentDateTime ? extractDatePart(currentDateTime) : (event.start.date ?? '');
+      const currentTime = currentDateTime ? extractTimePart(currentDateTime) : null;
+      const isTimedEvent = !!currentDateTime;
+
+      const newDate = typeof args['newDate'] === 'string' ? resolveDate(args['newDate']) : null;
+      const newStartTime = typeof args['newStartTime'] === 'string' ? args['newStartTime'] : null;
+      const newEndTime = typeof args['newEndTime'] === 'string' ? args['newEndTime'] : null;
+      const newTitle = typeof args['newTitle'] === 'string' ? args['newTitle'].trim() : null;
+
+      const patch: Record<string, unknown> = {};
+      if (newTitle) patch['summary'] = newTitle;
+
+      if (newDate || newStartTime || newEndTime) {
+        const date = newDate ?? currentDate;
+        if (isTimedEvent || newStartTime) {
+          const startTime = newStartTime ?? currentTime ?? '09:00';
+          const endTime = newEndTime ?? addOneHour(startTime);
+          patch['start'] = { dateTime: `${date}T${startTime}:00` };
+          patch['end'] = { dateTime: `${date}T${endTime}:00` };
+        } else {
+          const nextDay = new Date(date + 'T00:00:00');
+          nextDay.setDate(nextDay.getDate() + 1);
+          patch['start'] = { date };
+          patch['end'] = { date: nextDay.toISOString().split('T')[0]! };
+        }
+      }
+
+      if (Object.keys(patch).length === 0) {
+        return { success: false, message: 'No updates provided. Specify newDate, newStartTime, newEndTime, or newTitle.' };
+      }
+
+      const res = await api.http.patch(
+        `${CALENDAR_BASE}/calendars/primary/events/${event.id}`,
+        patch,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error(`Google Calendar API error: ${res.status}`);
+      const updated = (await res.json()) as GoogleEvent;
+      return {
+        success: true,
+        message: `Updated "${updated.summary}".`,
+        event: { id: updated.id, summary: updated.summary, start: updated.start },
+      };
+    }
+
+    case 'google-calendar.delete-event': {
+      const token = await getValidAccessToken();
+
+      const eventTitle = String(args['eventTitle'] ?? '').trim();
+      if (!eventTitle) return { success: false, message: 'eventTitle is required.' };
+
+      const event = await findEventByTitle(token, eventTitle);
+      if (!event) return { success: false, message: `No upcoming event found matching "${eventTitle}".` };
+
+      const res = await api.http.delete(
+        `${CALENDAR_BASE}/calendars/primary/events/${event.id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error(`Google Calendar API error: ${res.status}`);
+      return { success: true, message: `Deleted "${event.summary}".` };
     }
 
     default:

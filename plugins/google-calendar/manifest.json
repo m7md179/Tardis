@@ -67,6 +67,34 @@
       "actionType": "direct"
     },
     {
+      "name": "google-calendar.update-event",
+      "description": "Update an existing upcoming calendar event. Use this to reschedule, rename, or change the time of an event. Find the event by title.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventTitle": { "type": "string", "description": "Title (or partial title) of the event to find and update" },
+          "newTitle": { "type": "string", "description": "New title for the event" },
+          "newDate": { "type": "string", "description": "New date (YYYY-MM-DD). Use 'tomorrow', 'today', or a specific date." },
+          "newStartTime": { "type": "string", "description": "New start time (HH:MM, 24h format)" },
+          "newEndTime": { "type": "string", "description": "New end time (HH:MM, 24h format)" }
+        },
+        "required": ["eventTitle"]
+      },
+      "actionType": "direct"
+    },
+    {
+      "name": "google-calendar.delete-event",
+      "description": "Delete an upcoming calendar event by title. This permanently removes it from Google Calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "eventTitle": { "type": "string", "description": "Title (or partial title) of the event to delete" }
+        },
+        "required": ["eventTitle"]
+      },
+      "actionType": "workflow"
+    },
+    {
       "name": "google-calendar.setup-oauth",
       "description": "Start the OAuth2 setup flow to connect Google Calendar. Call this if Google Calendar is not yet authorized.",
       "parameters": {
