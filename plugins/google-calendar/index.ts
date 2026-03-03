@@ -163,12 +163,16 @@ function formatEvent(event: GoogleEvent): string {
 
 /** Find an upcoming event by fuzzy title match (searches next 60 days). */
 async function findEventByTitle(token: string, title: string): Promise<GoogleEvent | null> {
+  // Strip parenthetical suffixes the AI may copy from formatted output
+  // e.g. "SharePoint Interview (18:30–19:30, March 3rd)" → "SharePoint Interview"
+  const cleanTitle = title.replace(/\s*\([^)]*\)\s*$/, '').trim() || title;
+
   const now = new Date();
   const future = new Date(now);
   future.setDate(future.getDate() + 60);
 
   const params = new URLSearchParams({
-    q: title,
+    q: cleanTitle,
     timeMin: now.toISOString(),
     timeMax: future.toISOString(),
     singleEvents: 'true',
@@ -185,9 +189,10 @@ async function findEventByTitle(token: string, title: string): Promise<GoogleEve
   const events = data.items ?? [];
   if (events.length === 0) return null;
 
+  const needle = cleanTitle.toLowerCase();
   return (
-    events.find((e) => e.summary.toLowerCase() === title.toLowerCase()) ??
-    events.find((e) => e.summary.toLowerCase().includes(title.toLowerCase())) ??
+    events.find((e) => e.summary.toLowerCase() === needle) ??
+    events.find((e) => e.summary.toLowerCase().includes(needle)) ??
     events[0]!
   );
 }

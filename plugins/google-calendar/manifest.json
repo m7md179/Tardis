@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Google Calendar",
   "description": "Manage Google Calendar events: list upcoming schedule, create events, check what's on a specific date.",
-  "skillSummary": "Manage Google Calendar events. Create new events, list upcoming schedule, and check what's happening on specific dates or tomorrow. Also handles Google Calendar OAuth2 authorization setup and exchanging authorization codes to connect the calendar.",
+  "skillSummary": "Manage Google Calendar events. Create, update, reschedule, edit, or delete events. List upcoming schedule and check what's happening on specific dates. Also handles OAuth2 setup to connect the calendar.",
   "tier": 1,
   "main": "index.ts",
   "permissions": ["http:external", "storage:read", "storage:write", "notifications:send"],
