@@ -11,6 +11,80 @@ interface Trigger {
   quietHoursEnd: string | null;
 }
 
+interface ProactiveLog {
+  id: string;
+  pluginName: string;
+  triggerName: string;
+  status: 'success' | 'error';
+  message: string | null;
+  timestamp: number;
+  durationMs: number | null;
+}
+
+// ─── Cron presets ─────────────────────────────────────────────────────────────
+
+const CRON_PRESETS = [
+  { label: 'Every hour', value: '0 * * * *' },
+  { label: 'Every 6 hours', value: '0 */6 * * *' },
+  { label: 'Daily at 9am', value: '0 9 * * *' },
+  { label: 'Every Monday 9am', value: '0 9 * * 1' },
+] as const;
+
+// ─── Cron → human-readable ───────────────────────────────────────────────────
+
+function cronToHuman(expr: string): string {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [min, hour, dom, month, dow] = parts as [string, string, string, string, string];
+
+  const everyHour =
+    min === '0' && hour === '*' && dom === '*' && month === '*' && dow === '*';
+  if (everyHour) return 'Every hour (on the hour)';
+
+  const everyNHours =
+    min === '0' && hour.startsWith('*/') && dom === '*' && month === '*' && dow === '*';
+  if (everyNHours) {
+    const n = hour.slice(2);
+    return `Every ${n} hours`;
+  }
+
+  const dailyAt =
+    dom === '*' &&
+    month === '*' &&
+    dow === '*' &&
+    !/[*\/,\-]/.test(hour) &&
+    !/[*\/,\-]/.test(min);
+  if (dailyAt) {
+    const h = parseInt(hour, 10);
+    const m = parseInt(min, 10);
+    const ampm = h >= 12 ? 'pm' : 'am';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const mStr = m === 0 ? '' : `:${String(m).padStart(2, '0')}`;
+    return `Every day at ${h12}${mStr}${ampm}`;
+  }
+
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const weeklyAt =
+    dom === '*' &&
+    month === '*' &&
+    !/[*\/,\-]/.test(dow) &&
+    !/[*\/,\-]/.test(hour) &&
+    !/[*\/,\-]/.test(min);
+  if (weeklyAt) {
+    const day = DAYS[parseInt(dow, 10)] ?? dow;
+    const h = parseInt(hour, 10);
+    const m = parseInt(min, 10);
+    const ampm = h >= 12 ? 'pm' : 'am';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const mStr = m === 0 ? '' : `:${String(m).padStart(2, '0')}`;
+    return `Every ${day} at ${h12}${mStr}${ampm}`;
+  }
+
+  return expr;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export function ProactivePage() {
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +94,9 @@ export function ProactivePage() {
   const [editingQuiet, setEditingQuiet] = useState<string | null>(null);
   const [quietStart, setQuietStart] = useState('');
   const [quietEnd, setQuietEnd] = useState('');
+
+  const [logs, setLogs] = useState<ProactiveLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(true);
 
   function triggerKey(t: Trigger) {
     return `${t.pluginName}:${t.triggerName}`;
@@ -36,8 +113,20 @@ export function ProactivePage() {
     }
   }
 
+  async function loadLogs() {
+    try {
+      const res = await apiFetch<{ data: ProactiveLog[] }>('/api/proactive/logs?limit=20');
+      setLogs(res.data);
+    } catch {
+      // Non-fatal
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadTriggers();
+    void loadLogs();
   }, []);
 
   async function handleToggle(t: Trigger) {
@@ -56,7 +145,6 @@ export function ProactivePage() {
         )
       );
     } catch {
-      // Reload on error
       void loadTriggers();
     }
   }
@@ -121,9 +209,11 @@ export function ProactivePage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 mb-8">
           {triggers.map((t) => {
             const key = triggerKey(t);
+            const isEditingThis = editingSchedule === key;
+
             return (
               <div key={key} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -145,33 +235,58 @@ export function ProactivePage() {
                   </button>
                 </div>
 
-                {t.description && <p className="text-sm text-gray-400 mb-3">{t.description}</p>}
+                {t.description && (
+                  <p className="text-sm text-gray-400 mb-3">{t.description}</p>
+                )}
 
-                <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                <div className="flex flex-wrap gap-6 text-xs text-gray-500">
                   {/* Schedule */}
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <span className="text-gray-600">Schedule:</span>{' '}
-                    {editingSchedule === key ? (
-                      <span className="inline-flex items-center gap-1">
-                        <input
-                          type="text"
-                          value={scheduleInput}
-                          onChange={(e) => setScheduleInput(e.target.value)}
-                          className="bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-xs text-gray-200 w-32"
-                        />
-                        <button
-                          onClick={() => handleScheduleSave(t)}
-                          className="text-blue-400 hover:text-blue-300"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditingSchedule(null)}
-                          className="text-gray-500 hover:text-gray-400"
-                        >
-                          Cancel
-                        </button>
-                      </span>
+                    {isEditingThis ? (
+                      <div className="mt-2 space-y-2">
+                        <div className="flex flex-wrap gap-1">
+                          {CRON_PRESETS.map((p) => (
+                            <button
+                              key={p.value}
+                              onClick={() => setScheduleInput(p.value)}
+                              className={`px-2 py-0.5 rounded text-xs border transition-colors ${
+                                scheduleInput === p.value
+                                  ? 'border-blue-500 text-blue-400 bg-blue-600/10'
+                                  : 'border-gray-700 text-gray-400 hover:border-gray-500'
+                              }`}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <input
+                            type="text"
+                            value={scheduleInput}
+                            onChange={(e) => setScheduleInput(e.target.value)}
+                            className="bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-xs text-gray-200 w-36 font-mono"
+                            placeholder="cron expression"
+                          />
+                          <span className="text-gray-500 italic">
+                            {cronToHuman(scheduleInput)}
+                          </span>
+                        </div>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleScheduleSave(t)}
+                            className="text-blue-400 hover:text-blue-300"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingSchedule(null)}
+                            className="text-gray-500 hover:text-gray-400"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
                     ) : (
                       <button
                         onClick={() => {
@@ -181,6 +296,9 @@ export function ProactivePage() {
                         className="text-gray-300 hover:text-blue-400 font-mono"
                       >
                         {t.schedule}
+                        <span className="ml-2 text-gray-600 font-sans normal-case not-italic">
+                          ({cronToHuman(t.schedule)})
+                        </span>
                       </button>
                     )}
                   </div>
@@ -239,6 +357,67 @@ export function ProactivePage() {
           })}
         </div>
       )}
+
+      {/* Recent Executions */}
+      <div>
+        <h3 className="text-base font-semibold mb-3">Recent Executions</h3>
+        {logsLoading ? (
+          <p className="text-gray-500 text-sm">Loading logs...</p>
+        ) : logs.length === 0 ? (
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 text-center">
+            <p className="text-gray-500 text-sm">No executions recorded yet.</p>
+          </div>
+        ) : (
+          <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-left text-xs text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-2">Time</th>
+                  <th className="px-4 py-2">Trigger</th>
+                  <th className="px-4 py-2">Status</th>
+                  <th className="px-4 py-2">Message</th>
+                  <th className="px-4 py-2 text-right">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <tr key={log.id} className="border-b border-gray-800 last:border-0">
+                    <td className="px-4 py-2 text-gray-500 text-xs whitespace-nowrap">
+                      {new Intl.DateTimeFormat('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      }).format(new Date(log.timestamp))}
+                    </td>
+                    <td className="px-4 py-2 text-gray-300 text-xs">
+                      <span className="text-gray-500">{log.pluginName}/</span>
+                      {log.triggerName}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          log.status === 'success'
+                            ? 'bg-green-600/20 text-green-400'
+                            : 'bg-red-600/20 text-red-400'
+                        }`}
+                      >
+                        {log.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-gray-400 text-xs max-w-xs truncate">
+                      {log.message ?? '—'}
+                    </td>
+                    <td className="px-4 py-2 text-gray-500 text-xs text-right whitespace-nowrap">
+                      {log.durationMs != null ? `${log.durationMs}ms` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

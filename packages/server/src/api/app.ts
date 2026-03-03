@@ -396,6 +396,16 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ success: true });
   });
 
+  app.get('/api/proactive/logs', async (c) => {
+    if (!deps.scheduler) return c.json({ error: 'Scheduler not configured' }, 503);
+    const limit = Math.min(parseInt(c.req.query('limit') ?? '20', 10), 100);
+    const page = Math.max(parseInt(c.req.query('page') ?? '1', 10), 1);
+    const pluginName = c.req.query('pluginName');
+    const triggerName = c.req.query('triggerName');
+    const logs = await deps.scheduler.listLogs(limit, page, pluginName, triggerName);
+    return c.json({ data: logs, page, limit });
+  });
+
   app.put('/api/proactive/triggers/quiet-hours', async (c) => {
     if (!deps.scheduler) return c.json({ error: 'Scheduler not configured' }, 503);
     let body: unknown;

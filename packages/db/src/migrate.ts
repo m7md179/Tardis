@@ -3,11 +3,11 @@ import { Database } from 'bun:sqlite';
 const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
+    chat_id TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     tool_name TEXT,
-    tool_args TEXT,
-    tool_result TEXT,
+    tool_calls TEXT,
     timestamp INTEGER NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS memories (
@@ -60,6 +60,29 @@ const STATEMENTS = [
     metadata TEXT,
     created_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS proactive_logs (
+    id TEXT PRIMARY KEY,
+    plugin_name TEXT NOT NULL,
+    trigger_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT,
+    timestamp INTEGER NOT NULL,
+    duration_ms INTEGER
+  )`,
+];
+
+// Incremental migrations for existing databases
+const ALTER_STATEMENTS: Array<{ check: string; alter: string }> = [
+  {
+    // Add chat_id column to conversations if missing (existing DBs)
+    check: `SELECT COUNT(*) as cnt FROM pragma_table_info('conversations') WHERE name='chat_id'`,
+    alter: `ALTER TABLE conversations ADD COLUMN chat_id TEXT NOT NULL DEFAULT ''`,
+  },
+  {
+    // Add tool_calls column to conversations if missing (replaces tool_args)
+    check: `SELECT COUNT(*) as cnt FROM pragma_table_info('conversations') WHERE name='tool_calls'`,
+    alter: `ALTER TABLE conversations ADD COLUMN tool_calls TEXT`,
+  },
 ];
 
 export function migrate(dbPath: string): void {
@@ -70,6 +93,19 @@ export function migrate(dbPath: string): void {
   for (const stmt of STATEMENTS) {
     sqlite.exec(stmt);
   }
+
+  // Incremental: add columns to existing tables
+  for (const { check, alter } of ALTER_STATEMENTS) {
+    const row = sqlite.query<{ cnt: number }, []>(check).get();
+    if (row && row.cnt === 0) {
+      sqlite.exec(alter);
+    }
+  }
+
+  // Index for efficient per-chat history lookup
+  sqlite.exec(
+    `CREATE INDEX IF NOT EXISTS conversations_chat_ts ON conversations (chat_id, timestamp)`
+  );
 
   sqlite.close();
   console.log(`Migrated database at: ${dbPath}`);

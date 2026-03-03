@@ -7,6 +7,7 @@ export const LLMProviderConfigSchema = z.object({
   baseUrl: z.string().url().optional(),
   apiKey: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
+  contextWindowSize: z.number().int().min(512).optional(),
 });
 
 export const TelegramConfigSchema = z.object({

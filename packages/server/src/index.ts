@@ -15,6 +15,7 @@ import {
   MEMORY_TOOLS,
   createMemoryExecutor,
   ProactiveScheduler,
+  ConversationStore,
 } from '@tardis/core';
 import { createDb, migrate } from '@tardis/db';
 import type { SystemConfig } from '@tardis/shared';
@@ -107,6 +108,7 @@ async function main(): Promise<void> {
   const toolRouter = new ToolRouter(pluginManager);
   const memoryRetriever = new MemoryRetriever(memoryStore, config.agent.memoryTokenBudget);
   const memoryExecutor = createMemoryExecutor(memoryStore);
+  const conversationStore = new ConversationStore(db);
 
   // 5. Initialize proactive scheduler
   const scheduler = new ProactiveScheduler(db);
@@ -170,6 +172,8 @@ async function main(): Promise<void> {
       memoryRetriever,
       memoryTools: MEMORY_TOOLS,
       memoryExecutor,
+      conversationStore,
+      contextWindowSize: config.llm.contextWindowSize ?? 4096,
     });
 
     // Wire plugin notifications → Telegram
