@@ -30,6 +30,7 @@ describe('conversations', () => {
 
     await db.insert(conversations).values({
       id,
+      chatId: 'test-chat-1',
       role: 'user',
       content: 'Hello, TARDIS!',
       timestamp: Date.now(),

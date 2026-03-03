@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { runAgentLoop, selectPluginSkills } from '@tardis/core';
-import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever } from '@tardis/core';
+import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever, ConversationStore } from '@tardis/core';
 import type { MemoryExecutor } from '@tardis/core';
 import type { AgentConfig, PluginManifest, ToolDefinition } from '@tardis/shared';
 
@@ -24,6 +24,10 @@ export interface BotDeps {
   memoryTools?: ToolDefinition[];
   /** Executor for memory.* tool calls. */
   memoryExecutor?: MemoryExecutor;
+  /** DB-backed conversation history store (persistent across restarts). */
+  conversationStore?: ConversationStore;
+  /** Model's max context window in tokens. Passed to agent loop for trimming. */
+  contextWindowSize?: number;
 }
 
 export interface BotState {
@@ -134,7 +138,12 @@ export async function handleUserMessage(
       return pluginExecutor(toolName, args);
     };
 
-    const history = state.conversationHistory.get(chatId) ?? [];
+    // Load history: prefer DB store (persistent), fall back to in-memory map
+    const chatIdStr = String(chatId);
+    const maxMessages = deps.agentConfig.conversationHistoryLength * 2;
+    const history = deps.conversationStore
+      ? await deps.conversationStore.getHistory(chatIdStr, maxMessages)
+      : (state.conversationHistory.get(chatId) ?? []);
 
     const result = await runAgentLoop({
       userMessage: text,
@@ -144,17 +153,23 @@ export async function handleUserMessage(
       selectedPlugins,
       config: deps.agentConfig,
       llmProvider: deps.llmProvider,
+      ...(deps.contextWindowSize !== undefined ? { contextWindowSize: deps.contextWindowSize } : {}),
       executeTool: combinedExecutor,
     });
 
-    // Update conversation history, capped at conversationHistoryLength * 2 (message + reply pairs)
-    const maxMessages = deps.agentConfig.conversationHistoryLength * 2;
-    const updatedHistory: LLMMessage[] = [
-      ...history,
-      { role: 'user' as const, content: text },
-      { role: 'assistant' as const, content: result.response },
-    ].slice(-maxMessages);
-    state.conversationHistory.set(chatId, updatedHistory);
+    // Persist new messages
+    if (deps.conversationStore) {
+      await deps.conversationStore.appendMessage(chatIdStr, { role: 'user', content: text });
+      await deps.conversationStore.appendMessage(chatIdStr, { role: 'assistant', content: result.response });
+    } else {
+      // Fallback: in-memory history capped at conversationHistoryLength * 2
+      const updatedHistory: LLMMessage[] = [
+        ...history,
+        { role: 'user' as const, content: text },
+        { role: 'assistant' as const, content: result.response },
+      ].slice(-maxMessages);
+      state.conversationHistory.set(chatId, updatedHistory);
+    }
 
     if (result.pendingApproval) {
       state.pendingApprovals.set(chatId, result.pendingApproval);
@@ -171,9 +186,16 @@ export async function handleUserMessage(
 
 // ─── Command handlers (also plain functions — testable without Telegraf) ──────
 
-export function handleNewCommand(chatId: number, state: BotState): BotResponse {
+export async function handleNewCommand(
+  chatId: number,
+  state: BotState,
+  deps?: Pick<BotDeps, 'conversationStore'>
+): Promise<BotResponse> {
   state.conversationHistory.delete(chatId);
   state.pendingApprovals.delete(chatId);
+  if (deps?.conversationStore) {
+    await deps.conversationStore.clearHistory(String(chatId));
+  }
   return { text: 'Conversation cleared. Start fresh!' };
 }
 
@@ -238,7 +260,7 @@ export class TelegramBot {
   private registerHandlers(): void {
     this.bot.command('new', async (ctx) => {
       const chatId = ctx.chat?.id ?? 0;
-      const { text } = handleNewCommand(chatId, this.state);
+      const { text } = await handleNewCommand(chatId, this.state, this.deps);
       await ctx.reply(text);
     });
 

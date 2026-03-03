@@ -326,32 +326,32 @@ describe('handleUserMessage: workflow approval', () => {
 // ─── /new command ─────────────────────────────────────────────────────────────
 
 describe('handleNewCommand', () => {
-  it('clears conversation history for the chat', () => {
+  it('clears conversation history for the chat', async () => {
     const state = createBotState();
     state.conversationHistory.set(1, [{ role: 'user', content: 'hello' }]);
 
-    handleNewCommand(1, state);
+    await handleNewCommand(1, state);
     expect(state.conversationHistory.has(1)).toBe(false);
   });
 
-  it('clears pending approvals for the chat', () => {
+  it('clears pending approvals for the chat', async () => {
     const state = createBotState();
     state.pendingApprovals.set(1, { toolName: 'x', args: {}, preview: 'x' });
 
-    handleNewCommand(1, state);
+    await handleNewCommand(1, state);
     expect(state.pendingApprovals.has(1)).toBe(false);
   });
 
-  it('returns a confirmation message', () => {
-    const response = handleNewCommand(1, createBotState());
+  it('returns a confirmation message', async () => {
+    const response = await handleNewCommand(1, createBotState());
     expect(response.text).toContain('cleared');
   });
 
-  it('does not affect other chats', () => {
+  it('does not affect other chats', async () => {
     const state = createBotState();
     state.conversationHistory.set(2, [{ role: 'user', content: 'other' }]);
 
-    handleNewCommand(1, state);
+    await handleNewCommand(1, state);
     expect(state.conversationHistory.has(2)).toBe(true);
   });
 });

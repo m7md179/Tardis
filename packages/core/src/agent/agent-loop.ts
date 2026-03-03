@@ -7,6 +7,7 @@ import type {
   ToolDefinition,
 } from '@tardis/shared';
 import type { LLMMessage, LLMProvider } from '../llm/provider.js';
+import { fitToContextWindow } from './context-manager.js';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ export interface AgentLoopInput {
   selectedPlugins: string[];
   config: AgentConfig;
   llmProvider: LLMProvider;
+  /** Model's max context window in tokens. Defaults to 4096 if not provided. */
+  contextWindowSize?: number;
   /**
    * Executes a tool by name with the given arguments.
    * Provided by the ToolRouter (Phase 2 Task 5).
@@ -49,10 +52,23 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
   const steps: AgentStep[] = [];
   let totalTokens = 0;
 
-  // Build the initial message list: system prompt + history + user message
+  const systemPrompt = buildSystemPrompt(input);
+  const contextWindowSize = input.contextWindowSize ?? 4096;
+
+  // Trim history to fit within model's context window before building messages
+  const hasTools = input.availableTools.length > 0;
+  const trimmedHistory = fitToContextWindow({
+    systemPrompt,
+    conversationHistory: input.conversationHistory,
+    userMessage: input.userMessage,
+    contextWindowSize,
+    ...(hasTools ? { tools: input.availableTools } : {}),
+  });
+
+  // Build the initial message list: system prompt + (trimmed) history + user message
   const messages: LLMMessage[] = [
-    { role: 'system', content: buildSystemPrompt(input) },
-    ...input.conversationHistory,
+    { role: 'system', content: systemPrompt },
+    ...trimmedHistory,
     { role: 'user', content: input.userMessage },
   ];
 

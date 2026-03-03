@@ -1,15 +1,17 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 
 // ─── Conversation History ───
 export const conversations = sqliteTable('conversations', {
   id: text('id').primaryKey(), // uuid
+  chatId: text('chat_id').notNull(), // identifies the chat (e.g. Telegram chat ID)
   role: text('role').notNull(), // 'user' | 'assistant' | 'tool'
   content: text('content').notNull(),
   toolName: text('tool_name'), // if role === 'tool'
-  toolArgs: text('tool_args'), // JSON string
-  toolResult: text('tool_result'), // JSON string
+  toolCalls: text('tool_calls'), // JSON string for assistant tool_calls array
   timestamp: integer('timestamp').notNull(), // unix ms
-});
+}, (t) => [
+  index('conversations_chat_ts').on(t.chatId, t.timestamp),
+]);
 
 // ─── Memory Store ───
 export const memories = sqliteTable('memories', {
@@ -69,4 +71,15 @@ export const sessions = sqliteTable('sessions', {
   accumulatedTime: integer('accumulated_time').notNull().default(0),
   metadata: text('metadata'), // JSON — plugin can attach extra data
   createdAt: integer('created_at').notNull(),
+});
+
+// ─── Proactive Execution Logs ───
+export const proactiveLogs = sqliteTable('proactive_logs', {
+  id: text('id').primaryKey(),
+  pluginName: text('plugin_name').notNull(),
+  triggerName: text('trigger_name').notNull(),
+  status: text('status').notNull(), // 'success' | 'error'
+  message: text('message'), // optional detail or error message
+  timestamp: integer('timestamp').notNull(), // unix ms
+  durationMs: integer('duration_ms'), // execution time in milliseconds
 });

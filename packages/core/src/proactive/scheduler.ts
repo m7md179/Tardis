@@ -1,6 +1,6 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { proactiveSettings } from '@tardis/db';
+import { proactiveSettings, proactiveLogs } from '@tardis/db';
 import type { TardisDB } from '@tardis/db';
 import type { ProactiveTrigger } from '@tardis/shared';
 import { isTimeToRun, isDuringQuietHours } from './cron-utils.js';
@@ -14,6 +14,7 @@ export interface TriggerHandler {
 interface RegisteredTrigger {
   pluginName: string;
   triggerName: string;
+  description: string;
   handler: TriggerHandler;
 }
 
@@ -25,6 +26,16 @@ export interface TriggerInfo {
   schedule: string;
   quietHoursStart: string | null;
   quietHoursEnd: string | null;
+}
+
+export interface ProactiveLogEntry {
+  id: string;
+  pluginName: string;
+  triggerName: string;
+  status: 'success' | 'error';
+  message: string | null;
+  timestamp: number;
+  durationMs: number | null;
 }
 
 // ─── ProactiveScheduler ───
@@ -62,6 +73,7 @@ export class ProactiveScheduler {
       this.handlers.set(key, {
         pluginName,
         triggerName: trigger.name,
+        description: trigger.description ?? '',
         handler,
       });
 
@@ -152,13 +164,32 @@ export class ProactiveScheduler {
       }
 
       // Fire handler (never let it crash the scheduler)
+      const handlerStart = Date.now();
       try {
         await registered.handler();
+        const durationMs = Date.now() - handlerStart;
+        await this.db.insert(proactiveLogs).values({
+          id: randomUUID(),
+          pluginName: row.pluginName,
+          triggerName: row.triggerName,
+          status: 'success',
+          message: null,
+          timestamp: handlerStart,
+          durationMs,
+        });
       } catch (err) {
-        console.error(
-          `[scheduler] Handler "${key}" failed:`,
-          err instanceof Error ? err.message : String(err)
-        );
+        const durationMs = Date.now() - handlerStart;
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[scheduler] Handler "${key}" failed:`, message);
+        await this.db.insert(proactiveLogs).values({
+          id: randomUUID(),
+          pluginName: row.pluginName,
+          triggerName: row.triggerName,
+          status: 'error',
+          message,
+          timestamp: handlerStart,
+          durationMs,
+        }).catch(() => {}); // don't crash scheduler on log failure
       }
     }
   }
@@ -167,14 +198,47 @@ export class ProactiveScheduler {
 
   async listTriggers(): Promise<TriggerInfo[]> {
     const rows = await this.db.select().from(proactiveSettings);
+    return rows.map((r) => {
+      const key = `${r.pluginName}:${r.triggerName}`;
+      const registered = this.handlers.get(key);
+      return {
+        pluginName: r.pluginName,
+        triggerName: r.triggerName,
+        description: registered?.description ?? '',
+        enabled: r.enabled === 1,
+        schedule: r.schedule,
+        quietHoursStart: r.quietHoursStart,
+        quietHoursEnd: r.quietHoursEnd,
+      };
+    });
+  }
+
+  async listLogs(limit = 20, page = 1, pluginName?: string, triggerName?: string): Promise<ProactiveLogEntry[]> {
+    const offset = (page - 1) * limit;
+    let query = this.db
+      .select()
+      .from(proactiveLogs)
+      .orderBy(desc(proactiveLogs.timestamp))
+      .limit(limit)
+      .offset(offset)
+      .$dynamic();
+
+    if (pluginName) {
+      query = query.where(eq(proactiveLogs.pluginName, pluginName));
+    }
+    if (triggerName) {
+      query = query.where(eq(proactiveLogs.triggerName, triggerName));
+    }
+
+    const rows = await query;
     return rows.map((r) => ({
+      id: r.id,
       pluginName: r.pluginName,
       triggerName: r.triggerName,
-      description: '', // TODO: store description in DB or resolve from manifest
-      enabled: r.enabled === 1,
-      schedule: r.schedule,
-      quietHoursStart: r.quietHoursStart,
-      quietHoursEnd: r.quietHoursEnd,
+      status: r.status as 'success' | 'error',
+      message: r.message,
+      timestamp: r.timestamp,
+      durationMs: r.durationMs,
     }));
   }
 
