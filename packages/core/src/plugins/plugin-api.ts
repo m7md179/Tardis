@@ -54,6 +54,7 @@ export interface HttpAPI {
   get(url: string, options?: RequestInit): Promise<never>;
   post(url: string, body: unknown, options?: RequestInit): Promise<never>;
   put(url: string, body: unknown, options?: RequestInit): Promise<never>;
+  patch(url: string, body: unknown, options?: RequestInit): Promise<never>;
   delete(url: string, options?: RequestInit): Promise<never>;
 }
 export interface LLMPluginAPI {
@@ -387,6 +388,19 @@ export function createPluginApi(params: {
       return fetch(url, {
         ...options,
         method: 'PUT',
+        body: isString ? body : JSON.stringify(body),
+        headers: {
+          'Content-Type': isString ? 'application/x-www-form-urlencoded' : 'application/json',
+          ...(options?.headers ?? {}),
+        },
+      }) as Promise<never>;
+    },
+    async patch(url, body, options) {
+      guard.assert('http:external');
+      const isString = typeof body === 'string';
+      return fetch(url, {
+        ...options,
+        method: 'PATCH',
         body: isString ? body : JSON.stringify(body),
         headers: {
           'Content-Type': isString ? 'application/x-www-form-urlencoded' : 'application/json',
