@@ -41,7 +41,6 @@ export const onActivate = async (pluginApi: PluginAPI): Promise<void> => {
   if (id) clientId = id;
   if (secret) clientSecret = secret;
 
-  // Check storage as fallback
   if (!clientId) {
     const stored = await api.storage.get<string>('clientId');
     if (stored) clientId = stored;
@@ -91,7 +90,7 @@ async function refreshAccessToken(tokens: OAuthTokens): Promise<OAuthTokens> {
   const updated: OAuthTokens = {
     accessToken: data.access_token,
     refreshToken: tokens.refreshToken,
-    expiresAt: Date.now() + data.expires_in * 1000 - 60_000, // 1 min buffer
+    expiresAt: Date.now() + data.expires_in * 1000 - 60_000,
   };
   await api.storage.set('oauth_tokens', updated);
   return updated;
@@ -113,19 +112,53 @@ async function getValidAccessToken(): Promise<string> {
 
 // ─── Calendar helpers ───
 
-function toRFC3339Date(dateStr: string): string {
-  return dateStr;
+/** Format a Date as YYYY-MM-DD without UTC conversion. */
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-/** Extract YYYY-MM-DD from a dateTime string (handles bare, Z, and offset formats). */
+/** Resolve natural language dates to YYYY-MM-DD. */
+function resolveDate(dateArg: string): string {
+  const d = dateArg.toLowerCase().trim();
+  if (d === 'today') return formatLocalDate(new Date());
+  if (d === 'tomorrow') {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return formatLocalDate(tomorrow);
+  }
+  return dateArg;
+}
+
+/** Add one hour to HH:MM, wrapping at 23:59. */
+function addOneHour(time: string): string {
+  const [h, m] = time.split(':').map(Number) as [number, number];
+  if (h >= 23) return '23:59';
+  return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Extract YYYY-MM-DD from a dateTime string. */
 function extractDatePart(dateTimeStr: string): string {
   return dateTimeStr.split('T')[0] ?? '';
 }
 
-/** Extract HH:MM from a dateTime string (handles bare, Z, and offset formats). */
+/** Extract HH:MM from a dateTime string. */
 function extractTimePart(dateTimeStr: string): string {
   const after = dateTimeStr.split('T')[1] ?? '';
   return after.substring(0, 5);
+}
+
+function formatEvent(event: GoogleEvent): string {
+  const start = event.start.dateTime
+    ? new Date(event.start.dateTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : 'All day';
+  const end = event.end.dateTime
+    ? new Date(event.end.dateTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '';
+  const time = end ? `${start}–${end}` : start;
+  return `• ${event.summary} (${time})${event.location ? ` @ ${event.location}` : ''}`;
 }
 
 /** Find an upcoming event by fuzzy title match (searches next 60 days). */
@@ -157,53 +190,6 @@ async function findEventByTitle(token: string, title: string): Promise<GoogleEve
     events.find((e) => e.summary.toLowerCase().includes(title.toLowerCase())) ??
     events[0]!
   );
-function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getLocalTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-}
-
-function toLocalDateTimeISOString(date: string, time: string): string {
-  return new Date(`${date}T${time}:00`).toISOString();
-}
-
-/** Resolve natural language dates to YYYY-MM-DD. */
-function resolveDate(dateArg: string): string {
-  const d = dateArg.toLowerCase().trim();
-  if (d === 'today') return formatLocalDate(new Date());
-  if (d === 'tomorrow') {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return formatLocalDate(tomorrow);
-  }
-  return dateArg;
-}
-
-/** Add one hour to HH:MM, wrapping at 23:59. */
-function addOneHour(time: string): string {
-  const [h, m] = time.split(':').map(Number) as [number, number];
-  if (h >= 23) return '23:59';
-  return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-  // Returns YYYY-MM-DD for all-day or YYYY-MM-DDTHH:MM:SS for timed
-  return dateStr;
-}
-
-function formatEvent(event: GoogleEvent): string {
-  const start = event.start.dateTime
-    ? new Date(event.start.dateTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
-    : 'All day';
-  const end = event.end.dateTime
-    ? new Date(event.end.dateTime).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
-    : '';
-  const time = end ? `${start}–${end}` : start;
-  return `• ${event.summary} (${time})${event.location ? ` @ ${event.location}` : ''}`;
 }
 
 // ─── Tool execution ───
@@ -216,7 +202,6 @@ export const executeTool = async (
     case 'google-calendar.list-events': {
       const token = await getValidAccessToken();
 
-      // Determine date range
       let startDate: Date;
       const dateArg = typeof args['date'] === 'string' ? args['date'] : null;
       if (!dateArg || dateArg === 'today') {
@@ -252,8 +237,7 @@ export const executeTool = async (
       const events = data.items ?? [];
 
       if (events.length === 0) {
-        const label = dateArg ?? 'today';
-        return { events: [], message: `No events on ${label}.` };
+        return { events: [], message: `No events on ${dateArg ?? 'today'}.` };
       }
 
       return {
@@ -276,7 +260,6 @@ export const executeTool = async (
       if (!title) return { success: false, message: 'Event title is required.' };
 
       const date = resolveDate(String(args['date'] ?? '').trim());
-      const date = String(args['date'] ?? '').trim();
       if (!date) return { success: false, message: 'Event date is required.' };
 
       const startTime = typeof args['startTime'] === 'string' ? args['startTime'] : null;
@@ -286,19 +269,15 @@ export const executeTool = async (
       let endObj: GoogleEvent['end'];
 
       if (startTime) {
+        // Bare datetime (no timeZone) — Google Calendar uses the calendar's own timezone
+        const end = endTime ?? addOneHour(startTime);
         startObj = { dateTime: `${date}T${startTime}:00` };
-        const timeZone = getLocalTimeZone();
-        startObj = { dateTime: `${date}T${startTime}:00`, timeZone };
-        const end = endTime ?? (() => {
-          const [h, m] = startTime.split(':').map(Number) as [number, number];
-          return `${String((h + 1) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        })();
-        endObj = { dateTime: `${date}T${end}:00`, timeZone };
+        endObj = { dateTime: `${date}T${end}:00` };
       } else {
         // All-day event
-        startObj = { date: toRFC3339Date(date) };
         const nextDay = new Date(date + 'T00:00:00');
         nextDay.setDate(nextDay.getDate() + 1);
+        startObj = { date };
         endObj = { date: formatLocalDate(nextDay) };
       }
 
@@ -329,13 +308,10 @@ export const executeTool = async (
       const date = resolveDate(String(args['date'] ?? '').trim());
       const startTime = String(args['startTime'] ?? '').trim();
       const endTime = String(args['endTime'] ?? '').trim() || addOneHour(startTime);
-      const date = String(args['date'] ?? '').trim();
-      const startTime = String(args['startTime'] ?? '').trim();
-      const endTime = String(args['endTime'] ?? '').trim();
 
       const params = new URLSearchParams({
-        timeMin: toLocalDateTimeISOString(date, startTime),
-        timeMax: toLocalDateTimeISOString(date, endTime),
+        timeMin: `${date}T${startTime}:00`,
+        timeMax: `${date}T${endTime}:00`,
         singleEvents: 'true',
       });
 
@@ -357,38 +333,6 @@ export const executeTool = async (
       };
     }
 
-    case 'google-calendar.setup-oauth': {
-      assertOAuthConfig();
-
-      // Generate the authorization URL for the user to visit
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', // out-of-band (copy-paste code)
-        response_type: 'code',
-        scope: SCOPES,
-        access_type: 'offline',
-        prompt: 'consent',
-      });
-
-      const authorizationUrl = `${AUTH_URL}?${params}`;
-
-      // Store that we're waiting for the code
-      await api.storage.set('oauth_pending', true);
-
-      return {
-        success: true,
-        message: `To connect Google Calendar:\n\n1. Open this URL in your browser:\n${authorizationUrl}\n\n2. Sign in and allow access\n3. Copy the authorization code\n4. Tell me: "my Google Calendar code is <code>"`,
-        authorizationUrl,
-      };
-    }
-
-    case 'google-calendar.exchange-code': {
-      const code = String(args['code'] ?? '').trim();
-      if (!code) return { success: false, message: 'Authorization code is required.' };
-      await exchangeOAuthCode(code);
-      return { success: true, message: 'Google Calendar connected successfully! You can now list events and create events.' };
-    }
-
     case 'google-calendar.update-event': {
       const token = await getValidAccessToken();
 
@@ -398,7 +342,6 @@ export const executeTool = async (
       const event = await findEventByTitle(token, eventTitle);
       if (!event) return { success: false, message: `No upcoming event found matching "${eventTitle}".` };
 
-      // Determine current date and time from existing event
       const currentDateTime = event.start.dateTime ?? '';
       const currentDate = currentDateTime ? extractDatePart(currentDateTime) : (event.start.date ?? '');
       const currentTime = currentDateTime ? extractTimePart(currentDateTime) : null;
@@ -423,7 +366,7 @@ export const executeTool = async (
           const nextDay = new Date(date + 'T00:00:00');
           nextDay.setDate(nextDay.getDate() + 1);
           patch['start'] = { date };
-          patch['end'] = { date: nextDay.toISOString().split('T')[0]! };
+          patch['end'] = { date: formatLocalDate(nextDay) };
         }
       }
 
@@ -462,13 +405,41 @@ export const executeTool = async (
       return { success: true, message: `Deleted "${event.summary}".` };
     }
 
+    case 'google-calendar.setup-oauth': {
+      assertOAuthConfig();
+
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
+        response_type: 'code',
+        scope: SCOPES,
+        access_type: 'offline',
+        prompt: 'consent',
+      });
+
+      const authorizationUrl = `${AUTH_URL}?${params}`;
+      await api.storage.set('oauth_pending', true);
+
+      return {
+        success: true,
+        message: `To connect Google Calendar:\n\n1. Open this URL in your browser:\n${authorizationUrl}\n\n2. Sign in and allow access\n3. Copy the authorization code\n4. Tell me: "my Google Calendar code is <code>"`,
+        authorizationUrl,
+      };
+    }
+
+    case 'google-calendar.exchange-code': {
+      const code = String(args['code'] ?? '').trim();
+      if (!code) return { success: false, message: 'Authorization code is required.' };
+      await exchangeOAuthCode(code);
+      return { success: true, message: 'Google Calendar connected successfully! You can now list events and create events.' };
+    }
+
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }
 };
 
-// ─── OAuth code exchange (called when user provides the code) ───
-// This would be called via an agent-recognized pattern or a setup command.
+// ─── OAuth code exchange ───
 
 export async function exchangeOAuthCode(code: string): Promise<void> {
   const res = await api.http.post(
@@ -487,7 +458,6 @@ export async function exchangeOAuthCode(code: string): Promise<void> {
     const errBody = await res.text().catch(() => '');
     throw new Error(`OAuth code exchange failed: ${res.status} — ${errBody}`);
   }
-  if (!res.ok) throw new Error(`OAuth code exchange failed: ${res.status}`);
   const data = (await res.json()) as {
     access_token: string;
     refresh_token: string;
