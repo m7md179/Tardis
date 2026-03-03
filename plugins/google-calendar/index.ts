@@ -157,16 +157,29 @@ async function findEventByTitle(token: string, title: string): Promise<GoogleEve
     events.find((e) => e.summary.toLowerCase().includes(title.toLowerCase())) ??
     events[0]!
   );
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getLocalTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+function toLocalDateTimeISOString(date: string, time: string): string {
+  return new Date(`${date}T${time}:00`).toISOString();
 }
 
 /** Resolve natural language dates to YYYY-MM-DD. */
 function resolveDate(dateArg: string): string {
   const d = dateArg.toLowerCase().trim();
-  if (d === 'today') return new Date().toISOString().split('T')[0]!;
+  if (d === 'today') return formatLocalDate(new Date());
   if (d === 'tomorrow') {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split('T')[0]!;
+    return formatLocalDate(tomorrow);
   }
   return dateArg;
 }
@@ -176,6 +189,10 @@ function addOneHour(time: string): string {
   const [h, m] = time.split(':').map(Number) as [number, number];
   if (h >= 23) return '23:59';
   return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+  // Returns YYYY-MM-DD for all-day or YYYY-MM-DDTHH:MM:SS for timed
+  return dateStr;
 }
 
 function formatEvent(event: GoogleEvent): string {
@@ -259,6 +276,7 @@ export const executeTool = async (
       if (!title) return { success: false, message: 'Event title is required.' };
 
       const date = resolveDate(String(args['date'] ?? '').trim());
+      const date = String(args['date'] ?? '').trim();
       if (!date) return { success: false, message: 'Event date is required.' };
 
       const startTime = typeof args['startTime'] === 'string' ? args['startTime'] : null;
@@ -269,17 +287,19 @@ export const executeTool = async (
 
       if (startTime) {
         startObj = { dateTime: `${date}T${startTime}:00` };
+        const timeZone = getLocalTimeZone();
+        startObj = { dateTime: `${date}T${startTime}:00`, timeZone };
         const end = endTime ?? (() => {
           const [h, m] = startTime.split(':').map(Number) as [number, number];
           return `${String((h + 1) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
         })();
-        endObj = { dateTime: `${date}T${end}:00` };
+        endObj = { dateTime: `${date}T${end}:00`, timeZone };
       } else {
         // All-day event
         startObj = { date: toRFC3339Date(date) };
         const nextDay = new Date(date + 'T00:00:00');
         nextDay.setDate(nextDay.getDate() + 1);
-        endObj = { date: nextDay.toISOString().split('T')[0]! };
+        endObj = { date: formatLocalDate(nextDay) };
       }
 
       const body: Record<string, unknown> = { summary: title, start: startObj, end: endObj };
@@ -309,10 +329,13 @@ export const executeTool = async (
       const date = resolveDate(String(args['date'] ?? '').trim());
       const startTime = String(args['startTime'] ?? '').trim();
       const endTime = String(args['endTime'] ?? '').trim() || addOneHour(startTime);
+      const date = String(args['date'] ?? '').trim();
+      const startTime = String(args['startTime'] ?? '').trim();
+      const endTime = String(args['endTime'] ?? '').trim();
 
       const params = new URLSearchParams({
-        timeMin: `${date}T${startTime}:00Z`,
-        timeMax: `${date}T${endTime}:00Z`,
+        timeMin: toLocalDateTimeISOString(date, startTime),
+        timeMax: toLocalDateTimeISOString(date, endTime),
         singleEvents: 'true',
       });
 
@@ -464,6 +487,7 @@ export async function exchangeOAuthCode(code: string): Promise<void> {
     const errBody = await res.text().catch(() => '');
     throw new Error(`OAuth code exchange failed: ${res.status} — ${errBody}`);
   }
+  if (!res.ok) throw new Error(`OAuth code exchange failed: ${res.status}`);
   const data = (await res.json()) as {
     access_token: string;
     refresh_token: string;

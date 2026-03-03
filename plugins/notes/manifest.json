@@ -53,11 +53,11 @@
     },
     {
       "name": "notes.list-notes",
-      "description": "List all saved notes. Do NOT pass a 'tag' argument unless the user specifically asks to filter by tag. Omit the tag field entirely for a general list.",
+      "description": "List all saved notes (titles, tags, and timestamps).",
       "parameters": {
         "type": "object",
         "properties": {
-          "tag": { "type": "string", "description": "Only set this if user explicitly asks to filter by a specific tag" },
+          "tag": { "type": "string", "description": "Optional: filter by this tag" },
           "limit": { "type": "number", "description": "Max notes to return (default 20)" }
         }
       },
