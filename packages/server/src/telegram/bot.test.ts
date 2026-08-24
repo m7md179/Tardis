@@ -8,7 +8,13 @@ import {
   isApprovalText,
 } from './bot.js';
 import type { BotDeps, BotState } from './bot.js';
-import type { ToolRouter, LLMProvider, ThoughtTracer } from '@tardis/core';
+import type {
+  ToolRouter,
+  LLMProvider,
+  ThoughtTracer,
+  ConversationStore,
+  LLMMessage,
+} from '@tardis/core';
 import type { AgentConfig, PluginManifest, ThoughtTrace, ToolDefinition } from '@tardis/shared';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -452,5 +458,113 @@ describe('handleUserMessage: thought trace persistence', () => {
   it('works fine when no tracer is configured', async () => {
     const response = await handleUserMessage(CHAT_ID, 'hello there', createBotState(), makeDeps());
     expect(response.text).toBe('Hello from TARDIS!');
+  });
+});
+
+// ─── Tool calls in persisted conversation history ─────────────────────────────
+
+describe('handleUserMessage: tool calls persisted to history', () => {
+  const CHAT_ID = 77;
+  const DIRECT_TOOL = makeTool('reminders.set-reminder', 'direct');
+  const WORKFLOW_TOOL = makeTool('todoist.delete-task', 'workflow');
+
+  /** Recording conversation store — captures what the bot writes. */
+  function makeRecordingStore(): { written: LLMMessage[]; store: ConversationStore } {
+    const written: LLMMessage[] = [];
+    const store = {
+      appendMessage: async (_chatId: string, message: LLMMessage) => {
+        written.push(message);
+      },
+      getHistory: async () => [],
+      clearHistory: async () => {},
+    } as unknown as ConversationStore;
+    return { written, store };
+  }
+
+  /** LLM that calls a tool once, then replies with text on the next turn. */
+  function toolThenTextProvider(toolName: string): LLMProvider {
+    let called = false;
+    return {
+      name: 'mock',
+      async chat() {
+        if (!called) {
+          called = true;
+          return {
+            type: 'tool_call' as const,
+            toolName,
+            toolArgs: { message: 'walk', delayMinutes: 5 },
+            toolCallId: 'call_1',
+          };
+        }
+        return { type: 'text' as const, text: 'Reminder set.' };
+      },
+      async generate() {
+        return '["reminders"]';
+      },
+    } satisfies LLMProvider;
+  }
+
+  it('writes the assistant tool_call and the tool result, not just the final text', async () => {
+    const { written, store } = makeRecordingStore();
+    const deps = makeDeps({
+      getAllManifests: () => [makeManifest('reminders', [DIRECT_TOOL])],
+      llmProvider: toolThenTextProvider('reminders.set-reminder'),
+      conversationStore: store,
+    });
+
+    await handleUserMessage(CHAT_ID, 'remind me to walk in 5 minutes', createBotState(), deps);
+
+    expect(written.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+
+    // The assistant tool_call turn carries the call, with null content.
+    const toolCallMsg = written[1]!;
+    expect(toolCallMsg.content).toBeNull();
+    expect(toolCallMsg.tool_calls?.[0]?.name).toBe('reminders.set-reminder');
+    expect(toolCallMsg.tool_calls?.[0]?.arguments).toEqual({ message: 'walk', delayMinutes: 5 });
+
+    // The tool result is linked by name, which the adapter maps to tool_call_id.
+    expect(written[2]!.name).toBe('reminders.set-reminder');
+    expect(written[2]!.content).toBe(JSON.stringify({ ok: true }));
+
+    // Final assistant text still recorded last.
+    expect(written[3]!.content).toBe('Reminder set.');
+  });
+
+  it('does not persist a dangling tool_call when awaiting approval', async () => {
+    const { written, store } = makeRecordingStore();
+    const deps = makeDeps({
+      getAllManifests: () => [makeManifest('todoist', [WORKFLOW_TOOL])],
+      llmProvider: {
+        name: 'mock',
+        async chat() {
+          return {
+            type: 'tool_call' as const,
+            toolName: 'todoist.delete-task',
+            toolArgs: { taskId: 'task_1' },
+            toolCallId: 'call_1',
+          };
+        },
+        async generate() {
+          return '["todoist"]';
+        },
+      } satisfies LLMProvider,
+      conversationStore: store,
+    });
+
+    await handleUserMessage(CHAT_ID, 'delete that task', createBotState(), deps);
+
+    // A workflow pause produces a tool_call with no tool_result. Writing it
+    // would leave an unanswered tool_call at the head of the next request.
+    expect(written.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(written.some((m) => m.tool_calls)).toBe(false);
+  });
+
+  it('records only the user and assistant turns when no tool is called', async () => {
+    const { written, store } = makeRecordingStore();
+    const deps = makeDeps({ conversationStore: store });
+
+    await handleUserMessage(CHAT_ID, 'hello there', createBotState(), deps);
+
+    expect(written.map((m) => m.role)).toEqual(['user', 'assistant']);
   });
 });

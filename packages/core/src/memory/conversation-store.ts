@@ -47,7 +47,7 @@ export class ConversationStore {
       .orderBy(desc(conversations.timestamp))
       .limit(limit);
 
-    return rows.reverse().map((r): LLMMessage => {
+    const messages = rows.reverse().map((r): LLMMessage => {
       const base: LLMMessage = { role: r.role as LLMMessage['role'], content: r.content };
 
       if (r.toolName) {
@@ -68,6 +68,13 @@ export class ConversationStore {
 
       return base;
     });
+
+    // Never start history mid-turn. The row limit can slice a turn apart and
+    // leave a leading `tool` message, or an assistant message whose tool_calls
+    // lost their matching result — both are invalid message sequences that
+    // providers reject. Drop everything before the first user message.
+    const firstUser = messages.findIndex((m) => m.role === 'user');
+    return firstUser === -1 ? [] : messages.slice(firstUser);
   }
 
   /** Delete all conversation history for a chat. */
