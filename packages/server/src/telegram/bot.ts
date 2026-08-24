@@ -172,6 +172,35 @@ export async function handleUserMessage(
     // Persist new messages
     if (deps.conversationStore) {
       await deps.conversationStore.appendMessage(chatIdStr, { role: 'user', content: text });
+
+      // Replay completed tool calls into history. Without them the stored
+      // history reads as a bare "user asks → assistant confirms" exchange,
+      // which teaches the model it can claim an action succeeded without ever
+      // calling the tool. Only complete call/result pairs are written: an
+      // approval pause produces a call with no result, and persisting that
+      // dangling tool_call would make the next request's sequence invalid.
+      const steps = result.trace.steps;
+      for (let i = 0; i < steps.length; i++) {
+        const call = steps[i];
+        const observed = steps[i + 1];
+        if (call?.type !== 'tool_call' || !call.toolName) continue;
+        if (observed?.type !== 'tool_result' || observed.toolName !== call.toolName) continue;
+
+        await deps.conversationStore.appendMessage(chatIdStr, {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            { id: call.toolName, name: call.toolName, arguments: call.toolArgs ?? {} },
+          ],
+        });
+        await deps.conversationStore.appendMessage(chatIdStr, {
+          role: 'tool',
+          content: JSON.stringify(observed.toolResult ?? null),
+          name: call.toolName,
+        });
+        i++; // the result step is consumed by the pair above
+      }
+
       await deps.conversationStore.appendMessage(chatIdStr, { role: 'assistant', content: result.response });
     } else {
       // Fallback: in-memory history capped at conversationHistoryLength * 2
