@@ -16,6 +16,7 @@ import {
   createMemoryExecutor,
   ProactiveScheduler,
   ConversationStore,
+  ThoughtTracer,
 } from '@tardis/core';
 import { createDb, migrate } from '@tardis/db';
 import type { SystemConfig } from '@tardis/shared';
@@ -109,6 +110,7 @@ async function main(): Promise<void> {
   const memoryRetriever = new MemoryRetriever(memoryStore, config.agent.memoryTokenBudget);
   const memoryExecutor = createMemoryExecutor(memoryStore);
   const conversationStore = new ConversationStore(db);
+  const thoughtTracer = new ThoughtTracer(db);
 
   // 5. Initialize proactive scheduler
   const scheduler = new ProactiveScheduler(db);
@@ -173,6 +175,7 @@ async function main(): Promise<void> {
       memoryTools: MEMORY_TOOLS,
       memoryExecutor,
       conversationStore,
+      thoughtTracer,
       contextWindowSize: config.llm.contextWindowSize ?? 4096,
     });
 

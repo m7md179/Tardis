@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { runAgentLoop, selectPluginSkills } from '@tardis/core';
-import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever, ConversationStore } from '@tardis/core';
+import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever, ConversationStore, ThoughtTracer } from '@tardis/core';
 import type { MemoryExecutor } from '@tardis/core';
 import type { AgentConfig, PluginManifest, ToolDefinition } from '@tardis/shared';
 
@@ -26,6 +26,8 @@ export interface BotDeps {
   memoryExecutor?: MemoryExecutor;
   /** DB-backed conversation history store (persistent across restarts). */
   conversationStore?: ConversationStore;
+  /** Persists thought traces so they show up in /api/traces and the web UI. */
+  thoughtTracer?: ThoughtTracer;
   /** Model's max context window in tokens. Passed to agent loop for trimming. */
   contextWindowSize?: number;
 }
@@ -156,6 +158,16 @@ export async function handleUserMessage(
       ...(deps.contextWindowSize !== undefined ? { contextWindowSize: deps.contextWindowSize } : {}),
       executeTool: combinedExecutor,
     });
+
+    // Persist the thought trace. Best-effort: a tracing failure must never
+    // turn a successful reply into an error message for the user.
+    if (deps.thoughtTracer) {
+      try {
+        await deps.thoughtTracer.save(result.trace);
+      } catch (err) {
+        console.error(`[TelegramBot] Failed to save thought trace for chat ${chatId}:`, err);
+      }
+    }
 
     // Persist new messages
     if (deps.conversationStore) {
