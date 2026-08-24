@@ -8,8 +8,8 @@ import {
   isApprovalText,
 } from './bot.js';
 import type { BotDeps, BotState } from './bot.js';
-import type { ToolRouter, LLMProvider } from '@tardis/core';
-import type { AgentConfig, PluginManifest, ToolDefinition } from '@tardis/shared';
+import type { ToolRouter, LLMProvider, ThoughtTracer } from '@tardis/core';
+import type { AgentConfig, PluginManifest, ThoughtTrace, ToolDefinition } from '@tardis/shared';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -406,5 +406,51 @@ describe('handleStatusCommand', () => {
   it('does not show pending indicator when no approval is waiting', () => {
     const { text } = handleStatusCommand(1, createBotState());
     expect(text).not.toContain('approval');
+  });
+});
+
+// ─── Thought trace persistence ────────────────────────────────────────────────
+
+describe('handleUserMessage: thought trace persistence', () => {
+  const CHAT_ID = 99;
+
+  it('saves the thought trace after the agent loop completes', async () => {
+    const saved: ThoughtTrace[] = [];
+    const deps = makeDeps({
+      thoughtTracer: {
+        save: async (trace: ThoughtTrace) => {
+          saved.push(trace);
+        },
+      } as unknown as ThoughtTracer,
+    });
+
+    const response = await handleUserMessage(CHAT_ID, 'hello there', createBotState(), deps);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.userMessage).toBe('hello there');
+    expect(saved[0]?.finalResponse).toBe('Hello from TARDIS!');
+    expect(saved[0]?.steps.length).toBeGreaterThan(0);
+    expect(response.text).toBe('Hello from TARDIS!');
+  });
+
+  it('still replies normally when saving the trace fails', async () => {
+    const deps = makeDeps({
+      thoughtTracer: {
+        save: async () => {
+          throw new Error('database is locked');
+        },
+      } as unknown as ThoughtTracer,
+    });
+
+    const response = await handleUserMessage(CHAT_ID, 'hello there', createBotState(), deps);
+
+    // A tracing failure must not surface as an error to the user.
+    expect(response.text).toBe('Hello from TARDIS!');
+    expect(response.text).not.toContain('Something went wrong');
+  });
+
+  it('works fine when no tracer is configured', async () => {
+    const response = await handleUserMessage(CHAT_ID, 'hello there', createBotState(), makeDeps());
+    expect(response.text).toBe('Hello from TARDIS!');
   });
 });
