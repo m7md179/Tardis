@@ -48,7 +48,7 @@ tardis-app/
 | Phase | Scope | Status |
 |---|---|---|
 | A | Core completion: real persistent memory | **DONE** (2026-08-26) |
-| B | Skills architecture + `SKILLS.md` + `GET /api/skills` + migrate plugins | NOT STARTED |
+| B | Skills architecture + `SKILLS.md` + `GET /api/skills` + migrate plugins | **DONE** (2026-08-26) |
 | C | Hybrid UI contract + `UI-CONTRACT.md` | NOT STARTED |
 | D | Client app foundation (new repo) — **gate: real DB change from the app** | NOT STARTED |
 | E | New plugins: health/food (multimodal) + budget | NOT STARTED |
@@ -138,3 +138,75 @@ Rows written: `user_name`, `preferred_units`, `dietary_restriction`, `peanut_all
 **Next**: Phase B — Skills architecture, resolving the `SkillRouter` name collision
 (it currently routes among *plugins* for LLM tool-selection, which is a different concept
 from the new per-capability Skill).
+
+
+### 2026-08-26 — Phase B: Skills architecture
+
+**Verified true before starting**
+- Local + container both `main @ bb78997`, clean. Test baseline 578 pass / 1 known fail.
+- Read the real code rather than assuming: the existing `SkillRouter` selects **plugins**
+  using a plugin-level `skillSummary` blurb; the manifest's `tools[]` entries are already
+  exactly the per-capability concept the new Skill describes; `executeTool(name, args)` is
+  already the handler dispatch.
+
+**The name collision, and how it was resolved**
+
+Two different things shared the word "skill". The old router never routed among
+capabilities, so it is renamed for what it actually does rather than overloaded:
+
+| Before | After |
+|---|---|
+| `SkillRouter` (`agent/skill-router.ts`) | `PluginRouter` (`agent/plugin-router.ts`) |
+| `selectPluginSkills()` | `selectPlugins()` |
+| `SkillSelectionResult` | `PluginSelectionResult` |
+| `getSkillSummaries()` | `getPluginSummaries()` |
+| manifest `skillSummary` | manifest `summary` |
+| manifest `tools[]` | manifest `skills[]` |
+
+`skillSummary` and `tools` stay accepted as deprecated aliases, and a test asserts both
+spellings normalize to a **byte-identical** canonical manifest, so nothing breaks on load.
+
+**Built**
+- `SKILLS.md` — written before implementation, as the plan required.
+- `SkillDefinitionSchema`: `id`, `description`, `aiInvocable` (default true), `actionType`
+  (default direct), `parameters`, optional `permissions`, optional `ui`.
+- Manifest normalization: `tools` is now **derived** from AI-invocable skills, so the agent
+  loop, tool router and prompt assembly are untouched.
+- `PluginManager.getAllSkills()` / `getSkill(id)`, and the `RegisteredSkill` type.
+- `GET /api/skills` (+ `?plugin=`, `?aiInvocable=`) and `POST /api/skills/:id/invoke`.
+- All six plugin manifests migrated (27 skills total).
+
+**Concrete evidence — against the live server, not mocks**
+
+`GET /api/skills` returned **15 real skills** across the 4 loaded plugins, with
+`todoist.delete-task` correctly typed `workflow`; `?plugin=reminders` filtered to 3;
+unauthenticated request returned 401.
+
+`POST /api/skills/:id/invoke` against real plugin handlers:
+
+| Case | Result |
+|---|---|
+| `test-plugin.ping` | 200 `{"pong":true,"echo":"hello from test-plugin"}` |
+| `reminders.list-reminders` | 200 `{"reminders":[],...}` |
+| `time-tracker.status` | 200 `{"sessions":[],...}` |
+| `time-tracker.start` with no args | 400 `VALIDATION_ERROR` (real ToolRouter message) |
+| `todoist.delete-task` | 409 `APPROVAL_REQUIRED`, handler **not** called |
+| `nope.missing` | 404 `SKILL_NOT_FOUND` |
+
+`PluginRouter` re-verified against live Gemma after the rename — the agent's critical path:
+`remind me to stretch` → `[reminders]` (3 tools), `start a timer` → `[time-tracker]` (6),
+`what's on my todo list?` → `[todoist]` (5), `hello how are you` → `[]` (chatbot mode).
+
+Suite: 595 pass / 1 known pre-existing fail. `tsc --noEmit` clean in all three packages.
+
+**Judgment call, flagged**
+
+The plan named only `GET /api/skills`. I added `POST /api/skills/:id/invoke` in this phase
+too: a discovery endpoint with no way to act is not a usable contract, `aiInvocable: false`
+would define an unreachable capability, and Phase D's gate depends on invocation. It reuses
+`ToolRouter`, so direct invocation is the same validated path the agent loop takes — and a
+`workflow` skill reached over HTTP returns `APPROVAL_REQUIRED` rather than executing, which
+is verified above rather than asserted.
+
+**Not done here**: no `ui` descriptors are populated yet — every skill returns `ui: null`.
+That vocabulary is Phase C, which is next.
