@@ -45,6 +45,68 @@ export interface AgentLoopOutput {
   pendingApproval?: PendingApproval;
 }
 
+// ─── Loop guards ──────────────────────────────────────────────────────────────
+
+/**
+ * How many times a turn may be restarted because the model answered as if it had
+ * acted without ever calling a tool. One retry is enough: if the nudge does not
+ * land the second time, the model genuinely has nothing to call.
+ */
+const MAX_CLAIM_RETRIES = 1;
+
+/**
+ * Sent back to the model when it claims an action is done but called no tool.
+ */
+const CLAIM_CORRECTION_NUDGE =
+  'You replied as if that was already done, but you did not call any tool, so nothing actually happened. ' +
+  'If the request needs an action, call the appropriate tool now. ' +
+  'If no tool is needed, answer plainly without claiming you performed an action.';
+
+/**
+ * Matches responses that assert an action was carried out ("Reminder set…",
+ * "I've added…", "Done."). Used only to decide whether a tool-less response is
+ * suspicious — a false positive costs one extra LLM call, nothing more.
+ */
+const COMPLETION_CLAIM_PATTERN = new RegExp(
+  [
+    // "I've set…", "I have created…", "I set…"
+    /\bi(?:'ve|\s+have)?\s+(?:just\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged)\b/
+      .source,
+    // "Reminder set", "Task added", "Timer has been started"
+    /\b(?:reminder|task|timer|session|note|event|alarm|entry)s?\s+(?:has|have)?\s*(?:been\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed)\b/
+      .source,
+    // Bare confirmations
+    /^(?:done|all set|ok(?:ay)?,?\s+done|got it,?\s+done)\b/.source,
+  ].join('|'),
+  'i'
+);
+
+function looksLikeCompletionClaim(text: string): boolean {
+  return COMPLETION_CLAIM_PATTERN.test(text.trim());
+}
+
+/**
+ * JSON with object keys sorted, so two logically identical tool calls always
+ * produce the same string regardless of key order in the model's output.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0
+  );
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
+}
+
+/** Identity of a completed tool call: name + arguments + result. */
+function toolCallSignature(
+  toolName: string,
+  args: Record<string, unknown>,
+  result: unknown
+): string {
+  return stableStringify({ toolName, args, result });
+}
+
 // ─── Agent loop ───────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutput> {
@@ -52,29 +114,41 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
   const steps: AgentStep[] = [];
   let totalTokens = 0;
 
+  // The prompt is split into a stable half and a volatile half so that prefix
+  // caching survives from turn to turn — see buildSystemPrompt/buildContextPreamble.
   const systemPrompt = buildSystemPrompt(input);
+  const contextPreamble = buildContextPreamble(input);
   const contextWindowSize = input.contextWindowSize ?? 4096;
 
   // Trim history to fit within model's context window before building messages
   const hasTools = input.availableTools.length > 0;
   const trimmedHistory = fitToContextWindow({
-    systemPrompt,
+    // Both prompt halves are reserved, non-negotiable content for budgeting.
+    systemPrompt: `${systemPrompt}\n${contextPreamble}`,
     conversationHistory: input.conversationHistory,
     userMessage: input.userMessage,
     contextWindowSize,
     ...(hasTools ? { tools: input.availableTools } : {}),
   });
 
-  // Build the initial message list: system prompt + (trimmed) history + user message
+  // Message order matters for prefix caching:
+  //   [stable system prompt][tool schemas][history…][volatile context][user message]
+  // Everything up to and including history is byte-identical to the previous
+  // turn, so the backend can reuse its cached prefix.
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     ...trimmedHistory,
+    { role: 'system', content: contextPreamble },
     { role: 'user', content: input.userMessage },
   ];
 
   const tools = input.availableTools.length > 0 ? input.availableTools : undefined;
 
   let stepCount = 0;
+  let lastToolSignature: string | null = null;
+  let claimRetriesUsed = 0;
+  let stoppedForRepeat = false;
+
   while (stepCount < input.config.maxSteps) {
     stepCount++;
     const stepStart = Date.now();
@@ -89,6 +163,31 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
     // ─── Case 1: Text response — agent is done ────────────────────────────────
     if (llmResponse.type === 'text') {
       const text = llmResponse.text ?? '';
+
+      // ─── Claim-vs-reality guard ───────────────────────────────────────────
+      // The model sometimes answers "Reminder set." having called nothing at
+      // all. Retry once, telling it plainly that nothing happened, before we
+      // hand a false confirmation to the user.
+      const calledAnyTool = steps.some((s) => s.type === 'tool_call');
+      if (
+        tools !== undefined &&
+        !calledAnyTool &&
+        claimRetriesUsed < MAX_CLAIM_RETRIES &&
+        looksLikeCompletionClaim(text)
+      ) {
+        claimRetriesUsed++;
+        steps.push({
+          type: 'error',
+          content:
+            'Model claimed an action was completed without calling any tool — retrying once with a correction.',
+          timestamp: stepStart,
+          durationMs: Date.now() - stepStart,
+        });
+        messages.push({ role: 'assistant', content: text });
+        messages.push({ role: 'user', content: CLAIM_CORRECTION_NUDGE });
+        continue;
+      }
+
       steps.push({
         type: 'reasoning',
         content: text,
@@ -152,6 +251,23 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         durationMs: Date.now() - execStart,
       });
 
+      // ─── Repeat guard ─────────────────────────────────────────────────────
+      // Same tool, same arguments, same result twice in a row means the model
+      // is stuck. Stop now instead of burning the rest of the step budget.
+      const signature = toolCallSignature(toolName, toolArgs, toolResult);
+      if (signature === lastToolSignature) {
+        steps.push({
+          type: 'error',
+          content: `Repeated the identical call to "${toolName}" with the same arguments and the same result — stopping to avoid a loop.`,
+          toolName,
+          timestamp: Date.now(),
+          durationMs: 0,
+        });
+        stoppedForRepeat = true;
+        break;
+      }
+      lastToolSignature = signature;
+
       // ─── OBSERVE: Feed result back, continue loop ─────────────────────────
       messages.push({
         role: 'assistant',
@@ -166,49 +282,93 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
     }
   }
 
-  // ─── Max steps reached ────────────────────────────────────────────────────
-  const completedTools = steps
-    .filter((s) => s.type === 'tool_result' && s.toolName)
-    .map((s) => s.toolName as string);
+  // ─── Stopped early: repeat guard tripped, or max steps reached ────────────
+  const completedTools = [
+    ...new Set(
+      steps
+        .filter((s) => s.type === 'tool_result' && s.toolName)
+        .map((s) => s.toolName as string)
+    ),
+  ];
 
-  const maxStepsResponse =
-    completedTools.length > 0
-      ? `I've reached my thinking limit. I completed: ${completedTools.join(', ')}.`
-      : "I've reached my thinking limit without completing any actions.";
+  let stopResponse: string;
+  if (stoppedForRepeat) {
+    stopResponse =
+      completedTools.length > 0
+        ? `I stopped because I was repeating the same action. I completed: ${completedTools.join(', ')}.`
+        : 'I stopped because I was repeating the same action without making progress.';
+  } else {
+    stopResponse =
+      completedTools.length > 0
+        ? `I've reached my thinking limit. I completed: ${completedTools.join(', ')}.`
+        : "I've reached my thinking limit without completing any actions.";
+  }
 
   return {
-    response: maxStepsResponse,
-    trace: buildTrace(input, steps, maxStepsResponse, startTime, totalTokens),
+    response: stopResponse,
+    trace: buildTrace(input, steps, stopResponse, startTime, totalTokens),
   };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(input: AgentLoopInput): string {
-  const now = new Date();
-  const dateStr = formatLocalDate(now);
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local';
-  const timeStr = new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'full',
-    timeStyle: 'long',
-  }).format(now);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
+/**
+ * The stable half of the prompt — byte-identical on every turn.
+ *
+ * Prefix caching (llama.cpp and most hosted APIs) only reuses a prompt up to
+ * the first byte that changed. The tool schemas are rendered immediately after
+ * this message and cost far more tokens than the prompt itself, so anything
+ * that varies per turn must stay out of here — put it in buildContextPreamble().
+ */
+export function buildSystemPrompt(input: AgentLoopInput): string {
   const lines: string[] = [
     'You are TARDIS, a helpful AI assistant. You have access to plugin tools to help respond to the user.',
     'Use the provided tools when they are relevant to the user request.',
     'When you have enough information, respond directly to the user.',
-    `\nToday's local date is ${dateStr}. Current local time is ${timeStr} (${timeZone}).`,
-    'When tools require a date, always pass it as YYYY-MM-DD format using today\'s actual date.',
-    `Tomorrow is ${formatLocalDate(tomorrow)}.`,
+    'Never say an action is done unless you actually called the tool that does it. If you did not call a tool, nothing happened.',
+    "When tools require a date, always pass it as YYYY-MM-DD format using today's actual date.",
     '\n## Response style',
     '- Be concise. Confirm the action, share only relevant info, stop.',
     '- Do NOT offer follow-up options or menus after every response.',
     '- Do NOT use emojis unless the user uses them first.',
     '- Never show internal IDs, raw timestamps, or technical details. Format all dates and times in human-readable form.',
-    '- Match the user\'s energy. Short command = short confirmation. Detailed question = detailed answer.',
+    "- Match the user's energy. Short command = short confirmation. Detailed question = detailed answer.",
     '- You are a capable assistant, not a customer service bot. No cheerfulness, no upselling, no "Would you like to..." after every action.',
+  ];
+
+  // Memory tool instructions (only if memory tools are available)
+  const hasMemoryTools = input.availableTools.some((t) => t.name === 'memory.save');
+  if (hasMemoryTools) {
+    lines.push('\n## Memory');
+    lines.push('- If the user shares a personal fact, preference, or important context (names, emails, schedules, preferences), save it using memory.save with a descriptive snake_case key.');
+    lines.push('- Do not announce that you are saving a memory. Just do it silently alongside your response.');
+    lines.push('- Use memory.recall if the user asks about something you might have stored previously.');
+    lines.push('- Use memory.forget if the user explicitly asks you to forget something.');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * The volatile half of the prompt — current time, active plugins, recalled
+ * memories. Emitted as its own message placed after the conversation history
+ * and directly before the user's message, so it never invalidates the cached
+ * prefix. Time is minute-precision on purpose: a seconds field would change the
+ * prompt on every single request for no practical benefit.
+ */
+export function buildContextPreamble(input: AgentLoopInput): string {
+  const now = new Date();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local';
+  const timeStr = new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'full',
+    timeStyle: 'short',
+  }).format(now);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const lines: string[] = [
+    `Today's local date is ${formatLocalDate(now)}. Current local time is ${timeStr} (${timeZone}).`,
+    `Tomorrow is ${formatLocalDate(tomorrow)}.`,
   ];
 
   if (input.selectedPlugins.length > 0) {
@@ -220,16 +380,6 @@ function buildSystemPrompt(input: AgentLoopInput): string {
     for (const mem of input.memories) {
       lines.push(`- ${mem.key}: ${mem.value}`);
     }
-  }
-
-  // Memory tool instructions (only if memory tools are available)
-  const hasMemoryTools = input.availableTools.some((t) => t.name === 'memory.save');
-  if (hasMemoryTools) {
-    lines.push('\n## Memory');
-    lines.push('- If the user shares a personal fact, preference, or important context (names, emails, schedules, preferences), save it using memory.save with a descriptive snake_case key.');
-    lines.push('- Do not announce that you are saving a memory. Just do it silently alongside your response.');
-    lines.push('- Use memory.recall if the user asks about something you might have stored previously.');
-    lines.push('- Use memory.forget if the user explicitly asks you to forget something.');
   }
 
   return lines.join('\n');

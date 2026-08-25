@@ -388,8 +388,12 @@ describe('runAgentLoop: workflow actions', () => {
 describe('runAgentLoop: maxSteps limit', () => {
   it('stops after maxSteps and returns a limit-reached response', async () => {
     // LLM keeps calling tools forever
+    // Args vary per call so the repeat guard doesn't fire — this test is about
+    // the maxSteps bound, which is a separate mechanism.
     const llm = makeScriptedLLM(
-      Array(20).fill(toolCallResponse('time-tracker.start', { taskName: 'loop' }))
+      Array.from({ length: 20 }, (_, i) =>
+        toolCallResponse('time-tracker.start', { taskName: `loop-${i}` })
+      )
     );
 
     const result = await runAgentLoop(
@@ -429,9 +433,9 @@ describe('runAgentLoop: maxSteps limit', () => {
 
   it('response names the completed tool when maxSteps is hit mid-chain', async () => {
     const llm = makeScriptedLLM(
-      Array(10)
-        .fill(null)
-        .map(() => toolCallResponse('time-tracker.start', { taskName: 'work' }))
+      Array.from({ length: 10 }, (_, i) =>
+        toolCallResponse('time-tracker.start', { taskName: `work-${i}` })
+      )
     );
 
     const result = await runAgentLoop(
@@ -449,7 +453,12 @@ describe('runAgentLoop: maxSteps limit', () => {
 
   it('response says "without completing any actions" when all tool calls had empty toolName', async () => {
     // Malformed tool calls (empty toolName) are falsy and excluded from completedTools
-    const llm = makeScriptedLLM(Array(5).fill({ type: 'tool_call' as const, toolArgs: {} }));
+    const llm = makeScriptedLLM(
+      Array.from({ length: 5 }, (_, i) => ({
+        type: 'tool_call' as const,
+        toolArgs: { attempt: i },
+      }))
+    );
 
     const result = await runAgentLoop(
       makeInput({
@@ -540,24 +549,28 @@ describe('runAgentLoop: conversation history', () => {
     );
 
     const roles = sentMessages.map((m) => m.role);
-    expect(roles[0]).toBe('system');
+    expect(roles[0]).toBe('system'); // stable prompt — cacheable prefix
     expect(roles[1]).toBe('user'); // history
     expect(roles[2]).toBe('assistant'); // history
-    expect(roles[3]).toBe('user'); // current message
-    expect(sentMessages[3]?.content).toBe('And now?');
+    expect(roles[3]).toBe('system'); // volatile context, after history on purpose
+    expect(roles[4]).toBe('user'); // current message
+    expect(sentMessages[4]?.content).toBe('And now?');
   });
 });
 
-// ─── Memory in system prompt ──────────────────────────────────────────────────
+// ─── Memory in the volatile context block ─────────────────────────────────────
 
 describe('runAgentLoop: memories', () => {
-  it('includes memories in the system prompt', async () => {
+  it('includes memories in the volatile context block, not the stable prompt', async () => {
     let sentSystemPrompt = '';
+    let sentContextBlock = '';
 
     const llm: LLMProvider = {
       name: 'mock',
       async chat({ messages }) {
         sentSystemPrompt = messages[0]?.content ?? '';
+        // The volatile block is the message immediately before the user message.
+        sentContextBlock = messages[messages.length - 2]?.content ?? '';
         return textResponse('ok');
       },
       async generate() {
@@ -582,8 +595,11 @@ describe('runAgentLoop: memories', () => {
       })
     );
 
-    expect(sentSystemPrompt).toContain('Mohammad');
-    expect(sentSystemPrompt).toContain('name');
+    expect(sentContextBlock).toContain('Mohammad');
+    expect(sentContextBlock).toContain('name');
+    // The stable prompt must stay free of per-turn content so the cached
+    // prefix (prompt + tool schemas) survives between turns.
+    expect(sentSystemPrompt).not.toContain('Mohammad');
   });
 });
 
@@ -654,5 +670,449 @@ describe('runAgentLoop: trace', () => {
       runAgentLoop(makeInput({ llmProvider: llm2 })),
     ]);
     expect(r1.trace.id).not.toBe(r2.trace.id);
+  });
+});
+
+// ─── Repeat guard (identical tool call twice in a row) ────────────────────────
+
+describe('runAgentLoop: repeat guard', () => {
+  it('breaks immediately when the same tool+args+result repeats, instead of burning the step budget', async () => {
+    let execCount = 0;
+    const llm = makeScriptedLLM(
+      Array(10).fill(toolCallResponse('time-tracker.start', { taskName: 'stuck' }))
+    );
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        config: { ...DEFAULT_CONFIG, maxSteps: 10 },
+        executeTool: async () => {
+          execCount++;
+          return { ok: true };
+        },
+      })
+    );
+
+    // Stopped on the second identical call — not after all 10 steps.
+    expect(execCount).toBe(2);
+    expect(result.trace.steps.filter((s) => s.type === 'tool_call')).toHaveLength(2);
+    expect(result.response).toContain('repeating the same action');
+    const errorStep = result.trace.steps.find((s) => s.type === 'error');
+    expect(errorStep?.content).toContain('Repeated the identical call');
+  });
+
+  it('ignores argument key order when comparing calls', async () => {
+    let execCount = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('time-tracker.start', { taskName: 'x', project: 'y' }),
+      // Same call, keys serialised in the other order.
+      toolCallResponse('time-tracker.start', { project: 'y', taskName: 'x' }),
+      ...Array(5).fill(toolCallResponse('time-tracker.start', { taskName: 'x', project: 'y' })),
+    ]);
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        config: { ...DEFAULT_CONFIG, maxSteps: 10 },
+        executeTool: async () => {
+          execCount++;
+          return { ok: true };
+        },
+      })
+    );
+
+    expect(execCount).toBe(2);
+  });
+
+  it('does NOT break when the same tool is called with different arguments', async () => {
+    let execCount = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('time-tracker.start', { taskName: 'a' }),
+      toolCallResponse('time-tracker.start', { taskName: 'b' }),
+      toolCallResponse('time-tracker.start', { taskName: 'c' }),
+      textResponse('All three started.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        config: { ...DEFAULT_CONFIG, maxSteps: 10 },
+        executeTool: async () => {
+          execCount++;
+          return { ok: true };
+        },
+      })
+    );
+
+    expect(execCount).toBe(3);
+    expect(result.response).toBe('All three started.');
+  });
+
+  it('does NOT break when the same call returns a different result', async () => {
+    let n = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('time-tracker.start', { taskName: 'poll' }),
+      toolCallResponse('time-tracker.start', { taskName: 'poll' }),
+      textResponse('Polled twice.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        config: { ...DEFAULT_CONFIG, maxSteps: 10 },
+        executeTool: async () => ({ tick: n++ }),
+      })
+    );
+
+    expect(result.response).toBe('Polled twice.');
+  });
+});
+
+// ─── Claim-vs-reality guard ───────────────────────────────────────────────────
+
+describe('runAgentLoop: claim-vs-reality guard', () => {
+  it('retries once when the model claims completion with no tool call', async () => {
+    const llm = makeScriptedLLM([
+      textResponse('Reminder set to go on a walk in 5 minutes.'), // the lie
+      toolCallResponse('time-tracker.start', { taskName: 'walk' }), // after the nudge
+      textResponse('Done — reminder is set.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        userMessage: 'Remind me to go on a walk in 5 minutes',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(result.trace.steps.some((s) => s.type === 'tool_call')).toBe(true);
+    const errStep = result.trace.steps.find((s) => s.type === 'error');
+    expect(errStep?.content).toContain('without calling any tool');
+    expect(result.response).toBe('Done — reminder is set.');
+  });
+
+  it('sends an explicit correction telling the model nothing happened', async () => {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => String(m.content ?? '')));
+        call++;
+        return call === 1
+          ? textResponse('Reminder set.')
+          : toolCallResponse('time-tracker.start', { taskName: 'walk' });
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('you did not call any tool'))).toBe(true);
+  });
+
+  it('surfaces the response as-is when the retry also produces no tool call', async () => {
+    const llm = makeScriptedLLM([
+      textResponse('Reminder set.'),
+      textResponse('Reminder set.'), // still no tool call
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        executeTool: async () => ({}),
+      })
+    );
+
+    // Retried exactly once, then gave up and returned the text.
+    expect(result.response).toBe('Reminder set.');
+    expect(result.trace.steps.filter((s) => s.type === 'error')).toHaveLength(1);
+  });
+
+  it('does NOT retry an ordinary answer that claims nothing', async () => {
+    let calls = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat() {
+        calls++;
+        return textResponse('You have three tasks due today.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    const result = await runAgentLoop(
+      makeInput({ llmProvider: llm, availableTools: [DIRECT_TOOL], executeTool: async () => ({}) })
+    );
+
+    expect(calls).toBe(1);
+    expect(result.response).toBe('You have three tasks due today.');
+  });
+
+  it('does NOT retry when the claim follows a real tool call', async () => {
+    let calls = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('time-tracker.start', { taskName: 'walk' }),
+      textResponse('Reminder set.'),
+    ]);
+    const counting: LLMProvider = {
+      name: 'mock',
+      async chat(p) {
+        calls++;
+        return llm.chat(p);
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: counting,
+        availableTools: [DIRECT_TOOL],
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(calls).toBe(2);
+    expect(result.response).toBe('Reminder set.');
+    expect(result.trace.steps.some((s) => s.type === 'error')).toBe(false);
+  });
+
+  it('does not retry when no tools are available at all', async () => {
+    let calls = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat() {
+        calls++;
+        return textResponse('Reminder set.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(makeInput({ llmProvider: llm, availableTools: [] }));
+    expect(calls).toBe(1);
+  });
+});
+
+// ─── Regression: the 2026-08-24 "walk in 5 minutes" false confirmation ────────
+//
+// Real failure captured in thought_traces row 8fd2fa62-8a67-4c48-b348-afa9ce2ab086:
+// the model replied "Reminder set to go on a walk in 5 minutes." with ZERO
+// tool_call steps, because the conversation history had been contaminated with
+// earlier assistant turns that confirmed actions without any recorded tool call.
+// PR #42 fixed the contamination at the source; this locks in the structural
+// guard so the failure class cannot silently return.
+
+describe('regression: false "reminder set" with contaminated history', () => {
+  const CONTAMINATED_HISTORY = [
+    { role: 'user' as const, content: 'Remind me to go on a walk in 5 minutes' },
+    // Pre-#42 shape: a confirmation with no tool_calls recorded alongside it.
+    { role: 'assistant' as const, content: 'Reminder set to go on a walk in 5 minutes.' },
+    { role: 'user' as const, content: 'Give me a reminder in 5 minutes' },
+    { role: 'assistant' as const, content: 'Reminder set to give you a reminder in 5 minutes.' },
+  ];
+
+  const REMINDER_TOOL: ToolDefinition = {
+    name: 'reminders.set-reminder',
+    description: 'Set a reminder to be delivered after a delay',
+    parameters: {
+      type: 'object',
+      properties: {
+        delayMinutes: { type: 'number' },
+        message: { type: 'string' },
+      },
+      required: ['delayMinutes', 'message'],
+    },
+    actionType: 'direct',
+  };
+
+  it('produces a real tool_call step even when the model first mimics the bad history', async () => {
+    const llm = makeScriptedLLM([
+      // The model copies the contaminated pattern and just asserts success.
+      textResponse('Reminder set to go on a walk in 5 minutes.'),
+      // After the correction it actually acts.
+      toolCallResponse('reminders.set-reminder', {
+        delayMinutes: 5,
+        message: 'Go on a walk',
+      }),
+      textResponse('Reminder set for 5 minutes from now.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'Remind me to go on a walk in 5 minutes',
+        conversationHistory: CONTAMINATED_HISTORY,
+        availableTools: [REMINDER_TOOL],
+        selectedPlugins: ['reminders'],
+        executeTool: async () => ({
+          success: true,
+          message: 'Reminder set for 5m from now.',
+        }),
+      })
+    );
+
+    // The core assertion: the turn contains a REAL tool call, not just a claim.
+    const toolCalls = result.trace.steps.filter((s) => s.type === 'tool_call');
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]?.toolName).toBe('reminders.set-reminder');
+    expect(toolCalls[0]?.toolArgs).toEqual({ delayMinutes: 5, message: 'Go on a walk' });
+
+    // And a tool_result proving it actually ran.
+    expect(result.trace.steps.some((s) => s.type === 'tool_result')).toBe(true);
+  });
+});
+
+// ─── Malformed arguments: validation error is fed back as an observation ──────
+
+describe('runAgentLoop: malformed tool arguments recovery', () => {
+  it('feeds a validation error back to the model and lets it retry', async () => {
+    const observations: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        for (const m of messages) {
+          if (m.role === 'tool') observations.push(String(m.content ?? ''));
+        }
+        call++;
+        if (call === 1) {
+          // Missing the required taskName.
+          return toolCallResponse('time-tracker.start', {});
+        }
+        if (call === 2) {
+          return toolCallResponse('time-tracker.start', { taskName: 'fixed' });
+        }
+        return textResponse('Started.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        executeTool: async (_name, args) => {
+          if (!('taskName' in args)) {
+            // Mirrors ToolRouter.asExecutor() throwing on VALIDATION_ERROR.
+            throw new Error(
+              '[VALIDATION_ERROR] Tool "time-tracker.start" missing required argument(s): taskName'
+            );
+          }
+          return { ok: true };
+        },
+      })
+    );
+
+    // The validation failure reached the model as a tool observation…
+    expect(observations.some((o) => o.includes('VALIDATION_ERROR'))).toBe(true);
+    expect(observations.some((o) => o.includes('missing required argument'))).toBe(true);
+    // …and the turn recovered rather than failing outright.
+    expect(result.response).toBe('Started.');
+  });
+});
+
+// ─── Prompt caching: stable prefix must not contain per-turn content ──────────
+
+describe('runAgentLoop: prompt cache friendliness', () => {
+  it('keeps volatile content out of the stable system prompt', async () => {
+    let stable = '';
+    let volatileBlock = '';
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        stable = messages[0]?.content ?? '';
+        volatileBlock = messages[messages.length - 2]?.content ?? '';
+        return textResponse('ok');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        selectedPlugins: ['time-tracker'],
+      })
+    );
+
+    // No clock, no date, no per-turn plugin list in the cached prefix.
+    expect(stable).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(stable).not.toContain('Current local time');
+    expect(stable).not.toContain('Active plugins');
+
+    // They live in the volatile block instead.
+    expect(volatileBlock).toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(volatileBlock).toContain('Active plugins');
+  });
+
+  it('produces a byte-identical stable prompt across separate turns', async () => {
+    const prompts: string[] = [];
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        prompts.push(messages[0]?.content ?? '');
+        return textResponse('ok');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(makeInput({ llmProvider: llm, availableTools: [DIRECT_TOOL] }));
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DIRECT_TOOL],
+        userMessage: 'a different message',
+        conversationHistory: [{ role: 'user', content: 'earlier' }],
+        selectedPlugins: ['time-tracker'],
+      })
+    );
+
+    expect(prompts[0]).toBe(prompts[1]);
+  });
+
+  it('omits seconds from the clock so the prompt is stable within a minute', async () => {
+    let volatileBlock = '';
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        volatileBlock = messages[messages.length - 2]?.content ?? '';
+        return textResponse('ok');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(makeInput({ llmProvider: llm }));
+
+    const timeLine = volatileBlock.split('\n')[0] ?? '';
+    // "7:45 PM" is fine; "7:45:53 PM" is not.
+    expect(timeLine).not.toMatch(/\d{1,2}:\d{2}:\d{2}/);
   });
 });
