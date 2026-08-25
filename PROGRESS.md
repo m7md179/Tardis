@@ -49,7 +49,7 @@ tardis-app/
 |---|---|---|
 | A | Core completion: real persistent memory | **DONE** (2026-08-26) |
 | B | Skills architecture + `SKILLS.md` + `GET /api/skills` + migrate plugins | **DONE** (2026-08-26) |
-| C | Hybrid UI contract + `UI-CONTRACT.md` | NOT STARTED |
+| C | Hybrid UI contract + `UI-CONTRACT.md` | **DONE** (2026-08-26) |
 | D | Client app foundation (new repo) — **gate: real DB change from the app** | NOT STARTED |
 | E | New plugins: health/food (multimodal) + budget | NOT STARTED |
 | F | TUI renderer against the same contract | NOT STARTED |
@@ -210,3 +210,91 @@ is verified above rather than asserted.
 
 **Not done here**: no `ui` descriptors are populated yet — every skill returns `ui: null`.
 That vocabulary is Phase C, which is next.
+
+
+### 2026-08-26 — Phase C: hybrid UI contract
+
+**Verified true before starting**
+- `main @ eb81e6f`, clean. Suite 595 pass / 1 known fail.
+- Only **4 of 6** plugins loaded in production; `notes` and `google-calendar` were dead.
+- Dumped all 27 real skill signatures before designing anything.
+
+**Unblocked the two broken plugins** (prerequisites for deriving their blocks)
+
+Both had the *same bug class* — leftover duplicate declarations from incomplete edits:
+
+| Plugin | Bug |
+|---|---|
+| `notes` | duplicate `tagFilter`; the pre-`IGNORE_TAGS` version survived alongside the fixed one |
+| `google-calendar` | duplicate `date` / `startTime` / `endTime` across two hunks, where the `resolveDate`/`addOneHour` lines from the timezone fix (2830f9b) were the intended ones |
+
+All six plugins now load — **27 skills**, confirmed through the real `PluginManager`, and
+production went from `Loaded 4 plugin(s)` to `Loaded 6 plugin(s)`.
+
+**The vocabulary came from the plugins, not from imagination**
+
+Grouping the 26 real signatures by shape produced five blocks that cover all of them:
+`action`, `form`, `list`, `timer`, `detail`. The things that looked like extra blocks are
+not — a notes text editor is a `form` with a `textarea` field, a calendar date picker is a
+`form` with `date`/`time` fields, a todoist checkbox is a `list` item action. Keeping those
+as *field types* is what stops the vocabulary growing once per plugin, which is the failure
+this contract exists to prevent.
+
+**The escape hatch is enforced, not documented**
+
+`SkillUiDescriptorSchema` rejects a descriptor carrying `custom` UI without a complete
+standard-block fallback, and still enforces block completeness when `custom` is present —
+a bespoke mobile screen does not excuse an unrenderable TUI fallback. This is in the schema
+because the failure mode is silent: the first plugin to ship custom-only UI breaks the
+terminal and nobody notices until someone opens one.
+
+**Concrete evidence — live server**
+
+`GET /api/skills` on production returns **27 skills across all 6 plugins, 18 with a
+descriptor**, and every block is exercised by real plugins:
+
+| block | count |
+|---|---|
+| form | 10 |
+| list | 4 |
+| timer | 2 |
+| action | 1 |
+| detail | 1 |
+
+The 8 skills without a descriptor are exactly the item-action skills
+(`cancel-reminder`, `stop`/`pause`/`resume`, `complete-task`, `delete-*`) — reachable
+through their parent list's `actions`, by design.
+
+**Descriptor vs reality** — each `list`/`timer` descriptor's declared `resultPath` checked
+against the real handler output:
+
+| Skill | resultPath | Verified |
+|---|---|---|
+| `notes.list-notes` | `notes` | yes (list) |
+| `reminders.list-reminders` | `reminders` | yes (list) |
+| `time-tracker.status` | `sessions` | yes (list) |
+| `time-tracker.history` | `sessions` | yes (list) |
+| `todoist.list-tasks` | `tasks` | **no — Todoist API token not configured** |
+| `google-calendar.list-events` | `events` | **no — Google OAuth not connected** |
+
+The last two are correct by source inspection but **unverified at runtime**, blocked on
+external credentials rather than on the contract.
+
+**Also fixed**: `reminders.list-reminders` now returns `fireAtMs` alongside the localised
+`fireAt` string. A countdown timer cannot bind to `"26 Aug 2026, 19:45"`.
+
+**New test**: `manifest-conformance.test.ts` asserts the *shipped* manifests obey the
+contract — ids namespaced to their plugin, `ui.fields` naming only parameters the skill
+actually accepts, and item actions pointing at skills that exist. Schema tests prove the
+rules; this proves the real plugins follow them.
+
+Suite: 637 pass / 1 known pre-existing fail. `tsc --noEmit` clean in all three packages.
+
+**Open dependency for Phase D**: the Phase D gate needs a real database change from the
+app. `todoist` cannot serve as that proof until its API token is configured, and
+`google-calendar` needs OAuth. `reminders`, `notes` and `time-tracker` are fully working
+and can carry the gate instead — I will use those unless Mohammad supplies a Todoist token.
+
+**Next**: Phase D — new `tardis-app` repo (Expo mobile + Next.js web, shared
+`packages/core` and `packages/ui-contract`), JWT auth, generic block renderers, and a
+skills dashboard driven by `GET /api/skills`.
