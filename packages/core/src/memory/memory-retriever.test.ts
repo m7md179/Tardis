@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { existsSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
-import { createDb, migrate } from '@tardis/db';
+import { createDb, migrate, memories, eq } from '@tardis/db';
 import { MemoryStore } from './memory-store.js';
 import { MemoryRetriever } from './memory-retriever.js';
 
@@ -20,14 +20,21 @@ function makeTestDb() {
 describe('MemoryRetriever', () => {
   let store: MemoryStore;
   let retriever: MemoryRetriever;
+  let db: ReturnType<typeof createDb>;
   let cleanup: () => void;
 
   beforeEach(async () => {
     const testDb = makeTestDb();
+    db = testDb.db;
     store = new MemoryStore(testDb.db);
     retriever = new MemoryRetriever(store, 2000);
     cleanup = testDb.cleanup;
   });
+
+  /** Force a memory's timestamps, so recency tests don't depend on wall-clock luck. */
+  async function setTimestamps(id: string, ms: number): Promise<void> {
+    await db.update(memories).set({ updatedAt: ms, accessedAt: ms }).where(eq(memories.id, id));
+  }
 
   afterEach(() => cleanup());
 
@@ -71,7 +78,7 @@ describe('MemoryRetriever', () => {
 
   it('should rank recently accessed memories higher than stale ones', async () => {
     // Create two memories with same keyword match strength
-    await store.create({
+    const stale = await store.create({
       type: 'user_fact',
       key: 'project_alpha',
       value: 'Alpha project deadline is Friday',
@@ -82,8 +89,13 @@ describe('MemoryRetriever', () => {
       value: 'Beta project started last week',
     });
 
-    // Touch "beta" so it has a recent accessedAt, leave "alpha" untouched
-    await store.touchAccessed(recent.id);
+    // Pin the timestamps explicitly. Creating both and touching one takes well
+    // under a millisecond, and Date.now() cannot resolve that — the recency
+    // bonuses came out equal (or ~1e-8 apart) and the stable sort then returned
+    // insertion order, so this test failed intermittently. Three days of
+    // separation makes the ranking it checks actually deterministic.
+    await setTimestamps(stale.id, Date.now() - 3 * 24 * 60 * 60 * 1000);
+    await setTimestamps(recent.id, Date.now());
 
     // Both match "project" in key — but beta was recently accessed
     const results = await retriever.getRelevant('project status');

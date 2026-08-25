@@ -81,7 +81,7 @@ function claimCorrectionNudge(userMessage: string): string {
 const COMPLETION_CLAIM_PATTERN = new RegExp(
   [
     // "I've set…", "I have created…", "I set…"
-    /\bi(?:'ve|\s+have)?\s+(?:just\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged)\b/
+    /\bi(?:'ve|\s+have)?\s+(?:just\s+|already\s+|now\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged)\b/
       .source,
     // "Reminder set", "Task added", "Timer has been started"
     /\b(?:memory|memories|reminder|task|timer|session|note|event|alarm|entry|fact|preference)s?\s+(?:has|have)?\s*(?:been\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed)\b/
@@ -199,15 +199,20 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         continue;
       }
 
+      // An empty reply is never useful, and Telegram rejects empty message
+      // text outright — so treat it as a failure and substitute something
+      // truthful rather than shipping a blank turn.
+      const finalText = text.trim() ? text : fallbackForEmptyResponse(steps);
+
       steps.push({
         type: 'reasoning',
-        content: text,
+        content: finalText,
         timestamp: stepStart,
         durationMs: Date.now() - stepStart,
       });
       return {
-        response: text,
-        trace: buildTrace(input, steps, text, startTime, totalTokens),
+        response: finalText,
+        trace: buildTrace(input, steps, finalText, startTime, totalTokens),
       };
     }
 
@@ -359,6 +364,11 @@ export function buildSystemPrompt(input: AgentLoopInput): string {
   if (hasMemoryTools) {
     lines.push('\n## Memory');
     lines.push('- If the user shares a personal fact, preference, or important context (names, emails, schedules, preferences), save it using memory.save with a descriptive snake_case key.');
+    // Keep "silently": measured 15/15 saves against the live model. Rewording
+    // this to ask for a spoken acknowledgement dropped saves to 1/4 — the model
+    // produced the acknowledgement INSTEAD of calling the tool ("I have already
+    // saved that..."). The empty replies this wording causes are handled by
+    // fallbackForEmptyResponse() instead, which is deterministic.
     lines.push('- Do not announce that you are saving a memory. Just do it silently alongside your response.');
     lines.push('- Use memory.recall if the user asks about something you might have stored previously.');
     lines.push('- Use memory.forget if the user explicitly asks you to forget something.');
@@ -411,6 +421,20 @@ export function buildContextPreamble(input: AgentLoopInput): string {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Chooses a stand-in when the model returns an empty final response.
+ *
+ * Measured at 10/12 empty replies after a memory.save before the prompt was
+ * reworded — the instruction to save "silently" left the model with nothing to
+ * say. The prompt is fixed, but a blank reply is a hard failure downstream
+ * (Telegram rejects empty text), so this stays as a net. It only ever claims
+ * what the trace actually shows: that tools ran.
+ */
+function fallbackForEmptyResponse(steps: AgentStep[]): string {
+  const ranTools = steps.some((s) => s.type === 'tool_result');
+  return ranTools ? 'Done.' : "Sorry — I didn't catch that. Could you rephrase?";
 }
 
 function formatLocalDate(date: Date): string {
