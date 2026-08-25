@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
-import { runAgentLoop, selectPluginSkills } from '@tardis/core';
+import { runAgentLoop, selectPlugins } from '@tardis/core';
 import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever, ConversationStore, ThoughtTracer } from '@tardis/core';
 import type { MemoryExecutor } from '@tardis/core';
 import type { AgentConfig, PluginManifest, ToolDefinition } from '@tardis/shared';
@@ -117,7 +117,7 @@ export async function handleUserMessage(
   // ─── Normal agent flow ─────────────────────────────────────────────────
   try {
     const allManifests = deps.getAllManifests();
-    const { tools, selectedPlugins } = await selectPluginSkills(
+    const { tools, selectedPlugins } = await selectPlugins(
       text,
       allManifests,
       deps.llmProvider
@@ -246,7 +246,7 @@ export function handlePluginsCommand(deps: BotDeps): BotResponse {
     return { text: 'No plugins loaded.' };
   }
   const list = manifests
-    .map((m) => `• *${m.displayName}* (${m.name}) — Tier ${m.tier}\n  ${m.skillSummary}`)
+    .map((m) => `• *${m.displayName}* (${m.name}) — Tier ${m.tier}\n  ${m.summary}`)
     .join('\n\n');
   return { text: `*Loaded plugins:*\n\n${list}` };
 }

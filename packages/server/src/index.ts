@@ -125,6 +125,7 @@ async function main(): Promise<void> {
 
   // 6. Start Hono HTTP server (Bun native)
   const app = createApp({
+    toolRouter,
     db,
     config,
     pluginManager,

@@ -14,6 +14,8 @@ export interface AppDeps {
   db: TardisDB;
   config: SystemConfig;
   pluginManager: PluginManager;
+  /** Routes direct (non-LLM) skill invocations. Same validation path the agent loop uses. */
+  toolRouter?: import('@tardis/core').ToolRouter;
   /** Called when PUT /api/config/llm succeeds — persist the change. */
   saveConfig: (updated: SystemConfig) => void;
   /** Proactive scheduler instance (optional, added in Phase 5). */
@@ -154,10 +156,82 @@ export function createApp(deps: AppDeps): Hono {
         displayName: m.displayName,
         version: m.version,
         tier: m.tier,
-        skillSummary: m.skillSummary,
+        summary: m.summary,
         toolCount: m.tools.length,
       }))
     );
+  });
+
+  // ─── Skills ───────────────────────────────────────────────────────────────
+  //
+  // The generic contract every client renders from. Clients never hardcode
+  // per-plugin knowledge — they read this and render the uiDescriptor.
+
+  app.get('/api/skills', (c) => {
+    const pluginFilter = c.req.query('plugin');
+    const aiFilter = c.req.query('aiInvocable');
+
+    let skills = deps.pluginManager.getAllSkills();
+    if (pluginFilter) skills = skills.filter((s) => s.plugin === pluginFilter);
+    if (aiFilter === 'true') skills = skills.filter((s) => s.aiInvocable);
+    if (aiFilter === 'false') skills = skills.filter((s) => !s.aiInvocable);
+
+    return c.json({
+      skills: skills.map((s) => ({
+        id: s.id,
+        plugin: s.plugin,
+        pluginDisplayName: s.pluginDisplayName,
+        description: s.description,
+        aiInvocable: s.aiInvocable,
+        actionType: s.actionType,
+        parameters: s.parameters,
+        ui: s.ui ?? null,
+      })),
+    });
+  });
+
+  app.post('/api/skills/:id/invoke', async (c) => {
+    const id = c.req.param('id');
+    const skill = deps.pluginManager.getSkill(id);
+    if (!skill) {
+      return c.json({ success: false, error: `Skill "${id}" not found`, code: 'SKILL_NOT_FOUND' }, 404);
+    }
+    if (!deps.toolRouter) {
+      return c.json(
+        { success: false, error: 'Skill invocation is not configured', code: 'NOT_CONFIGURED' },
+        503
+      );
+    }
+
+    let args: Record<string, unknown> = {};
+    try {
+      const body = (await c.req.json()) as { args?: Record<string, unknown> };
+      args = body.args ?? {};
+    } catch {
+      // No body is fine for zero-argument skills.
+    }
+
+    // A workflow skill must not execute just because it was reached over HTTP
+    // instead of through the agent loop. Direct invocation is a different door,
+    // not a weaker one.
+    if (skill.actionType === 'workflow') {
+      return c.json(
+        {
+          success: false,
+          code: 'APPROVAL_REQUIRED',
+          error: `Skill "${id}" requires approval before it runs`,
+          preview: { skill: id, args },
+        },
+        409
+      );
+    }
+
+    const result = await deps.toolRouter.execute(id, args);
+    if (!result.success) {
+      const status = result.code === 'VALIDATION_ERROR' ? 400 : 500;
+      return c.json({ success: false, error: result.error, code: result.code }, status);
+    }
+    return c.json({ success: true, data: result.data });
   });
 
   // ─── Thought traces ───────────────────────────────────────────────────────

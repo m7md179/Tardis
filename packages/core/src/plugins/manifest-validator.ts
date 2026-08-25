@@ -64,7 +64,7 @@ const VALID_PERMISSIONS = new Set([
  * Validate permission strings in a manifest.
  * Throws ManifestValidationError for unknown permissions.
  */
-export function validatePermissions(manifest: PluginManifest): void {
+export function validatePermissions(manifest: Pick<PluginManifest, 'name' | 'permissions'>): void {
   const unknown = manifest.permissions.filter((p) => !VALID_PERMISSIONS.has(p));
   if (unknown.length > 0) {
     throw new ManifestValidationError(

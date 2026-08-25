@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import type { AppDeps } from './app.js';
 import { createDb, migrate } from '@tardis/db';
 import type { PluginManager } from '@tardis/core';
+import { PluginManifestSchema } from '@tardis/shared';
 import type { PluginManifest, SystemConfig } from '@tardis/shared';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -27,14 +28,14 @@ const BASE_CONFIG: SystemConfig = {
 };
 
 function makeManifest(name: string): PluginManifest {
-  return {
+  return PluginManifestSchema.parse({
     name,
     version: '1.0.0',
     displayName: name,
     description: `${name} plugin`,
     tier: 1,
     main: 'index.ts',
-    skillSummary: `${name} skill`,
+    summary: `${name} skill`,
     permissions: [],
     tools: [
       {
@@ -44,7 +45,7 @@ function makeManifest(name: string): PluginManifest {
         actionType: 'direct',
       },
     ],
-  };
+  });
 }
 
 function makeMockPluginManager(manifests: PluginManifest[] = []): PluginManager {
@@ -52,7 +53,17 @@ function makeMockPluginManager(manifests: PluginManifest[] = []): PluginManager 
     getAllManifests: () => manifests,
     getPlugin: () => undefined,
     executeTool: async () => ({}),
-    getSkillSummaries: () => [],
+    getPluginSummaries: () => [],
+    getAllSkills: () =>
+      manifests.flatMap((m) =>
+        m.skills.map((sk) => ({ ...sk, plugin: m.name, pluginDisplayName: m.displayName }))
+      ),
+    getSkill: (id: string) =>
+      manifests
+        .flatMap((m) =>
+          m.skills.map((sk) => ({ ...sk, plugin: m.name, pluginDisplayName: m.displayName }))
+        )
+        .find((sk) => sk.id === id) ?? null,
     getToolsForPlugins: () => [],
     isLoaded: () => false,
     loadAll: async () => {},
@@ -161,7 +172,7 @@ describe('GET /api/plugins', () => {
     }
   });
 
-  it('returns plugin list with name, tier, skillSummary, toolCount', async () => {
+  it('returns plugin list with name, tier, summary, toolCount', async () => {
     const { app, cleanup } = await makeApp({
       pluginManager: makeMockPluginManager([makeManifest('time-tracker'), makeManifest('todoist')]),
     });
@@ -649,6 +660,185 @@ describe('Memory search', () => {
       const body = (await res.json()) as { data: unknown[]; total: number };
       expect(body.data).toHaveLength(1);
       expect(body.total).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ─── Skills contract (Phase B) ────────────────────────────────────────────────
+//
+// GET /api/skills is what every client — mobile, web, TUI — renders from, so
+// its shape is a contract, not an implementation detail.
+
+describe('GET /api/skills', () => {
+  it('returns every skill with the fields clients render from', async () => {
+    const { app, cleanup } = await makeApp({
+      pluginManager: makeMockPluginManager([makeManifest('reminders')]),
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills', { headers: authHeaders(token) });
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as { skills: Record<string, unknown>[] };
+      expect(body.skills).toHaveLength(1);
+      const skill = body.skills[0]!;
+      expect(skill.id).toBe('reminders.tool');
+      expect(skill.plugin).toBe('reminders');
+      expect(skill.description).toBe('A tool');
+      expect(skill.aiInvocable).toBe(true);
+      expect(skill.actionType).toBe('direct');
+      expect(skill.parameters).toEqual({ type: 'object', properties: {} });
+      // Always present, even before Phase C fills it in — clients can rely on the key.
+      expect(skill).toHaveProperty('ui');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('filters by plugin', async () => {
+    const { app, cleanup } = await makeApp({
+      pluginManager: makeMockPluginManager([makeManifest('reminders'), makeManifest('todoist')]),
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills?plugin=todoist', { headers: authHeaders(token) });
+      const body = (await res.json()) as { skills: { plugin: string }[] };
+      expect(body.skills).toHaveLength(1);
+      expect(body.skills[0]!.plugin).toBe('todoist');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('requires auth', async () => {
+    const { app, cleanup } = await makeApp();
+    try {
+      expect((await app.request('/api/skills')).status).toBe(401);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('POST /api/skills/:id/invoke', () => {
+  it('executes a direct skill and returns the handler result', async () => {
+    let received: unknown = null;
+    const { app, cleanup } = await makeApp({
+      pluginManager: makeMockPluginManager([makeManifest('reminders')]),
+      toolRouter: {
+        execute: async (id: string, args: Record<string, unknown>) => {
+          received = { id, args };
+          return { success: true as const, data: { created: true } };
+        },
+      } as unknown as AppDeps['toolRouter'],
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/reminders.tool/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: { message: 'walk' } }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true, data: { created: true } });
+      // Direct invocation goes through the same ToolRouter the agent loop uses.
+      expect(received).toEqual({ id: 'reminders.tool', args: { message: 'walk' } });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('returns 404 for an unknown skill', async () => {
+    const { app, cleanup } = await makeApp({
+      pluginManager: makeMockPluginManager([makeManifest('reminders')]),
+      toolRouter: {
+        execute: async () => ({ success: true as const, data: {} }),
+      } as unknown as AppDeps['toolRouter'],
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/nope.missing/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: {} }),
+      });
+      expect(res.status).toBe(404);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'SKILL_NOT_FOUND' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('surfaces validation errors as 400 with the router error code', async () => {
+    const { app, cleanup } = await makeApp({
+      pluginManager: makeMockPluginManager([makeManifest('reminders')]),
+      toolRouter: {
+        execute: async () => ({
+          success: false as const,
+          error: 'missing required argument(s): message',
+          code: 'VALIDATION_ERROR' as const,
+        }),
+      } as unknown as AppDeps['toolRouter'],
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/reminders.tool/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: {} }),
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'VALIDATION_ERROR' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('refuses to run a workflow skill without approval', async () => {
+    let called = false;
+    const workflowManifest = PluginManifestSchema.parse({
+      name: 'todoist',
+      version: '1.0.0',
+      displayName: 'todoist',
+      description: 'todoist plugin',
+      tier: 1,
+      main: 'index.ts',
+      summary: 'todoist skill',
+      permissions: [],
+      skills: [
+        {
+          id: 'todoist.delete-task',
+          description: 'Delete a task permanently',
+          actionType: 'workflow',
+          parameters: { type: 'object', properties: {} },
+        },
+      ],
+    });
+
+    const { app, cleanup } = await makeApp({
+      pluginManager: makeMockPluginManager([workflowManifest]),
+      toolRouter: {
+        execute: async () => {
+          called = true;
+          return { success: true as const, data: {} };
+        },
+      } as unknown as AppDeps['toolRouter'],
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/todoist.delete-task/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: { taskName: 'x' } }),
+      });
+
+      // Reaching a workflow skill over HTTP must not bypass approval.
+      expect(res.status).toBe(409);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'APPROVAL_REQUIRED' });
+      expect(called).toBe(false);
     } finally {
       cleanup();
     }

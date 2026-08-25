@@ -3,8 +3,8 @@ import type { LLMProvider } from '../llm/provider.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface SkillSelectionResult {
-  /** Plugin names chosen by the skill router. Empty means chatbot mode (no tools). */
+export interface PluginSelectionResult {
+  /** Plugin names chosen by the router. Empty means chatbot mode (no tools). */
   selectedPlugins: string[];
   /** Full tool schemas for the selected plugins, ready to pass to the agent loop. */
   tools: ToolDefinition[];
@@ -14,14 +14,18 @@ export interface SkillSelectionResult {
   method: 'llm' | 'explicit' | 'fallback' | 'empty';
 }
 
-// ─── Skill Router ─────────────────────────────────────────────────────────────
+// ─── Plugin Router ────────────────────────────────────────────────────────────
 
 /**
  * Selects the relevant plugins for a user message before the agent loop runs.
  *
+ * Named PluginRouter, not SkillRouter: it chooses among *plugins* using each
+ * plugin's one-line `summary`. A Skill is a single capability inside a plugin
+ * (see SKILLS.md) — a different concept that used to share this name.
+ *
  * Solves the "20 plugin problem": instead of dumping all tool schemas into
  * every request (expensive in tokens, confusing for small models), each plugin
- * provides a short `skillSummary`. The router sends ONLY those summaries to the
+ * provides a short `summary`. The router sends ONLY those summaries to the
  * LLM and asks it to pick the relevant plugins. The full tool schemas for only
  * the selected plugins are then loaded for the agent loop.
  *
@@ -31,11 +35,11 @@ export interface SkillSelectionResult {
  *   3. Fallback         — if LLM returns malformed JSON, load all plugins
  *   4. Empty            — if no plugins are loaded, return empty (chatbot mode)
  */
-export async function selectPluginSkills(
+export async function selectPlugins(
   userMessage: string,
   allPlugins: PluginManifest[],
   llmProvider: LLMProvider
-): Promise<SkillSelectionResult> {
+): Promise<PluginSelectionResult> {
   const start = Date.now();
 
   // ─── Edge case: no plugins loaded ────────────────────────────────────────
@@ -56,7 +60,7 @@ export async function selectPluginSkills(
   }
 
   // ─── Strategy 2: LLM-based selection ─────────────────────────────────────
-  const pluginSummaries = allPlugins.map((p) => `- ${p.name}: "${p.skillSummary}"`).join('\n');
+  const pluginSummaries = allPlugins.map((p) => `- ${p.name}: "${p.summary}"`).join('\n');
 
   const selectionPrompt =
     `Given the user's message, pick which plugins are needed to handle it.\n` +

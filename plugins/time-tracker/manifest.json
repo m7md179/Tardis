@@ -3,26 +3,40 @@
   "version": "1.0.0",
   "displayName": "Time Tracker",
   "description": "Track time spent on tasks with start/stop/pause/resume.",
-  "skillSummary": "Track time spent working on tasks. Start, stop, pause, and resume timers. View session history and daily summaries.",
+  "summary": "Track time spent working on tasks. Start, stop, pause, and resume timers. View session history and daily summaries.",
   "tier": 1,
   "main": "index.ts",
-  "permissions": ["sessions:read", "sessions:write", "storage:read", "storage:write", "notifications:send"],
-  "tools": [
+  "permissions": [
+    "sessions:read",
+    "sessions:write",
+    "storage:read",
+    "storage:write",
+    "notifications:send"
+  ],
+  "skills": [
     {
-      "name": "time-tracker.start",
+      "id": "time-tracker.start",
       "description": "Start tracking time for a task. Use when the user wants to begin working on something.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
-          "taskName": { "type": "string", "description": "Name of the task to track" }
+          "taskName": {
+            "type": "string",
+            "description": "Name of the task to track"
+          }
         },
-        "required": ["taskName"]
-      },
-      "actionType": "direct"
+        "required": [
+          "taskName"
+        ]
+      }
     },
     {
-      "name": "time-tracker.stop",
+      "id": "time-tracker.stop",
       "description": "Stop the active timer and record the session.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
@@ -31,12 +45,13 @@
             "description": "Session ID to stop. If omitted, stops the most recent active session."
           }
         }
-      },
-      "actionType": "direct"
+      }
     },
     {
-      "name": "time-tracker.pause",
+      "id": "time-tracker.pause",
       "description": "Pause the active timer without ending the session.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
@@ -45,12 +60,13 @@
             "description": "Session ID to pause. If omitted, pauses the active session."
           }
         }
-      },
-      "actionType": "direct"
+      }
     },
     {
-      "name": "time-tracker.resume",
+      "id": "time-tracker.resume",
       "description": "Resume a paused timer.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
@@ -59,21 +75,23 @@
             "description": "Session ID to resume. If omitted, resumes the paused session."
           }
         }
-      },
-      "actionType": "direct"
+      }
     },
     {
-      "name": "time-tracker.status",
+      "id": "time-tracker.status",
       "description": "Check currently running or paused sessions. Only shows IN-PROGRESS sessions, not past history.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {}
-      },
-      "actionType": "direct"
+      }
     },
     {
-      "name": "time-tracker.history",
+      "id": "time-tracker.history",
       "description": "Get past completed sessions with durations. Use this for 'show history', 'what did I work on', 'how long did I track'. Do NOT use time-tracker.status for history.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
@@ -81,10 +99,12 @@
             "type": "string",
             "description": "Date to filter by (YYYY-MM-DD). Defaults to all recent sessions."
           },
-          "limit": { "type": "number", "description": "Max results to return. Default 10." }
+          "limit": {
+            "type": "number",
+            "description": "Max results to return. Default 10."
+          }
         }
-      },
-      "actionType": "direct"
+      }
     }
   ],
   "proactive": [

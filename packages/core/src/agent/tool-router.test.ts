@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import { ToolRouter } from './tool-router.js';
 import type { PluginManager } from '../plugins/plugin-manager.js';
+import { PluginManifestSchema } from '@tardis/shared';
 import type { PluginManifest } from '@tardis/shared';
 
 // ─── Mock PluginManager ───────────────────────────────────────────────────────
@@ -36,17 +37,17 @@ function makeMockManager(plugins: MockPlugin[]): PluginManager {
 }
 
 function makeManifest(pluginName: string, tools: PluginManifest['tools']): PluginManifest {
-  return {
+  return PluginManifestSchema.parse({
     name: pluginName,
     version: '1.0.0',
     displayName: pluginName,
     description: 'test plugin',
     tier: 1,
     main: 'index.ts',
-    skillSummary: 'Test plugin for unit tests.',
+    summary: 'Test plugin for unit tests.',
     permissions: [],
     tools,
-  };
+  });
 }
 
 // ─── TOOL_NOT_FOUND ───────────────────────────────────────────────────────────

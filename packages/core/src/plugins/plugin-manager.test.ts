@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, rmSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { PluginManager, PluginLoadError } from './plugin-manager.js';
+import { PluginManifestSchema } from '@tardis/shared';
 import type { PluginManifest } from '@tardis/shared';
 
 // ─── Helpers ───
@@ -24,12 +25,12 @@ function createPlugin(dir: string, manifest: unknown, indexContent?: string): vo
   }
 }
 
-const VALID_MANIFEST: PluginManifest = {
+const VALID_MANIFEST: PluginManifest = PluginManifestSchema.parse({
   name: 'test-plugin',
   version: '1.0.0',
   displayName: 'Test Plugin',
   description: 'A test plugin',
-  skillSummary: 'Used for testing the plugin manager.',
+  summary: 'Used for testing the plugin manager.',
   tier: 1,
   main: 'index.ts',
   permissions: ['storage:read', 'storage:write'],
@@ -41,7 +42,7 @@ const VALID_MANIFEST: PluginManifest = {
       actionType: 'direct',
     },
   ],
-};
+});
 
 const mockApi = () => ({
   storage: {
@@ -221,7 +222,7 @@ export const executeTool = async () => ({});`;
 // ─── Skill summaries and tool definitions ───
 
 describe('PluginManager: skill summaries and tools', () => {
-  it('returns skillSummary cards for all loaded plugins', async () => {
+  it('returns summary cards for all loaded plugins', async () => {
     const dir = makeTempDir();
     try {
       const content = `export const onActivate = async () => {};
@@ -231,10 +232,10 @@ export const executeTool = async () => ({});`;
       const manager = new PluginManager(dir, mockApi);
       await manager.loadAll();
 
-      const summaries = manager.getSkillSummaries();
+      const summaries = manager.getPluginSummaries();
       expect(summaries).toHaveLength(1);
       expect(summaries[0]?.name).toBe('test-plugin');
-      expect(summaries[0]?.skillSummary).toBe(VALID_MANIFEST.skillSummary);
+      expect(summaries[0]?.summary).toBe(VALID_MANIFEST.summary);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

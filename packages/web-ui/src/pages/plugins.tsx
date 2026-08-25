@@ -6,7 +6,7 @@ interface Plugin {
   displayName: string;
   version: string;
   tier: number;
-  skillSummary: string;
+  summary: string;
   toolCount: number;
 }
 
@@ -57,7 +57,7 @@ export function PluginsPage() {
                     {tier.label}
                   </span>
                 </div>
-                <p className="text-sm text-gray-400 flex-1">{p.skillSummary}</p>
+                <p className="text-sm text-gray-400 flex-1">{p.summary}</p>
                 <div className="mt-3 pt-3 border-t border-gray-800 text-xs text-gray-500">
                   {p.toolCount} tool{p.toolCount !== 1 ? 's' : ''} registered
                 </div>

@@ -3,14 +3,21 @@
   "version": "1.0.0",
   "displayName": "Todoist",
   "description": "Manage Todoist tasks: create, complete, update, delete, and list.",
-  "skillSummary": "Manage tasks in Todoist. Create, complete, update, delete, and list tasks. Supports due dates, priorities, and fuzzy name matching.",
+  "summary": "Manage tasks in Todoist. Create, complete, update, delete, and list tasks. Supports due dates, priorities, and fuzzy name matching.",
   "tier": 1,
   "main": "index.ts",
-  "permissions": ["http:external", "storage:read", "storage:write", "notifications:send"],
-  "tools": [
+  "permissions": [
+    "http:external",
+    "storage:read",
+    "storage:write",
+    "notifications:send"
+  ],
+  "skills": [
     {
-      "name": "todoist.list-tasks",
+      "id": "todoist.list-tasks",
       "description": "List tasks from Todoist. Can filter with a Todoist query like 'today', 'overdue', or 'p1'.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
@@ -19,66 +26,107 @@
             "description": "Todoist filter query (e.g. 'today', 'overdue', 'p1'). Leave empty for all active tasks."
           }
         }
-      },
-      "actionType": "direct"
+      }
     },
     {
-      "name": "todoist.add-task",
+      "id": "todoist.add-task",
       "description": "Create a new task in Todoist.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
-          "content": { "type": "string", "description": "Task title" },
-          "description": { "type": "string", "description": "Optional task description" },
+          "content": {
+            "type": "string",
+            "description": "Task title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional task description"
+          },
           "dueString": {
             "type": "string",
             "description": "Due date in natural language (e.g. 'tomorrow', 'next monday', 'today')"
           },
-          "priority": { "type": "number", "description": "Priority 1-4 (4 is highest/urgent)" }
+          "priority": {
+            "type": "number",
+            "description": "Priority 1-4 (4 is highest/urgent)"
+          }
         },
-        "required": ["content"]
-      },
-      "actionType": "direct"
+        "required": [
+          "content"
+        ]
+      }
     },
     {
-      "name": "todoist.complete-task",
+      "id": "todoist.complete-task",
       "description": "Mark a task as complete using fuzzy name matching.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
-          "taskName": { "type": "string", "description": "Name or partial name of the task to complete" }
+          "taskName": {
+            "type": "string",
+            "description": "Name or partial name of the task to complete"
+          }
         },
-        "required": ["taskName"]
-      },
-      "actionType": "direct"
+        "required": [
+          "taskName"
+        ]
+      }
     },
     {
-      "name": "todoist.update-task",
+      "id": "todoist.update-task",
       "description": "Update an existing task's content, description, due date, or priority.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
-          "taskName": { "type": "string", "description": "Name or partial name of the task to update" },
-          "content": { "type": "string", "description": "New task title" },
-          "description": { "type": "string", "description": "New task description" },
-          "dueString": { "type": "string", "description": "New due date in natural language" },
-          "priority": { "type": "number", "description": "New priority 1-4" }
+          "taskName": {
+            "type": "string",
+            "description": "Name or partial name of the task to update"
+          },
+          "content": {
+            "type": "string",
+            "description": "New task title"
+          },
+          "description": {
+            "type": "string",
+            "description": "New task description"
+          },
+          "dueString": {
+            "type": "string",
+            "description": "New due date in natural language"
+          },
+          "priority": {
+            "type": "number",
+            "description": "New priority 1-4"
+          }
         },
-        "required": ["taskName"]
-      },
-      "actionType": "direct"
+        "required": [
+          "taskName"
+        ]
+      }
     },
     {
-      "name": "todoist.delete-task",
+      "id": "todoist.delete-task",
       "description": "Permanently delete a task from Todoist. This cannot be undone.",
+      "aiInvocable": true,
+      "actionType": "workflow",
       "parameters": {
         "type": "object",
         "properties": {
-          "taskName": { "type": "string", "description": "Name or partial name of the task to delete" }
+          "taskName": {
+            "type": "string",
+            "description": "Name or partial name of the task to delete"
+          }
         },
-        "required": ["taskName"]
-      },
-      "actionType": "workflow"
+        "required": [
+          "taskName"
+        ]
+      }
     }
   ],
   "proactive": [
