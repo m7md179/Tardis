@@ -3,14 +3,19 @@
   "version": "1.0.0",
   "displayName": "Test Plugin",
   "description": "A minimal plugin for testing the plugin system during development.",
-  "skillSummary": "Test plugin used during development to verify the plugin loader, permission guard, and plugin API work correctly.",
+  "summary": "Test plugin used during development to verify the plugin loader, permission guard, and plugin API work correctly.",
   "tier": 1,
   "main": "index.ts",
-  "permissions": ["storage:read", "storage:write"],
-  "tools": [
+  "permissions": [
+    "storage:read",
+    "storage:write"
+  ],
+  "skills": [
     {
-      "name": "test-plugin.ping",
+      "id": "test-plugin.ping",
       "description": "Returns a pong response. Used to verify the plugin is loaded and callable.",
+      "aiInvocable": true,
+      "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
@@ -19,8 +24,7 @@
             "description": "Optional message to echo back."
           }
         }
-      },
-      "actionType": "direct"
+      }
     }
   ]
 }

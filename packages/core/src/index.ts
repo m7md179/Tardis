@@ -3,6 +3,7 @@ export { loadConfig, DEFAULT_DATA_DIR } from './config/config.js';
 export { ConfigError } from './config/errors.js';
 export { EventBus } from './events/event-bus.js';
 export { PluginManager, PluginLoadError } from './plugins/plugin-manager.js';
+export type { RegisteredSkill } from './plugins/plugin-manager.js';
 export {
   ManifestValidationError,
   validateManifest,
@@ -42,8 +43,8 @@ export type { OpenAIAdapterConfig } from './llm/openai-adapter.js';
 export { OllamaAdapter } from './llm/ollama-adapter.js';
 export type { OllamaAdapterConfig } from './llm/ollama-adapter.js';
 export { ThoughtTracer } from './agent/thought-tracer.js';
-export { selectPluginSkills } from './agent/skill-router.js';
-export type { SkillSelectionResult } from './agent/skill-router.js';
+export { selectPlugins } from './agent/plugin-router.js';
+export type { PluginSelectionResult } from './agent/plugin-router.js';
 export { ToolRouter } from './agent/tool-router.js';
 export type { ToolResult, ToolResultCode } from './agent/tool-router.js';
 export { runAgentLoop } from './agent/agent-loop.js';

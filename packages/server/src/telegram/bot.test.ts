@@ -44,7 +44,7 @@ function makeManifest(name: string, tools: ToolDefinition[] = []): PluginManifes
     description: `${name} plugin`,
     tier: 1,
     main: 'index.ts',
-    skillSummary: `${name} skill summary`,
+    summary: `${name} skill summary`,
     permissions: [],
     tools,
   };

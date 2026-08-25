@@ -1,12 +1,23 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, resolve } from 'path';
-import type { PluginManifest, PluginInstance, ToolDefinition } from '@tardis/shared';
+import type {
+  PluginManifest,
+  PluginInstance,
+  ToolDefinition,
+  SkillDefinition,
+} from '@tardis/shared';
 import {
   validateManifest,
   validatePermissions,
   checkDuplicateToolNames,
   ManifestValidationError,
 } from './manifest-validator.js';
+
+/** A Skill plus the plugin that registered it. Served by GET /api/skills. */
+export interface RegisteredSkill extends SkillDefinition {
+  plugin: string;
+  pluginDisplayName: string;
+}
 
 export class PluginLoadError extends Error {
   readonly code = 'PLUGIN_LOAD_ERROR';
@@ -186,13 +197,35 @@ export class PluginManager {
   }
 
   /**
-   * Get skill summary cards for all active plugins (used by skill router).
+   * One-line cards for all active plugins, used by the PluginRouter to choose
+   * which plugins a message needs. Plugin-level, not per-skill.
    */
-  getSkillSummaries(): { name: string; skillSummary: string }[] {
+  getPluginSummaries(): { name: string; summary: string }[] {
     return this.getAllManifests().map((m) => ({
       name: m.name,
-      skillSummary: m.skillSummary,
+      summary: m.summary,
     }));
+  }
+
+  /**
+   * Every Skill across all active plugins, tagged with its owning plugin.
+   *
+   * This is what GET /api/skills serves and what every client renders from —
+   * including skills with `aiInvocable: false`, which the agent loop never sees.
+   */
+  getAllSkills(): RegisteredSkill[] {
+    return this.getAllManifests().flatMap((m) =>
+      m.skills.map((skill) => ({
+        ...skill,
+        plugin: m.name,
+        pluginDisplayName: m.displayName,
+      }))
+    );
+  }
+
+  /** Look up a single Skill by its fully-qualified id, or null. */
+  getSkill(id: string): RegisteredSkill | null {
+    return this.getAllSkills().find((s) => s.id === id) ?? null;
   }
 
   /**

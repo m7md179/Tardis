@@ -3,8 +3,10 @@ export type {
   PluginTier,
   ActionType,
   ToolDefinition,
+  SkillDefinition,
   ProactiveTrigger,
   PluginManifest,
+  PluginManifestInput,
   PluginInstance,
 } from './types/plugin.js';
 export type { AgentStep, ThoughtTrace, AgentConfig } from './types/agent.js';
@@ -24,8 +26,10 @@ export {
   PluginTierSchema,
   ActionTypeSchema,
   ToolDefinitionSchema,
+  SkillDefinitionSchema,
   ProactiveTriggerSchema,
   PluginManifestSchema,
+  PluginManifestInputSchema,
 } from './schemas/plugin.js';
 export { AgentStepSchema, ThoughtTraceSchema, AgentConfigSchema } from './schemas/agent.js';
 export { MemoryTypeSchema, MemoryEntrySchema } from './schemas/memory.js';

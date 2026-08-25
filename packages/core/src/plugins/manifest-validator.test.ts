@@ -5,9 +5,10 @@ import {
   checkDuplicateToolNames,
   ManifestValidationError,
 } from './manifest-validator.js';
-import type { PluginManifest } from '@tardis/shared';
+import { PluginManifestSchema } from '@tardis/shared';
+import type { PluginManifestInput } from '@tardis/shared';
 
-const VALID_MANIFEST: PluginManifest = {
+const VALID_MANIFEST: PluginManifestInput = {
   name: 'test-plugin',
   version: '1.0.0',
   displayName: 'Test Plugin',
@@ -45,9 +46,9 @@ describe('validateManifest: valid input', () => {
 
   it('accepts manifest with no optional fields', () => {
     const minimal = { ...VALID_MANIFEST };
-    delete (minimal as Partial<PluginManifest>).proactive;
-    delete (minimal as Partial<PluginManifest>).llm;
-    delete (minimal as Partial<PluginManifest>).config;
+    delete (minimal as Partial<PluginManifestInput>).proactive;
+    delete (minimal as Partial<PluginManifestInput>).llm;
+    delete (minimal as Partial<PluginManifestInput>).config;
     expect(() => validateManifest(minimal, '/fake/dir')).not.toThrow();
   });
 
@@ -137,7 +138,7 @@ describe('validateManifest: invalid field values', () => {
   it('rejects tool name without plugin prefix (e.g. "ping" instead of "plugin.ping")', () => {
     const bad = {
       ...VALID_MANIFEST,
-      tools: [{ ...VALID_MANIFEST.tools[0]!, name: 'notvalid' }],
+      tools: [{ ...VALID_MANIFEST.tools![0]!, name: 'notvalid' }],
     };
     expect(() => validateManifest(bad, '/fake/dir')).toThrow(ManifestValidationError);
   });
@@ -157,7 +158,7 @@ describe('validateManifest: invalid field values', () => {
   it('rejects tool with empty description', () => {
     const bad = {
       ...VALID_MANIFEST,
-      tools: [{ ...VALID_MANIFEST.tools[0]!, description: '' }],
+      tools: [{ ...VALID_MANIFEST.tools![0]!, description: '' }],
     };
     expect(() => validateManifest(bad, '/fake/dir')).toThrow(ManifestValidationError);
   });
@@ -199,13 +200,13 @@ describe('validatePermissions', () => {
   });
 
   it('rejects a single unknown permission string', () => {
-    const bad: PluginManifest = { ...VALID_MANIFEST, permissions: ['fake:permission'] };
+    const bad: PluginManifestInput = { ...VALID_MANIFEST, permissions: ['fake:permission'] };
     expect(() => validatePermissions(bad)).toThrow(ManifestValidationError);
     expect(() => validatePermissions(bad)).toThrow('fake:permission');
   });
 
   it('rejects when unknown permission is mixed with valid ones', () => {
-    const bad: PluginManifest = {
+    const bad: PluginManifestInput = {
       ...VALID_MANIFEST,
       permissions: ['storage:read', 'totally:invalid'],
     };
@@ -214,7 +215,7 @@ describe('validatePermissions', () => {
   });
 
   it('accepts all 12 known permission strings', () => {
-    const allPerms: PluginManifest = {
+    const allPerms: PluginManifestInput = {
       ...VALID_MANIFEST,
       permissions: [
         'sessions:read',
@@ -243,21 +244,21 @@ describe('checkDuplicateToolNames', () => {
   });
 
   it('passes for a single plugin', () => {
-    expect(() => checkDuplicateToolNames([VALID_MANIFEST])).not.toThrow();
+    expect(() => checkDuplicateToolNames([PluginManifestSchema.parse(VALID_MANIFEST)])).not.toThrow();
   });
 
   it('passes when tool names are unique across plugins', () => {
-    const m1: PluginManifest = {
+    const m1: PluginManifestInput = {
       ...VALID_MANIFEST,
       name: 'plugin-a',
       tools: [{ name: 'plugin-a.ping', description: 'ping', parameters: {}, actionType: 'direct' }],
     };
-    const m2: PluginManifest = {
+    const m2: PluginManifestInput = {
       ...VALID_MANIFEST,
       name: 'plugin-b',
       tools: [{ name: 'plugin-b.ping', description: 'ping', parameters: {}, actionType: 'direct' }],
     };
-    expect(() => checkDuplicateToolNames([m1, m2])).not.toThrow();
+    expect(() => checkDuplicateToolNames([m1, m2].map((m) => PluginManifestSchema.parse(m)))).not.toThrow();
   });
 
   it('throws when two plugins declare the same tool name', () => {
@@ -267,10 +268,10 @@ describe('checkDuplicateToolNames', () => {
       parameters: {},
       actionType: 'direct' as const,
     };
-    const m1: PluginManifest = { ...VALID_MANIFEST, name: 'plugin-a', tools: [shared] };
-    const m2: PluginManifest = { ...VALID_MANIFEST, name: 'plugin-b', tools: [shared] };
-    expect(() => checkDuplicateToolNames([m1, m2])).toThrow(ManifestValidationError);
-    expect(() => checkDuplicateToolNames([m1, m2])).toThrow('shared-plugin.tool');
+    const m1: PluginManifestInput = { ...VALID_MANIFEST, name: 'plugin-a', tools: [shared] };
+    const m2: PluginManifestInput = { ...VALID_MANIFEST, name: 'plugin-b', tools: [shared] };
+    expect(() => checkDuplicateToolNames([m1, m2].map((m) => PluginManifestSchema.parse(m)))).toThrow(ManifestValidationError);
+    expect(() => checkDuplicateToolNames([m1, m2].map((m) => PluginManifestSchema.parse(m)))).toThrow('shared-plugin.tool');
   });
 
   it('error message includes the duplicate tool name and both plugin names', () => {
@@ -280,11 +281,11 @@ describe('checkDuplicateToolNames', () => {
       parameters: {},
       actionType: 'direct' as const,
     };
-    const m1: PluginManifest = { ...VALID_MANIFEST, name: 'alpha', tools: [tool] };
-    const m2: PluginManifest = { ...VALID_MANIFEST, name: 'beta', tools: [tool] };
+    const m1: PluginManifestInput = { ...VALID_MANIFEST, name: 'alpha', tools: [tool] };
+    const m2: PluginManifestInput = { ...VALID_MANIFEST, name: 'beta', tools: [tool] };
     let err: ManifestValidationError | undefined;
     try {
-      checkDuplicateToolNames([m1, m2]);
+      checkDuplicateToolNames([m1, m2].map((m) => PluginManifestSchema.parse(m)));
     } catch (e) {
       if (e instanceof ManifestValidationError) err = e;
     }
@@ -295,13 +296,13 @@ describe('checkDuplicateToolNames', () => {
   });
 
   it('passes when same plugin has multiple unique tools', () => {
-    const multiTool: PluginManifest = {
+    const multiTool: PluginManifestInput = {
       ...VALID_MANIFEST,
       tools: [
         { name: 'test-plugin.ping', description: 'ping', parameters: {}, actionType: 'direct' },
         { name: 'test-plugin.pong', description: 'pong', parameters: {}, actionType: 'direct' },
       ],
     };
-    expect(() => checkDuplicateToolNames([multiTool])).not.toThrow();
+    expect(() => checkDuplicateToolNames([PluginManifestSchema.parse(multiTool)])).not.toThrow();
   });
 });
