@@ -50,7 +50,7 @@ tardis-app/
 | A | Core completion: real persistent memory | **DONE** (2026-08-26) |
 | B | Skills architecture + `SKILLS.md` + `GET /api/skills` + migrate plugins | **DONE** (2026-08-26) |
 | C | Hybrid UI contract + `UI-CONTRACT.md` | **DONE** (2026-08-26) |
-| D | Client app foundation (new repo) — **gate: real DB change from the app** | NOT STARTED |
+| D | Client app foundation (new repo) — **gate: real DB change from the app** | **GATE PASSED**; mobile renderers pending |
 | E | New plugins: health/food (multimodal) + budget | NOT STARTED |
 | F | TUI renderer against the same contract | NOT STARTED |
 
@@ -298,3 +298,67 @@ and can carry the gate instead — I will use those unless Mohammad supplies a T
 **Next**: Phase D — new `tardis-app` repo (Expo mobile + Next.js web, shared
 `packages/core` and `packages/ui-contract`), JWT auth, generic block renderers, and a
 skills dashboard driven by `GET /api/skills`.
+
+
+### 2026-08-26 — Phase D (part 1): client foundation, web, and the gate
+
+**Verified true before starting**
+- `main @ 5b4f092`, clean. TARDIS reachable from this machine at
+  `http://192.168.100.229:3000` (health 200). `m7md179/tardis-app` did not exist.
+
+**Repo**: **github.com/m7md179/tardis-app** — created **private**, because it embeds
+homelab addresses and an admin auth flow. TARDIS itself is public; say the word and I will
+flip it.
+
+```
+packages/ui-contract/  contract types mirrored from the server + forward-compat guard
+packages/core/         TardisClient + binding logic, framework-agnostic
+apps/web/              Next.js App Router + Tailwind, all five blocks
+```
+
+**Two real obstacles, both worth recording**
+
+1. **TARDIS sets no CORS headers.** A browser at `localhost:3001` cannot call the API at
+   all — the preflight is not even handled. Rather than opening a private API to arbitrary
+   origins, the web app proxies through a Next route handler. Mobile and the TUI are not
+   subject to CORS and call TARDIS directly, so the shared client is unchanged either way.
+   happy-dom later reproduced this independently by blocking the same request.
+2. **Label/field association was missing** in my first FormBlock — labels were text next to
+   controls, so screen readers would not announce them and clicking a label did nothing.
+   Caught because the gate test selected by label and failed. Fixed with `htmlFor`/`id`.
+
+**THE GATE — passed, with database evidence**
+
+`apps/web/src/components/gate.e2e.test.tsx` mounts the **real** block components, fires
+**real** DOM events, and talks to the **real** server. Nothing is mocked; if TARDIS is down
+it fails rather than passing against a stub. 4/4 passing:
+
+1. the server serves a contract the app can render
+2. typing into the real `FormBlock` and clicking submit **creates a real session row**
+3. that same session renders through the generic `TimerBlock` with a live elapsed clock
+4. clicking **Stop** — an item action declared by the descriptor — **removes it**
+
+Independent confirmation, read straight out of production sqlite rather than through the
+API the app just called:
+
+```
+sessions rows: [completed] "phase-d-gate-check"  id=580a86be  start=2026-08-25T23:35:03.576Z
+```
+
+That row was created by a click in `FormBlock` and completed by a click in `TimerBlock`.
+Neither component contains one line of time-tracker-specific code.
+
+**Also**: `packages/core` tests (16, passing) use a **real capture of `GET /api/skills`** as
+their fixture, so they fail if the contract drifts rather than only if the helpers regress.
+One asserts the client can render *every* descriptor the server actually ships.
+
+**Honest gaps**
+- **Mobile renderers are not built yet.** Phase D asks for the blocks on mobile *and* web;
+  only web exists. Phase D is not complete until that lands.
+- **No human-driven browser click was verified** — the Chrome extension is not connected in
+  this environment. The gate drives real components and real events headlessly, which is
+  strong, but it is not the same as a person clicking. Saying so rather than implying it.
+- A hardcoded default admin password in the gate test was removed before the first push;
+  it now requires `TARDIS_PASSWORD` and fails loudly without it.
+
+**Next**: mobile renderers (Expo) sharing `packages/core`, then Phase D closes.
