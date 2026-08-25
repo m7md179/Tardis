@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import { runAgentLoop, buildSystemPrompt } from './agent-loop.js';
 import type { AgentLoopInput } from './agent-loop.js';
 import type { LLMProvider, LLMResponse } from '../llm/provider.js';
+import { contentToText } from '../llm/provider.js';
 import type { AgentConfig, ToolDefinition } from '@tardis/shared';
 
 // ─── Shared test fixtures ─────────────────────────────────────────────────────
@@ -529,7 +530,7 @@ describe('runAgentLoop: conversation history', () => {
     const llm: LLMProvider = {
       name: 'mock',
       async chat({ messages }) {
-        sentMessages.push(...messages.map((m) => ({ role: m.role, content: m.content })));
+        sentMessages.push(...messages.map((m) => ({ role: m.role, content: contentToText(m.content) })));
         return textResponse('Hi');
       },
       async generate() {
@@ -568,9 +569,9 @@ describe('runAgentLoop: memories', () => {
     const llm: LLMProvider = {
       name: 'mock',
       async chat({ messages }) {
-        sentSystemPrompt = messages[0]?.content ?? '';
+        sentSystemPrompt = contentToText(messages[0]?.content ?? '');
         // The volatile block is the message immediately before the user message.
-        sentContextBlock = messages[messages.length - 2]?.content ?? '';
+        sentContextBlock = contentToText(messages[messages.length - 2]?.content ?? '');
         return textResponse('ok');
       },
       async generate() {
@@ -803,7 +804,7 @@ describe('runAgentLoop: claim-vs-reality guard', () => {
     const llm: LLMProvider = {
       name: 'mock',
       async chat({ messages }) {
-        seen.push(...messages.map((m) => String(m.content ?? '')));
+        seen.push(...messages.map((m) => contentToText(m.content)));
         call++;
         return call === 1
           ? textResponse('Reminder set.')
@@ -997,7 +998,7 @@ describe('runAgentLoop: malformed tool arguments recovery', () => {
       name: 'mock',
       async chat({ messages }) {
         for (const m of messages) {
-          if (m.role === 'tool') observations.push(String(m.content ?? ''));
+          if (m.role === 'tool') observations.push(contentToText(m.content));
         }
         call++;
         if (call === 1) {
@@ -1047,8 +1048,8 @@ describe('runAgentLoop: prompt cache friendliness', () => {
     const llm: LLMProvider = {
       name: 'mock',
       async chat({ messages }) {
-        stable = messages[0]?.content ?? '';
-        volatileBlock = messages[messages.length - 2]?.content ?? '';
+        stable = contentToText(messages[0]?.content ?? '');
+        volatileBlock = contentToText(messages[messages.length - 2]?.content ?? '');
         return textResponse('ok');
       },
       async generate() {
@@ -1079,7 +1080,7 @@ describe('runAgentLoop: prompt cache friendliness', () => {
     const llm: LLMProvider = {
       name: 'mock',
       async chat({ messages }) {
-        prompts.push(messages[0]?.content ?? '');
+        prompts.push(contentToText(messages[0]?.content ?? ''));
         return textResponse('ok');
       },
       async generate() {
@@ -1106,7 +1107,7 @@ describe('runAgentLoop: prompt cache friendliness', () => {
     const llm: LLMProvider = {
       name: 'mock',
       async chat({ messages }) {
-        volatileBlock = messages[messages.length - 2]?.content ?? '';
+        volatileBlock = contentToText(messages[messages.length - 2]?.content ?? '');
         return textResponse('ok');
       },
       async generate() {

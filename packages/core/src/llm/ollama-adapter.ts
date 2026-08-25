@@ -54,11 +54,34 @@ interface OllamaResponseBody {
 
 // ─── Conversion helpers ──────────────────────────────────────────────────────
 
+/**
+ * Ollama's chat API takes a plain string plus a separate `images` array, not
+ * OpenAI-style content parts. TARDIS's multimodal path targets the
+ * OpenAI-compatible endpoint, so rather than half-supporting images here we
+ * flatten the text and refuse loudly if an image is present — silently dropping
+ * a photo would produce an answer about nothing.
+ */
+function flattenContent(content: LLMMessage['content'], role: string): string | null {
+  if (content === null || typeof content === 'string') return content;
+  if (content.some((p) => p.type === 'image_url')) {
+    throw new LLMProviderError(
+      'ollama',
+      'IMAGES_UNSUPPORTED',
+      `The ollama adapter cannot send images (in a "${role}" message). ` +
+        'Use an OpenAI-compatible provider for multimodal requests.'
+    );
+  }
+  return content
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .map((p) => p.text)
+    .join('\n');
+}
+
 function toOllamaMessage(msg: LLMMessage): OllamaMessage {
   if (msg.role === 'tool') {
     return {
       role: 'tool',
-      content: msg.content,
+      content: flattenContent(msg.content, msg.role),
       // Use name as tool_call_id — the agent loop sets name to the tool name.
       // Ollama is lenient about this matching exactly for local models.
       tool_call_id: msg.name ?? 'unknown',
@@ -68,7 +91,7 @@ function toOllamaMessage(msg: LLMMessage): OllamaMessage {
   if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
     return {
       role: 'assistant',
-      content: msg.content,
+      content: flattenContent(msg.content, msg.role),
       tool_calls: msg.tool_calls.map((tc) => ({
         id: tc.id,
         type: 'function' as const,
@@ -80,7 +103,7 @@ function toOllamaMessage(msg: LLMMessage): OllamaMessage {
     };
   }
 
-  return { role: msg.role, content: msg.content };
+  return { role: msg.role, content: flattenContent(msg.content, msg.role) };
 }
 
 function toOllamaTool(tool: ToolDefinition): OllamaTool {

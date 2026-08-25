@@ -1,6 +1,7 @@
 import type { ToolDefinition } from '@tardis/shared';
 import { LLMProviderError } from './provider.js';
-import type { LLMMessage, LLMProvider, LLMResponse } from './provider.js';
+import type { LLMContent, LLMMessage, LLMProvider, LLMResponse } from './provider.js';
+import { countImages } from './provider.js';
 
 // ─── Internal OpenAI-format types ────────────────────────────────────────────
 
@@ -13,9 +14,12 @@ interface OpenAIToolCall {
   };
 }
 
+/** Text or an ordered list of parts — the OpenAI multimodal message shape. */
+type OpenAIContent = LLMContent;
+
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: OpenAIContent;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string; // required on role: 'tool' messages
 }
@@ -28,6 +32,16 @@ interface OpenAITool {
     parameters: Record<string, unknown>;
   };
 }
+
+/**
+ * At most one image may be sent per request.
+ *
+ * gemma-4-E2B is documented to blend several images in one message into a
+ * single wrong answer, so anything analysing multiple photos must call once per
+ * photo. Enforced here rather than in each caller: a silent blend produces a
+ * confident, plausible, wrong result, which is the worst failure mode.
+ */
+const MAX_IMAGES_PER_REQUEST = 1;
 
 interface OpenAIRequestBody {
   model: string;
@@ -209,6 +223,16 @@ export class OpenAIAdapter implements LLMProvider {
     temperature?: number;
     maxTokens?: number;
   }): Promise<LLMResponse> {
+    const images = params.messages.reduce((n, m) => n + countImages(m.content), 0);
+    if (images > MAX_IMAGES_PER_REQUEST) {
+      throw new LLMProviderError(
+        this.name,
+        'TOO_MANY_IMAGES',
+        `${images} images in one request; this model blends them into a single wrong answer. ` +
+          `Send at most ${MAX_IMAGES_PER_REQUEST} and call once per image.`
+      );
+    }
+
     const body: OpenAIRequestBody = {
       model: this.model,
       messages: params.messages.map(toOpenAIMessage),

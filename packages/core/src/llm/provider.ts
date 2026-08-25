@@ -1,14 +1,50 @@
 import type { ToolDefinition } from '@tardis/shared';
 
+/** A text segment of a multi-part message. */
+export interface LLMTextPart {
+  type: 'text';
+  text: string;
+}
+
+/**
+ * An image segment. `url` is a data URI (`data:image/png;base64,...`) — TARDIS
+ * never sends the model a URL it would have to fetch itself.
+ */
+export interface LLMImagePart {
+  type: 'image_url';
+  image_url: { url: string };
+}
+
+export type LLMContentPart = LLMTextPart | LLMImagePart;
+
+/** Plain text, an ordered list of parts, or null for a pure tool-call turn. */
+export type LLMContent = string | LLMContentPart[] | null;
+
 /**
  * A message in the LLM conversation history.
  * Follows the OpenAI chat message format, which most providers support.
  */
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: LLMContent;
   name?: string; // for tool messages: the tool name
   tool_calls?: LLMToolCall[]; // for assistant messages that call tools
+}
+
+/** Text of a message, ignoring any image parts. Handy for logging and estimates. */
+export function contentToText(content: LLMContent): string {
+  if (content === null) return '';
+  if (typeof content === 'string') return content;
+  return content
+    .filter((p): p is LLMTextPart => p.type === 'text')
+    .map((p) => p.text)
+    .join('\n');
+}
+
+/** How many images a message carries. */
+export function countImages(content: LLMContent): number {
+  if (content === null || typeof content === 'string') return 0;
+  return content.filter((p) => p.type === 'image_url').length;
 }
 
 /**

@@ -6,7 +6,7 @@ import type {
   ThoughtTrace,
   ToolDefinition,
 } from '@tardis/shared';
-import type { LLMMessage, LLMProvider } from '../llm/provider.js';
+import type { LLMContent, LLMMessage, LLMProvider } from '../llm/provider.js';
 import { fitToContextWindow } from './context-manager.js';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -30,6 +30,14 @@ export interface AgentLoopInput {
   llmProvider: LLMProvider;
   /** Model's max context window in tokens. Defaults to 4096 if not provided. */
   contextWindowSize?: number;
+  /**
+   * Data-URI images attached to the current user message.
+   *
+   * At most one reaches the model per request — the OpenAI adapter enforces
+   * that, because this model blends multiple images into one confident wrong
+   * answer. Anything analysing several photos must run one turn per photo.
+   */
+  userImages?: string[];
   /**
    * Executes a tool by name with the given arguments.
    * Provided by the ToolRouter (Phase 2 Task 5).
@@ -146,11 +154,20 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
   //   [stable system prompt][tool schemas][history…][volatile context][user message]
   // Everything up to and including history is byte-identical to the previous
   // turn, so the backend can reuse its cached prefix.
+  // Images ride on the current user message only. They are never written back
+  // into history, so a photo costs its tokens once rather than on every later turn.
+  const userContent: LLMContent = input.userImages?.length
+    ? [
+        { type: 'text', text: input.userMessage },
+        ...input.userImages.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+      ]
+    : input.userMessage;
+
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     ...trimmedHistory,
     { role: 'system', content: contextPreamble },
-    { role: 'user', content: input.userMessage },
+    { role: 'user', content: userContent },
   ];
 
   const tools = input.availableTools.length > 0 ? input.availableTools : undefined;
