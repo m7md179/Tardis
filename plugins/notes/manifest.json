@@ -39,6 +39,31 @@
           "title",
           "content"
         ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "New note",
+        "icon": "edit",
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "label": "Title",
+            "required": true
+          },
+          {
+            "name": "content",
+            "type": "textarea",
+            "label": "Note",
+            "required": true
+          },
+          {
+            "name": "tags",
+            "type": "tags",
+            "label": "Tags"
+          }
+        ]
       }
     },
     {
@@ -57,6 +82,19 @@
         "required": [
           "title"
         ]
+      },
+      "ui": {
+        "block": "detail",
+        "label": "Note",
+        "icon": "file-text",
+        "item": {
+          "title": "title",
+          "body": "content",
+          "meta": [
+            "tags",
+            "updatedAt"
+          ]
+        }
       }
     },
     {
@@ -79,6 +117,25 @@
         "required": [
           "query"
         ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Search notes",
+        "icon": "search",
+        "submitLabel": "Search",
+        "fields": [
+          {
+            "name": "query",
+            "type": "text",
+            "label": "Search for",
+            "required": true
+          },
+          {
+            "name": "tag",
+            "type": "text",
+            "label": "Limit to tag"
+          }
+        ]
       }
     },
     {
@@ -98,6 +155,40 @@
             "description": "Max notes to return (default 20)"
           }
         }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Notes",
+        "icon": "file-text",
+        "resultPath": "notes",
+        "emptyText": "No notes saved yet.",
+        "item": {
+          "id": "title",
+          "title": "title",
+          "subtitle": "preview",
+          "meta": [
+            "tags",
+            "updatedAt"
+          ]
+        },
+        "actions": [
+          {
+            "skill": "notes.get-note",
+            "label": "Open",
+            "style": "secondary",
+            "args": {
+              "title": "title"
+            }
+          },
+          {
+            "skill": "notes.delete-note",
+            "label": "Delete",
+            "style": "danger",
+            "args": {
+              "title": "title"
+            }
+          }
+        ]
       }
     },
     {

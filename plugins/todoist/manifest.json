@@ -26,6 +26,36 @@
             "description": "Todoist filter query (e.g. 'today', 'overdue', 'p1'). Leave empty for all active tasks."
           }
         }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Tasks",
+        "icon": "check-square",
+        "resultPath": "tasks",
+        "emptyText": "No active tasks.",
+        "item": {
+          "id": "id",
+          "title": "content",
+          "subtitle": "due"
+        },
+        "actions": [
+          {
+            "skill": "todoist.complete-task",
+            "label": "Complete",
+            "style": "primary",
+            "args": {
+              "taskName": "content"
+            }
+          },
+          {
+            "skill": "todoist.delete-task",
+            "label": "Delete",
+            "style": "danger",
+            "args": {
+              "taskName": "content"
+            }
+          }
+        ]
       }
     },
     {
@@ -55,6 +85,54 @@
         },
         "required": [
           "content"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Add task",
+        "icon": "plus",
+        "submitLabel": "Add",
+        "fields": [
+          {
+            "name": "content",
+            "type": "text",
+            "label": "Task",
+            "required": true
+          },
+          {
+            "name": "description",
+            "type": "textarea",
+            "label": "Notes"
+          },
+          {
+            "name": "dueString",
+            "type": "text",
+            "label": "Due",
+            "placeholder": "tomorrow at 9am"
+          },
+          {
+            "name": "priority",
+            "type": "select",
+            "label": "Priority",
+            "options": [
+              {
+                "value": 1,
+                "label": "Normal"
+              },
+              {
+                "value": 2,
+                "label": "Medium"
+              },
+              {
+                "value": 3,
+                "label": "High"
+              },
+              {
+                "value": 4,
+                "label": "Urgent"
+              }
+            ]
+          }
         ]
       }
     },
@@ -107,6 +185,58 @@
         },
         "required": [
           "taskName"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Update task",
+        "icon": "edit",
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "taskName",
+            "type": "text",
+            "label": "Task to update",
+            "required": true
+          },
+          {
+            "name": "content",
+            "type": "text",
+            "label": "New title"
+          },
+          {
+            "name": "description",
+            "type": "textarea",
+            "label": "Notes"
+          },
+          {
+            "name": "dueString",
+            "type": "text",
+            "label": "Due"
+          },
+          {
+            "name": "priority",
+            "type": "select",
+            "label": "Priority",
+            "options": [
+              {
+                "value": 1,
+                "label": "Normal"
+              },
+              {
+                "value": 2,
+                "label": "Medium"
+              },
+              {
+                "value": 3,
+                "label": "High"
+              },
+              {
+                "value": 4,
+                "label": "Urgent"
+              }
+            ]
+          }
         ]
       }
     },

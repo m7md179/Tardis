@@ -79,8 +79,14 @@ describe('PluginManifestSchema: canonical form', () => {
     expect(m.tools[0]!.name).toBe('reminders.set-reminder');
   });
 
-  it('preserves the ui descriptor untouched (Phase C fills in the vocabulary)', () => {
-    const ui = { block: 'timer', bindings: { duration: 'delayMinutes' } };
+  it('preserves the ui descriptor untouched', () => {
+    const ui = {
+      block: 'timer' as const,
+      label: 'Pending reminders',
+      mode: 'countdown' as const,
+      resultPath: 'reminders',
+      item: { id: 'id', title: 'message', deadline: 'fireAtMs' },
+    };
     const m = PluginManifestSchema.parse({
       ...BASE,
       summary: 'x',
@@ -154,5 +160,121 @@ describe('PluginManifestSchema: deprecated aliases', () => {
         skills: [{ id: 'setreminder', description: 'Set', parameters: {} }],
       })
     ).toThrow();
+  });
+});
+
+// ─── UI descriptors (Phase C, see UI-CONTRACT.md) ────────────────────────────
+
+const uiManifest = (ui: unknown) => ({
+  ...BASE,
+  summary: 'x',
+  skills: [
+    { id: 'reminders.set-reminder', description: 'Set', parameters: { type: 'object' }, ui },
+  ],
+});
+
+describe('SkillUiDescriptorSchema: block requirements', () => {
+  it('accepts a form with fields', () => {
+    const m = PluginManifestSchema.parse(
+      uiManifest({
+        block: 'form',
+        label: 'Set reminder',
+        fields: [{ name: 'message', type: 'text', label: 'Remind me to' }],
+      })
+    );
+    expect(m.skills[0]!.ui!.block).toBe('form');
+    expect(m.skills[0]!.ui!.fields).toHaveLength(1);
+  });
+
+  it('accepts an action block with no extra config', () => {
+    expect(() =>
+      PluginManifestSchema.parse(uiManifest({ block: 'action', label: 'Status' }))
+    ).not.toThrow();
+  });
+
+  it('rejects a list without an item descriptor', () => {
+    expect(() =>
+      PluginManifestSchema.parse(uiManifest({ block: 'list', label: 'Tasks' }))
+    ).toThrow(/requires an .*item.* descriptor/);
+  });
+
+  it('rejects a timer without a mode', () => {
+    expect(() =>
+      PluginManifestSchema.parse(
+        uiManifest({ block: 'timer', label: 'T', item: { title: 'message', deadline: 'fireAtMs' } })
+      )
+    ).toThrow(/Timer block requires/);
+  });
+
+  it('rejects a countdown timer whose item has no deadline', () => {
+    expect(() =>
+      PluginManifestSchema.parse(
+        uiManifest({ block: 'timer', label: 'T', mode: 'countdown', item: { title: 'message' } })
+      )
+    ).toThrow(/deadline/);
+  });
+
+  it('rejects an elapsed timer whose item has no since', () => {
+    expect(() =>
+      PluginManifestSchema.parse(
+        uiManifest({ block: 'timer', label: 'T', mode: 'elapsed', item: { title: 'taskName' } })
+      )
+    ).toThrow(/since/);
+  });
+
+  it('defaults an item action style to secondary and args to empty', () => {
+    const m = PluginManifestSchema.parse(
+      uiManifest({
+        block: 'list',
+        label: 'Tasks',
+        item: { title: 'content' },
+        actions: [{ skill: 'todoist.complete-task', label: 'Complete' }],
+      })
+    );
+    expect(m.skills[0]!.ui!.actions![0]!.style).toBe('secondary');
+    expect(m.skills[0]!.ui!.actions![0]!.args).toEqual({});
+  });
+
+  it('rejects an item action pointing at a non-qualified skill id', () => {
+    expect(() =>
+      PluginManifestSchema.parse(
+        uiManifest({
+          block: 'list',
+          label: 'Tasks',
+          item: { title: 'content' },
+          actions: [{ skill: 'complete', label: 'Complete' }],
+        })
+      )
+    ).toThrow();
+  });
+});
+
+describe('SkillUiDescriptorSchema: the escape hatch', () => {
+  it('accepts custom UI when a standard block fallback is present', () => {
+    const m = PluginManifestSchema.parse(
+      uiManifest({
+        block: 'form',
+        label: 'Log a meal',
+        fields: [{ name: 'message', type: 'text', label: 'What did you eat?' }],
+        custom: { mobile: 'screens/MealLogger.tsx' },
+      })
+    );
+    expect(m.skills[0]!.ui!.custom).toEqual({ mobile: 'screens/MealLogger.tsx' });
+    expect(m.skills[0]!.ui!.block).toBe('form');
+  });
+
+  it('rejects custom UI with no standard fallback — the TUI cannot run custom code', () => {
+    expect(() =>
+      PluginManifestSchema.parse(uiManifest({ label: 'Log a meal', custom: { mobile: 'x.tsx' } }))
+    ).toThrow();
+  });
+
+  it('still enforces block completeness when custom UI is present', () => {
+    // A custom mobile screen must not excuse an unrenderable TUI fallback.
+    expect(() =>
+      PluginManifestSchema.parse(
+        uiManifest({ block: 'list', label: 'Meals', custom: { mobile: 'x.tsx' } })
+      )
+    ).toThrow(/requires an .*item.* descriptor/);
   });
 });

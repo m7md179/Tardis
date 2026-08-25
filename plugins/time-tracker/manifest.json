@@ -30,6 +30,20 @@
         "required": [
           "taskName"
         ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Start timer",
+        "icon": "play",
+        "submitLabel": "Start",
+        "fields": [
+          {
+            "name": "taskName",
+            "type": "text",
+            "label": "Task",
+            "required": true
+          }
+        ]
       }
     },
     {
@@ -85,6 +99,47 @@
       "parameters": {
         "type": "object",
         "properties": {}
+      },
+      "ui": {
+        "block": "timer",
+        "label": "Running timers",
+        "icon": "clock",
+        "mode": "elapsed",
+        "resultPath": "sessions",
+        "emptyText": "No active sessions.",
+        "item": {
+          "id": "id",
+          "title": "taskName",
+          "subtitle": "elapsedFormatted",
+          "since": "startTime",
+          "accumulated": "accumulatedTime"
+        },
+        "actions": [
+          {
+            "skill": "time-tracker.pause",
+            "label": "Pause",
+            "style": "secondary",
+            "args": {
+              "sessionId": "id"
+            }
+          },
+          {
+            "skill": "time-tracker.resume",
+            "label": "Resume",
+            "style": "secondary",
+            "args": {
+              "sessionId": "id"
+            }
+          },
+          {
+            "skill": "time-tracker.stop",
+            "label": "Stop",
+            "style": "primary",
+            "args": {
+              "sessionId": "id"
+            }
+          }
+        ]
       }
     },
     {
@@ -103,6 +158,18 @@
             "type": "number",
             "description": "Max results to return. Default 10."
           }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Time history",
+        "icon": "history",
+        "resultPath": "sessions",
+        "emptyText": "No sessions recorded.",
+        "item": {
+          "id": "id",
+          "title": "taskName",
+          "subtitle": "elapsedFormatted"
         }
       }
     }

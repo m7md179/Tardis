@@ -34,6 +34,31 @@
             "description": "Maximum events to return (default 10)."
           }
         }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Calendar",
+        "icon": "calendar",
+        "resultPath": "events",
+        "emptyText": "No events.",
+        "item": {
+          "id": "id",
+          "title": "summary",
+          "subtitle": "start",
+          "meta": [
+            "location"
+          ]
+        },
+        "actions": [
+          {
+            "skill": "google-calendar.delete-event",
+            "label": "Delete",
+            "style": "danger",
+            "args": {
+              "eventTitle": "summary"
+            }
+          }
+        ]
       }
     },
     {
@@ -80,6 +105,46 @@
           "title",
           "date"
         ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "New event",
+        "icon": "calendar-plus",
+        "submitLabel": "Create",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "label": "Title",
+            "required": true
+          },
+          {
+            "name": "date",
+            "type": "date",
+            "label": "Date",
+            "required": true
+          },
+          {
+            "name": "startTime",
+            "type": "time",
+            "label": "Start"
+          },
+          {
+            "name": "endTime",
+            "type": "time",
+            "label": "End"
+          },
+          {
+            "name": "location",
+            "type": "text",
+            "label": "Location"
+          },
+          {
+            "name": "description",
+            "type": "textarea",
+            "label": "Description"
+          }
+        ]
       }
     },
     {
@@ -107,6 +172,32 @@
           "date",
           "startTime",
           "endTime"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Check availability",
+        "icon": "calendar-check",
+        "submitLabel": "Check",
+        "fields": [
+          {
+            "name": "date",
+            "type": "date",
+            "label": "Date",
+            "required": true
+          },
+          {
+            "name": "startTime",
+            "type": "time",
+            "label": "From",
+            "required": true
+          },
+          {
+            "name": "endTime",
+            "type": "time",
+            "label": "To",
+            "required": true
+          }
         ]
       }
     },
@@ -142,6 +233,40 @@
         "required": [
           "eventTitle"
         ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Update event",
+        "icon": "edit",
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "eventTitle",
+            "type": "text",
+            "label": "Event to update",
+            "required": true
+          },
+          {
+            "name": "newTitle",
+            "type": "text",
+            "label": "New title"
+          },
+          {
+            "name": "newDate",
+            "type": "date",
+            "label": "New date"
+          },
+          {
+            "name": "newStartTime",
+            "type": "time",
+            "label": "New start"
+          },
+          {
+            "name": "newEndTime",
+            "type": "time",
+            "label": "New end"
+          }
+        ]
       }
     },
     {
@@ -170,6 +295,12 @@
       "parameters": {
         "type": "object",
         "properties": {}
+      },
+      "ui": {
+        "block": "action",
+        "label": "Connect Google Calendar",
+        "icon": "link",
+        "args": {}
       }
     },
     {
@@ -187,6 +318,20 @@
         },
         "required": [
           "code"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Finish connecting",
+        "icon": "key",
+        "submitLabel": "Connect",
+        "fields": [
+          {
+            "name": "code",
+            "type": "text",
+            "label": "Authorization code",
+            "required": true
+          }
         ]
       }
     }

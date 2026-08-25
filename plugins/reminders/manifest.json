@@ -33,6 +33,27 @@
           "message",
           "delayMinutes"
         ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Set reminder",
+        "icon": "alarm",
+        "submitLabel": "Set",
+        "fields": [
+          {
+            "name": "message",
+            "type": "text",
+            "label": "Remind me to",
+            "required": true
+          },
+          {
+            "name": "delayMinutes",
+            "type": "number",
+            "label": "In (minutes)",
+            "required": true,
+            "min": 1
+          }
+        ]
       }
     },
     {
@@ -43,6 +64,29 @@
       "parameters": {
         "type": "object",
         "properties": {}
+      },
+      "ui": {
+        "block": "timer",
+        "label": "Pending reminders",
+        "icon": "alarm",
+        "mode": "countdown",
+        "resultPath": "reminders",
+        "emptyText": "No pending reminders.",
+        "item": {
+          "id": "id",
+          "title": "message",
+          "deadline": "fireAtMs"
+        },
+        "actions": [
+          {
+            "skill": "reminders.cancel-reminder",
+            "label": "Cancel",
+            "style": "danger",
+            "args": {
+              "id": "id"
+            }
+          }
+        ]
       }
     },
     {
