@@ -51,7 +51,7 @@ tardis-app/
 | B | Skills architecture + `SKILLS.md` + `GET /api/skills` + migrate plugins | **DONE** (2026-08-26) |
 | C | Hybrid UI contract + `UI-CONTRACT.md` | **DONE** (2026-08-26) |
 | D | Client app foundation (new repo) — **gate: real DB change from the app** | **DONE** (2026-08-26) — gate passed on web; mobile built, no runtime proof |
-| E | New plugins: health/food (multimodal) + budget | NOT STARTED |
+| E | New plugins: health/food (multimodal) + budget | **IN PROGRESS** — multimodal pipeline + PluginAPI.llm done; plugins next |
 | F | TUI renderer against the same contract | NOT STARTED |
 
 Prerequisite unblocking (only as far as needed): `notes` plugin (duplicate `tagFilter`
@@ -406,3 +406,56 @@ with the mobile runtime gap carried forward rather than buried.
 
 **Next**: Phase E — the health/food plugin (full multimodal pipeline, per the locked
 decision) and the budget plugin, both as Skills against the Phase B/C contract.
+
+
+### 2026-08-26 — Phase E (part 1): the multimodal pipeline
+
+**Verified true before starting**: `main @ 302517c`, clean; container on the Phase C merge;
+model reports `["completion","multimodal"]`; `n_ctx` 32768.
+
+**De-risked the hard part first.** Before writing any pipeline code I sent real PNGs to the
+live endpoint. It accepted `image_url` content parts and answered *"Red"* and *"Blue"*
+correctly, at ~64 prompt tokens for a 64x64 image.
+
+A two-image probe **did not reproduce** the documented blending failure — it named both
+colours in order. Solid colours are trivially separable, so that is not a fair test of the
+food-photo case; I am treating the original finding as standing and keeping the
+one-image-per-call rule. Recording the contradiction rather than quietly using it to drop
+a constraint.
+
+**Built**
+- `LLMMessage.content` → `string | LLMContentPart[] | null`, with `contentToText()` and
+  `countImages()` helpers.
+- OpenAI adapter passes parts through and **enforces one image per request** — a silent
+  blend is the worst failure mode, plausible and wrong, so the guard lives where it cannot
+  be bypassed rather than in each caller.
+- Ollama adapter **refuses** images with `IMAGES_UNSUPPORTED` instead of dropping them and
+  answering about nothing.
+- Agent loop takes `userImages`; images ride the current turn only and are never written
+  back into history, so a photo costs its tokens once. Estimator charges 64 tokens/image.
+- **`PluginAPI.llm` is no longer a stub**: `generate()` and `analyzeImage()`, guarded by the
+  existing `llm:use` permission. `analyzeImage` refuses non-data-URIs.
+
+**A real bug, caught by reading rather than by tsc**
+
+Wiring `llmProvider` into the PluginAPI factory created a temporal dead zone: the factory
+closes over it and `loadAll()` ran *before* the `const` was declared. Every plugin would
+have failed to activate with a `ReferenceError`. TypeScript cannot see it through the
+closure. Fixed by building the provider before plugins load — and confirmed in production,
+where the deploy still reports `Loaded 6 plugin(s)`.
+
+**Evidence**
+
+| Check | Result |
+|---|---|
+| Live endpoint, single image | "Red" / "Blue" — correct |
+| `runAgentLoop` with `userImages`, deployed | "Red" / "Green" — correct |
+| Two images through the real adapter | refused, `TOO_MANY_IMAGES` |
+| Text-only path | unchanged |
+| Plugins after init-order change | **6 loaded** in production |
+| Suite | 651 pass / 1 known pre-existing fail |
+
+**Next**: the health/food plugin (log by text and by photo, daily summaries, designed
+around the known underestimation of calorie-dense low-volume foods) and the budget plugin.
+An `image` field type will need adding to the UI contract so photos can be captured from
+the app — a legitimate extension the locked decision already implies.
