@@ -822,7 +822,12 @@ describe('runAgentLoop: claim-vs-reality guard', () => {
       })
     );
 
-    expect(seen.some((c) => c.includes('you did not call any tool'))).toBe(true);
+    expect(seen.some((c) => c.includes('You did not call any tool'))).toBe(true);
+    // The correction must restate the original request — a purely meta-worded
+    // nudge makes small models reply conversationally instead of acting.
+    expect(seen.some((c) => c.includes('Call the tool that performs this request now'))).toBe(
+      true
+    );
   });
 
   it('surfaces the response as-is when the retry also produces no tool call', async () => {

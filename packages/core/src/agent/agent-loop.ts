@@ -56,11 +56,22 @@ const MAX_CLAIM_RETRIES = 1;
 
 /**
  * Sent back to the model when it claims an action is done but called no tool.
+ *
+ * Restating the original request matters. A purely meta-worded correction
+ * ("you did not call any tool, call one if needed") makes small models reply
+ * conversationally — measured 0/3 tool calls against gemma-4-E2B, with the
+ * model apologising and then repeating the same false claim. Re-issuing the
+ * request as an imperative gets 3/3, and the trailing escape clause keeps a
+ * false-positive detection from forcing a bogus tool call (0/3 hallucinated
+ * calls when no tool applies).
  */
-const CLAIM_CORRECTION_NUDGE =
-  'You replied as if that was already done, but you did not call any tool, so nothing actually happened. ' +
-  'If the request needs an action, call the appropriate tool now. ' +
-  'If no tool is needed, answer plainly without claiming you performed an action.';
+function claimCorrectionNudge(userMessage: string): string {
+  return (
+    'You did not call any tool, so nothing actually happened yet. ' +
+    `Call the tool that performs this request now: "${userMessage}". ` +
+    'If no tool can do it, say so plainly instead of claiming it is done.'
+  );
+}
 
 /**
  * Matches responses that assert an action was carried out ("Reminder set…",
@@ -184,7 +195,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
           durationMs: Date.now() - stepStart,
         });
         messages.push({ role: 'assistant', content: text });
-        messages.push({ role: 'user', content: CLAIM_CORRECTION_NUDGE });
+        messages.push({ role: 'user', content: claimCorrectionNudge(input.userMessage) });
         continue;
       }
 
