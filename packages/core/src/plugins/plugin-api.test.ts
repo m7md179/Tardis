@@ -669,10 +669,52 @@ describe('PluginAPI.http: permission enforcement', () => {
   });
 });
 
-// ─── LLM (stub) ───
+// ─── LLM ───
 
-describe('PluginAPI.llm: stub behaviour', () => {
-  it('llm.generate() throws "not yet implemented" with llm:use permission', async () => {
+describe('PluginAPI.llm', () => {
+  function fakeProvider(capture?: (p: unknown) => void) {
+    return {
+      name: 'fake',
+      async chat(params: unknown) {
+        capture?.(params);
+        return { type: 'text' as const, text: 'vision answer' };
+      },
+      async generate(params: unknown) {
+        capture?.(params);
+        return 'text answer';
+      },
+    };
+  }
+
+  it('generate() reaches the provider when the plugin holds llm:use', async () => {
+    const { db, cleanup } = makeTestDb();
+    let seen: unknown;
+    const api = createPluginApi({
+      pluginName: 'llm-plugin',
+      permissions: ['llm:use'],
+      db,
+      config: MOCK_CONFIG,
+      llmProvider: fakeProvider((p) => (seen = p)) as never,
+    });
+    expect(await api.llm.generate('hello', { systemPrompt: 'be terse' })).toBe('text answer');
+    expect(seen).toMatchObject({ systemPrompt: 'be terse', userPrompt: 'hello' });
+    cleanup();
+  });
+
+  it('generate() is refused without the llm:use permission', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'llm-plugin',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+      llmProvider: fakeProvider() as never,
+    });
+    await expect(api.llm.generate('hello')).rejects.toThrow(/llm:use/);
+    cleanup();
+  });
+
+  it('explains itself when no provider is configured', async () => {
     const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'llm-plugin',
@@ -680,7 +722,43 @@ describe('PluginAPI.llm: stub behaviour', () => {
       db,
       config: MOCK_CONFIG,
     });
-    await expect(api.llm.generate('hello')).rejects.toThrow('not yet implemented');
+    await expect(api.llm.generate('hello')).rejects.toThrow('no LLM provider configured');
+    cleanup();
+  });
+
+  it('analyzeImage() sends exactly one image part alongside the prompt', async () => {
+    const { db, cleanup } = makeTestDb();
+    let seen: { messages: { content: unknown }[] } | undefined;
+    const api = createPluginApi({
+      pluginName: 'llm-plugin',
+      permissions: ['llm:use'],
+      db,
+      config: MOCK_CONFIG,
+      llmProvider: fakeProvider((p) => (seen = p as typeof seen)) as never,
+    });
+
+    const answer = await api.llm.analyzeImage('what is this?', 'data:image/png;base64,AAAA');
+    expect(answer).toBe('vision answer');
+
+    const parts = seen!.messages[seen!.messages.length - 1]!.content as { type: string }[];
+    expect(parts.map((p) => p.type)).toEqual(['text', 'image_url']);
+    cleanup();
+  });
+
+  it('analyzeImage() refuses anything that is not a data URI', async () => {
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'llm-plugin',
+      permissions: ['llm:use'],
+      db,
+      config: MOCK_CONFIG,
+      llmProvider: fakeProvider() as never,
+    });
+    // Handing the model a URL would make it fetch something itself; TARDIS
+    // always inlines the bytes it chose to send.
+    await expect(
+      api.llm.analyzeImage('what is this?', 'https://example.com/x.png')
+    ).rejects.toThrow(/data URI/);
     cleanup();
   });
 });

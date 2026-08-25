@@ -5,6 +5,7 @@ import type { TardisDB } from '@tardis/db';
 import type { Session, SystemConfig, MemoryEntry, MemoryType } from '@tardis/shared';
 import { PermissionGuard } from './permission-guard.js';
 import type { MemoryStore } from '../memory/memory-store.js';
+import type { LLMMessage, LLMProvider } from '../llm/provider.js';
 
 // ─── Types ───
 
@@ -57,8 +58,30 @@ export interface HttpAPI {
   patch(url: string, body: unknown, options?: RequestInit): Promise<never>;
   delete(url: string, options?: RequestInit): Promise<never>;
 }
+export interface LLMGenerateOptions {
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export interface LLMPluginAPI {
-  generate(prompt: string, options?: { systemPrompt?: string }): Promise<never>;
+  /**
+   * Text in, text out. No tools, no conversation history — a plugin's LLM never
+   * sees the user's chat, only the parameters the plugin hands it.
+   */
+  generate(prompt: string, options?: LLMGenerateOptions): Promise<string>;
+  /**
+   * Same, plus exactly one image (a data URI).
+   *
+   * One image per call is not a limitation of this method, it is the contract:
+   * the local model blends several images into a single confident wrong answer.
+   * Callers analysing multiple photos must call this once per photo.
+   */
+  analyzeImage(
+    prompt: string,
+    imageDataUri: string,
+    options?: LLMGenerateOptions
+  ): Promise<string>;
 }
 export interface PluginsAPI {
   list(): Promise<never[]>;
@@ -106,8 +129,10 @@ export function createPluginApi(params: {
   notificationSender?: (message: string, options?: { urgent?: boolean }) => Promise<void>;
   /** Shared MemoryStore instance for plugin memory access. */
   memoryStore?: MemoryStore;
+  /** Shared LLM provider, exposed to plugins holding the "llm:use" permission. */
+  llmProvider?: LLMProvider;
 }): PluginAPI {
-  const { pluginName, permissions, db, eventEmitter, notificationSender } = params;
+  const { pluginName, permissions, db, eventEmitter, notificationSender, llmProvider } = params;
   const guard = new PermissionGuard(pluginName, permissions);
 
   // ─── Storage ───
@@ -415,7 +440,47 @@ export function createPluginApi(params: {
   };
 
   const llm: LLMPluginAPI = {
-    generate: makeStubAsync('llm.generate') as LLMPluginAPI['generate'],
+    async generate(prompt, options) {
+      guard.assert('llm:use');
+      if (!llmProvider) {
+        throw new Error(`PluginAPI.llm.generate is unavailable: no LLM provider configured`);
+      }
+      return llmProvider.generate({
+        systemPrompt: options?.systemPrompt ?? '',
+        userPrompt: prompt,
+        ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
+        ...(options?.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+      });
+    },
+
+    async analyzeImage(prompt, imageDataUri, options) {
+      guard.assert('llm:use');
+      if (!llmProvider) {
+        throw new Error(`PluginAPI.llm.analyzeImage is unavailable: no LLM provider configured`);
+      }
+      if (!imageDataUri.startsWith('data:')) {
+        throw new Error(
+          'analyzeImage expects a data URI. TARDIS never asks the model to fetch a URL itself.'
+        );
+      }
+
+      const messages: LLMMessage[] = [];
+      if (options?.systemPrompt) messages.push({ role: 'system', content: options.systemPrompt });
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageDataUri } },
+        ],
+      });
+
+      const res = await llmProvider.chat({
+        messages,
+        ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
+        ...(options?.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+      });
+      return res.text ?? '';
+    },
   };
 
   const plugins: PluginsAPI = {

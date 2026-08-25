@@ -86,12 +86,19 @@ async function main(): Promise<void> {
   // 3b. Initialize memory store
   const memoryStore = new MemoryStore(db);
 
+  // The LLM provider must exist BEFORE plugins load: the PluginAPI factory below
+  // closes over it, and loadAll() runs it. Declaring it later put it in the
+  // temporal dead zone and every plugin would fail to activate with a
+  // ReferenceError — invisible to tsc, since the capture is inside a closure.
+  const llmProvider = buildLLMProvider(config);
+
   const pluginManager = new PluginManager(pluginsDir, (manifest) =>
     createPluginApi({
       pluginName: manifest.name,
       permissions: manifest.permissions,
       db,
       config,
+      llmProvider,
       notificationSender: (msg) => notificationSenderRef.send(msg),
       memoryStore,
     })
@@ -105,7 +112,6 @@ async function main(): Promise<void> {
   );
 
   // 4. Build AI engine
-  const llmProvider = buildLLMProvider(config);
   const toolRouter = new ToolRouter(pluginManager);
   const memoryRetriever = new MemoryRetriever(memoryStore, config.agent.memoryTokenBudget);
   const memoryExecutor = createMemoryExecutor(memoryStore);
