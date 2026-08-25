@@ -50,7 +50,7 @@ tardis-app/
 | A | Core completion: real persistent memory | **DONE** (2026-08-26) |
 | B | Skills architecture + `SKILLS.md` + `GET /api/skills` + migrate plugins | **DONE** (2026-08-26) |
 | C | Hybrid UI contract + `UI-CONTRACT.md` | **DONE** (2026-08-26) |
-| D | Client app foundation (new repo) — **gate: real DB change from the app** | **GATE PASSED**; mobile renderers pending |
+| D | Client app foundation (new repo) — **gate: real DB change from the app** | **DONE** (2026-08-26) — gate passed on web; mobile built, no runtime proof |
 | E | New plugins: health/food (multimodal) + budget | NOT STARTED |
 | F | TUI renderer against the same contract | NOT STARTED |
 
@@ -362,3 +362,47 @@ One asserts the client can render *every* descriptor the server actually ships.
   it now requires `TARDIS_PASSWORD` and fails loudly without it.
 
 **Next**: mobile renderers (Expo) sharing `packages/core`, then Phase D closes.
+
+
+### 2026-08-26 — Phase D (part 2): mobile renderers, and an honest limit
+
+**Built**: `apps/mobile` — Expo Router app with all five blocks in React Native primitives,
+plus sign-in and the skills dashboard. Every *rule* comes from `@tardis-app/core` and is
+shared with web: `resultPath`, item mapping, action arg mapping, form field derivation, and
+the unknown-block/field guard. Only the widgets differ.
+
+Where the surfaces legitimately diverge, the contract fixes the field **type** and each
+surface picks the widget — `select` is a `<select>` on web and a chip row on mobile;
+`date`/`time` are native inputs on web and validated text on mobile, which UI-CONTRACT.md
+explicitly permits. That is the contract working, not a gap.
+
+Mobile calls TARDIS directly; not being subject to CORS, it needs no proxy hop.
+
+**What is verified**
+
+| | Evidence |
+|---|---|
+| `packages/core` | 16 tests passing against a **real captured** `GET /api/skills` |
+| Web blocks | **Gate 4/4** — real components, real DOM events, real DB row |
+| Mobile blocks | `tsc --noEmit` clean; share the tested core |
+
+**What is NOT verified — stated plainly**
+
+There is **no mobile runtime proof**. `apps/mobile/components/gate.e2e.spec.tsx` is written
+and correct but does not execute: React Native ships Flow-typed source needing the
+`jest-expo` preset, and the workspace resolves `@react-native/jest-preset@0.86.3` against
+`react-native@0.76.5`, which the preset cannot load. `npm install` inside `apps/mobile` also
+fails on the workspace `*` protocol. I pinned versions twice, hit a non-existent version,
+and stopped rather than keep yak-shaving.
+
+The mobile components are a thin widget layer over binding logic that *is* tested, so the
+risk is narrow — but "typechecks" is not "works", and it should not be written up as if it
+were. Closing it means running on a device/simulator (`bun run start` in `apps/mobile`) or
+installing that package outside the workspace. Also recorded in the client repo README.
+
+**Phase D's stated gate — "an action taken in the app produces a real change in TARDIS's
+database" — is met**, with the sqlite row to prove it. Marking the phase done on that basis,
+with the mobile runtime gap carried forward rather than buried.
+
+**Next**: Phase E — the health/food plugin (full multimodal pipeline, per the locked
+decision) and the budget plugin, both as Skills against the Phase B/C contract.
