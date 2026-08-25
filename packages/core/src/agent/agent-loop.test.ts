@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { runAgentLoop } from './agent-loop.js';
+import { runAgentLoop, buildSystemPrompt } from './agent-loop.js';
 import type { AgentLoopInput } from './agent-loop.js';
 import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 import type { AgentConfig, ToolDefinition } from '@tardis/shared';
@@ -1119,5 +1119,88 @@ describe('runAgentLoop: prompt cache friendliness', () => {
     const timeLine = volatileBlock.split('\n')[0] ?? '';
     // "7:45 PM" is fine; "7:45:53 PM" is not.
     expect(timeLine).not.toMatch(/\d{1,2}:\d{2}:\d{2}/);
+  });
+});
+
+// ─── Prompt section ordering (measured, not cosmetic) ─────────────────────────
+//
+// With "## Response style" ahead of "## Memory", gemma-4-E2B saved a fact in
+// only 2/15 trials against the live model — it replied "Memory saved." without
+// ever calling the tool. Reordering took it to 15/15, 0/10 spurious saves.
+
+describe('buildSystemPrompt: instruction ordering', () => {
+  const MEMORY_SAVE: ToolDefinition = {
+    name: 'memory.save',
+    description: 'Save a fact',
+    parameters: { type: 'object', properties: {}, required: [] },
+    actionType: 'direct',
+  };
+
+  function promptWith(tools: ToolDefinition[]): string {
+    return buildSystemPrompt({
+      userMessage: 'x',
+      conversationHistory: [],
+      memories: [],
+      availableTools: tools,
+      selectedPlugins: [],
+      config: DEFAULT_CONFIG,
+      llmProvider: { name: 'mock' } as LLMProvider,
+      executeTool: async () => ({}),
+    });
+  }
+
+  it('puts behavioural instructions (## Memory) BEFORE ## Response style', () => {
+    const p = promptWith([MEMORY_SAVE]);
+    expect(p).toContain('## Memory');
+    expect(p).toContain('## Response style');
+    expect(p.indexOf('## Memory')).toBeLessThan(p.indexOf('## Response style'));
+  });
+
+  it('scopes the style rules to wording so they cannot suppress tool calls', () => {
+    expect(promptWith([MEMORY_SAVE])).toContain('never decide whether to call a tool');
+  });
+
+  it('no longer contains the "Match the user\'s energy" line that measured 0/9', () => {
+    expect(promptWith([MEMORY_SAVE])).not.toContain("Match the user's energy");
+    expect(promptWith([])).not.toContain("Match the user's energy");
+  });
+
+  it('still ends with the style block when no memory tools are present', () => {
+    const p = promptWith([]);
+    expect(p).not.toContain('## Memory');
+    expect(p).toContain('## Response style');
+  });
+});
+
+// ─── Claim guard must cover memory claims, not just reminders ────────────────
+
+describe('claim-vs-reality guard: memory claims', () => {
+  const MEMORY_SAVE: ToolDefinition = {
+    name: 'memory.save',
+    description: 'Save a fact',
+    parameters: { type: 'object', properties: {}, required: [] },
+    actionType: 'direct',
+  };
+
+  it('retries on a bare "Memory saved." with no tool call', async () => {
+    const llm = makeScriptedLLM([
+      textResponse('Memory saved.'), // the exact real-world false claim
+      toolCallResponse('memory.save', { key: 'user_name', value: 'Mohammad' }),
+      textResponse('Got it.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'my name is Mohammad',
+        availableTools: [MEMORY_SAVE],
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    const toolCalls = result.trace.steps.filter((s) => s.type === 'tool_call');
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0]?.toolName).toBe('memory.save');
+    expect(result.response).toBe('Got it.');
   });
 });

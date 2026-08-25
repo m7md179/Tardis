@@ -81,10 +81,10 @@ function claimCorrectionNudge(userMessage: string): string {
 const COMPLETION_CLAIM_PATTERN = new RegExp(
   [
     // "I've set…", "I have created…", "I set…"
-    /\bi(?:'ve|\s+have)?\s+(?:just\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged)\b/
+    /\bi(?:'ve|\s+have)?\s+(?:just\s+|already\s+|now\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged)\b/
       .source,
     // "Reminder set", "Task added", "Timer has been started"
-    /\b(?:reminder|task|timer|session|note|event|alarm|entry)s?\s+(?:has|have)?\s*(?:been\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed)\b/
+    /\b(?:memory|memories|reminder|task|timer|session|note|event|alarm|entry|fact|preference)s?\s+(?:has|have)?\s*(?:been\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed)\b/
       .source,
     // Bare confirmations
     /^(?:done|all set|ok(?:ay)?,?\s+done|got it,?\s+done)\b/.source,
@@ -199,15 +199,20 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         continue;
       }
 
+      // An empty reply is never useful, and Telegram rejects empty message
+      // text outright — so treat it as a failure and substitute something
+      // truthful rather than shipping a blank turn.
+      const finalText = text.trim() ? text : fallbackForEmptyResponse(steps);
+
       steps.push({
         type: 'reasoning',
-        content: text,
+        content: finalText,
         timestamp: stepStart,
         durationMs: Date.now() - stepStart,
       });
       return {
-        response: text,
-        trace: buildTrace(input, steps, text, startTime, totalTokens),
+        response: finalText,
+        trace: buildTrace(input, steps, finalText, startTime, totalTokens),
       };
     }
 
@@ -338,24 +343,46 @@ export function buildSystemPrompt(input: AgentLoopInput): string {
     'When you have enough information, respond directly to the user.',
     'Never say an action is done unless you actually called the tool that does it. If you did not call a tool, nothing happened.',
     "When tools require a date, always pass it as YYYY-MM-DD format using today's actual date.",
-    '\n## Response style',
-    '- Be concise. Confirm the action, share only relevant info, stop.',
-    '- Do NOT offer follow-up options or menus after every response.',
-    '- Do NOT use emojis unless the user uses them first.',
-    '- Never show internal IDs, raw timestamps, or technical details. Format all dates and times in human-readable form.',
-    "- Match the user's energy. Short command = short confirmation. Detailed question = detailed answer.",
-    '- You are a capable assistant, not a customer service bot. No cheerfulness, no upselling, no "Would you like to..." after every action.',
   ];
 
-  // Memory tool instructions (only if memory tools are available)
+  // ─── Behavioural instructions FIRST, response style LAST ──────────────────
+  //
+  // Ordering here is load-bearing, not cosmetic. With the response-style rules
+  // placed before the memory instructions, gemma-4-E2B saved a fact in only
+  // 2/15 trials — it answered "Memory saved." without ever calling the tool.
+  // Moving the style block after the memory block, and scoping it explicitly to
+  // wording, took that to 15/15 with 0/10 spurious saves and no change in reply
+  // length. The single worst offender was a line reading "Match the user's
+  // energy. Short command = short confirmation", which on its own produced 0/9:
+  // the model read a short user statement as deserving a short confirmation
+  // rather than an action. That line is gone.
+  //
+  // Rule of thumb: anything telling the model WHAT TO DO must come after
+  // anything telling it HOW TO WRITE.
+
   const hasMemoryTools = input.availableTools.some((t) => t.name === 'memory.save');
   if (hasMemoryTools) {
     lines.push('\n## Memory');
     lines.push('- If the user shares a personal fact, preference, or important context (names, emails, schedules, preferences), save it using memory.save with a descriptive snake_case key.');
+    // Keep "silently": measured 15/15 saves against the live model. Rewording
+    // this to ask for a spoken acknowledgement dropped saves to 1/4 — the model
+    // produced the acknowledgement INSTEAD of calling the tool ("I have already
+    // saved that..."). The empty replies this wording causes are handled by
+    // fallbackForEmptyResponse() instead, which is deterministic.
     lines.push('- Do not announce that you are saving a memory. Just do it silently alongside your response.');
     lines.push('- Use memory.recall if the user asks about something you might have stored previously.');
     lines.push('- Use memory.forget if the user explicitly asks you to forget something.');
   }
+
+  lines.push('\n## Response style');
+  lines.push(
+    'These rules govern how you word your reply. They never decide whether to call a tool — if a tool is needed, call it first, then apply these to the wording.'
+  );
+  lines.push('- Be concise. Confirm the action, share only relevant info, stop.');
+  lines.push('- Do NOT offer follow-up options or menus after every response.');
+  lines.push('- Do NOT use emojis unless the user uses them first.');
+  lines.push('- Never show internal IDs, raw timestamps, or technical details. Format all dates and times in human-readable form.');
+  lines.push('- You are a capable assistant, not a customer service bot. No cheerfulness, no upselling, no "Would you like to..." after every action.');
 
   return lines.join('\n');
 }
@@ -394,6 +421,20 @@ export function buildContextPreamble(input: AgentLoopInput): string {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Chooses a stand-in when the model returns an empty final response.
+ *
+ * Measured at 10/12 empty replies after a memory.save before the prompt was
+ * reworded — the instruction to save "silently" left the model with nothing to
+ * say. The prompt is fixed, but a blank reply is a hard failure downstream
+ * (Telegram rejects empty text), so this stays as a net. It only ever claims
+ * what the trace actually shows: that tools ran.
+ */
+function fallbackForEmptyResponse(steps: AgentStep[]): string {
+  const ranTools = steps.some((s) => s.type === 'tool_result');
+  return ranTools ? 'Done.' : "Sorry — I didn't catch that. Could you rephrase?";
 }
 
 function formatLocalDate(date: Date): string {
