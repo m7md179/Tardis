@@ -16,6 +16,130 @@ export const ToolDefinitionSchema = z.object({
   actionType: ActionTypeSchema,
 });
 
+// ─── UI descriptors (Phase C — see UI-CONTRACT.md) ───────────────────────────
+
+/** Widget vocabulary. Every surface must implement all nine. */
+export const SkillUiFieldTypeSchema = z.enum([
+  'text',
+  'textarea',
+  'number',
+  'date',
+  'time',
+  'datetime',
+  'select',
+  'tags',
+  'checkbox',
+]);
+
+export const SkillUiFieldSchema = z.object({
+  /** Must name a parameter the skill actually accepts. */
+  name: z.string().min(1),
+  type: SkillUiFieldTypeSchema,
+  label: z.string().min(1),
+  placeholder: z.string().optional(),
+  required: z.boolean().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  options: z
+    .array(z.object({ value: z.union([z.string(), z.number()]), label: z.string().min(1) }))
+    .optional(),
+});
+
+/** How to read one element of a result collection. Values are field paths, not literals. */
+export const SkillUiItemSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  body: z.string().optional(),
+  meta: z.array(z.string()).optional(),
+  /** timer/countdown: a timestamp to count down to. */
+  deadline: z.string().optional(),
+  /** timer/elapsed: a start timestamp to count up from. */
+  since: z.string().optional(),
+  /** timer/elapsed: seconds already banked before the current run. */
+  accumulated: z.string().optional(),
+});
+
+/** A per-item action: invoke another skill, mapping its params to item fields. */
+export const SkillUiActionSchema = z.object({
+  skill: z
+    .string()
+    .regex(/^[a-z0-9-]+\.[a-z0-9-]+$/, { message: 'Action skill must be "plugin.skill"' }),
+  label: z.string().min(1),
+  style: z.enum(['primary', 'secondary', 'danger']).default('secondary'),
+  /** skill parameter name -> field on the selected item. */
+  args: z.record(z.string()).default({}),
+});
+
+export const SkillUiDescriptorSchema = z
+  .object({
+    block: z.enum(['action', 'form', 'list', 'timer', 'detail']),
+    label: z.string().min(1),
+    icon: z.string().optional(),
+    /** action: fixed arguments to invoke with. */
+    args: z.record(z.unknown()).optional(),
+    /** form */
+    submitLabel: z.string().optional(),
+    fields: z.array(SkillUiFieldSchema).optional(),
+    /** list / timer */
+    resultPath: z.string().optional(),
+    emptyText: z.string().optional(),
+    item: SkillUiItemSchema.optional(),
+    actions: z.array(SkillUiActionSchema).optional(),
+    /** timer */
+    mode: z.enum(['countdown', 'elapsed']).optional(),
+    /**
+     * Escape hatch: bespoke UI per surface, keyed by surface name.
+     * Never a substitute for the standard block above — see the refinement.
+     */
+    custom: z.record(z.string()).optional(),
+  })
+  .superRefine((d, ctx) => {
+    const needsItem = d.block === 'list' || d.block === 'timer' || d.block === 'detail';
+    if (needsItem && !d.item) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['item'],
+        message: `Block "${d.block}" requires an "item" descriptor`,
+      });
+    }
+    if (d.block === 'timer') {
+      if (!d.mode) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['mode'],
+          message: 'Timer block requires "mode" ("countdown" or "elapsed")',
+        });
+      }
+      if (d.mode === 'countdown' && d.item && !d.item.deadline) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['item', 'deadline'],
+          message: 'Countdown timer requires item.deadline',
+        });
+      }
+      if (d.mode === 'elapsed' && d.item && !d.item.since) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['item', 'since'],
+          message: 'Elapsed timer requires item.since',
+        });
+      }
+    }
+    // The escape hatch's hard requirement, enforced here rather than in review:
+    // custom UI without a standard fallback silently breaks the TUI, which
+    // cannot execute custom code. `block` is required above, so a custom-only
+    // descriptor cannot parse at all; this makes the reason legible when it fails.
+    if (d.custom && Object.keys(d.custom).length > 0 && !d.block) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['block'],
+        message:
+          'A descriptor with "custom" UI must still declare a standard block fallback — the TUI cannot run custom code',
+      });
+    }
+  });
+
 /**
  * A Skill: one capability a plugin registers. See SKILLS.md.
  *
@@ -38,9 +162,10 @@ export const SkillDefinitionSchema = z.object({
   parameters: z.record(z.unknown()),
   /** Additive to the plugin's own permissions. */
   permissions: z.array(z.string()).optional(),
-  /** How a client renders/invokes this without an LLM. Vocabulary defined in Phase C. */
-  ui: z.record(z.unknown()).optional(),
+  /** How a client renders/invokes this without an LLM. See UI-CONTRACT.md. */
+  ui: SkillUiDescriptorSchema.optional(),
 });
+
 
 export const ProactiveTriggerSchema = z.object({
   name: z.string().min(1),

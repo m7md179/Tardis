@@ -123,7 +123,11 @@ export const executeTool = async (
         return {
           id: r.id,
           message: r.message,
+          // Display string for the LLM and chat surfaces…
           fireAt: new Date(r.fireAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }),
+          // …and the raw epoch ms the countdown timer block binds to. A UI
+          // cannot count down from a localised string.
+          fireAtMs: r.fireAt,
           inMinutes,
           inMinutesLabel: inMinutes < 60
             ? `${inMinutes} minute(s)`

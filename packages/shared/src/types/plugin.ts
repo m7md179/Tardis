@@ -4,6 +4,9 @@ import type {
   ActionTypeSchema,
   ToolDefinitionSchema,
   SkillDefinitionSchema,
+  SkillUiDescriptorSchema,
+  SkillUiFieldSchema,
+  SkillUiActionSchema,
   ProactiveTriggerSchema,
   PluginManifestSchema,
   PluginManifestInputSchema,
@@ -15,6 +18,10 @@ export type ActionType = z.infer<typeof ActionTypeSchema>;
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 /** One capability a plugin registers. See SKILLS.md. */
 export type SkillDefinition = z.infer<typeof SkillDefinitionSchema>;
+/** How a client renders and invokes a Skill without an LLM. See UI-CONTRACT.md. */
+export type SkillUiDescriptor = z.infer<typeof SkillUiDescriptorSchema>;
+export type SkillUiField = z.infer<typeof SkillUiFieldSchema>;
+export type SkillUiAction = z.infer<typeof SkillUiActionSchema>;
 export type ProactiveTrigger = z.infer<typeof ProactiveTriggerSchema>;
 /** Canonical manifest — `summary`, `skills` and `tools` are always present. */
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;

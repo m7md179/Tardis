@@ -276,7 +276,6 @@ export const executeTool = async (
       if (!title) return { success: false, message: 'Event title is required.' };
 
       const date = resolveDate(String(args['date'] ?? '').trim());
-      const date = String(args['date'] ?? '').trim();
       if (!date) return { success: false, message: 'Event date is required.' };
 
       const startTime = typeof args['startTime'] === 'string' ? args['startTime'] : null;
@@ -329,9 +328,6 @@ export const executeTool = async (
       const date = resolveDate(String(args['date'] ?? '').trim());
       const startTime = String(args['startTime'] ?? '').trim();
       const endTime = String(args['endTime'] ?? '').trim() || addOneHour(startTime);
-      const date = String(args['date'] ?? '').trim();
-      const startTime = String(args['startTime'] ?? '').trim();
-      const endTime = String(args['endTime'] ?? '').trim();
 
       const params = new URLSearchParams({
         timeMin: toLocalDateTimeISOString(date, startTime),
