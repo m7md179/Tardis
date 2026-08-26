@@ -943,3 +943,63 @@ describe('login rate limiting', () => {
     }
   });
 });
+
+// ─── SSE keep-alive ──────────────────────────────────────────────────────────
+//
+// Observed live from the TUI, through the Cloudflare tunnel: a turn that used
+// two plugins died with "The socket connection was closed unexpectedly" in the
+// gap between a tool result and the answer. A model call can hold the turn for
+// 20+ seconds with nothing to report, no bytes flow, and the tunnel drops an
+// idle connection.
+
+describe('POST /api/chat/stream: keep-alive', () => {
+  /** A turn that takes long enough for the heartbeat to matter. */
+  function slowConversation(delayMs: number) {
+    return {
+      llmProvider: {
+        name: 'mock',
+        async chat() {
+          await new Promise((r) => setTimeout(r, delayMs));
+          return { type: 'text' as const, text: 'Took a while.' };
+        },
+        async generate() {
+          return '[]';
+        },
+      },
+      toolRouter: { asExecutor: () => async () => ({}) },
+      agentConfig: {
+        maxSteps: 5,
+        conversationHistoryLength: 10,
+        actionOverrides: {},
+      },
+      getAllManifests: () => [],
+    } as unknown as AppDeps['conversation'];
+  }
+
+  it('emits comments while a slow turn produces nothing', async () => {
+    const { app, cleanup } = await makeApp({
+      conversation: slowConversation(120),
+      streamHeartbeatMs: 15,
+    });
+    const token = await makeToken();
+
+    const res = await app.request('/api/chat/stream', {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'take your time', chatId: 'hb' }),
+    });
+
+    const body = await res.text();
+    expect(body).toContain(': ping');
+    // and the turn still finishes normally
+    expect(body).toContain('event: done');
+    cleanup();
+  });
+
+  it('a comment carries no data, so a parser ignores it', () => {
+    // The client splits on a blank line and only acts on chunks with `data:`.
+    const chunk = ': ping';
+    const dataLines = chunk.split('\n').filter((l) => l.startsWith('data:'));
+    expect(dataLines).toHaveLength(0);
+  });
+});

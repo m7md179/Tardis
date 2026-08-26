@@ -23,6 +23,11 @@ export interface AppDeps {
    * reachable only from Telegram, which is how TARDIS shipped until now.
    */
   conversation?: import('@tardis/core').ConversationDeps;
+  /**
+   * Gap between SSE keep-alive comments, in ms. Overridable so a test does not
+   * have to wait ten seconds to prove the heartbeat exists.
+   */
+  streamHeartbeatMs?: number;
   /** Called when PUT /api/config/llm succeeds — persist the change. */
   saveConfig: (updated: SystemConfig) => void;
   /** Proactive scheduler instance (optional, added in Phase 5). */
@@ -236,11 +241,32 @@ export function createApp(deps: AppDeps): Hono {
     // happen is the difference between "working" and "looks frozen".
     const stream = new ReadableStream({
       async start(controller) {
-        const send = (event: string, data: unknown): void => {
-          controller.enqueue(
-            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-          );
+        let closed = false;
+
+        // Enqueueing into a stream whose reader has gone away throws. Letting
+        // that propagate would abort the turn mid-flight and lose work that has
+        // already happened, so a vanished client is ignored and the turn runs to
+        // completion — its trace and history are persisted either way.
+        const write = (chunk: string): void => {
+          if (closed) return;
+          try {
+            controller.enqueue(encoder.encode(chunk));
+          } catch {
+            closed = true;
+          }
         };
+
+        const send = (event: string, data: unknown): void => {
+          write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        };
+
+        // A turn can spend 20+ seconds inside one model call with nothing to
+        // report. No bytes flow in that window, and Cloudflare drops the idle
+        // connection — observed live as "socket connection closed unexpectedly"
+        // between a tool result and the answer. An SSE comment is ignored by
+        // every parser but is still traffic, which is all the tunnel wants.
+        const heartbeat = setInterval(() => write(': ping\n\n'), deps.streamHeartbeatMs ?? 10_000);
+
         try {
           const result = await runConversationTurn(
             {
@@ -261,7 +287,14 @@ export function createApp(deps: AppDeps): Hono {
         } catch (err) {
           send('error', { error: err instanceof Error ? err.message : String(err) });
         } finally {
-          controller.close();
+          clearInterval(heartbeat);
+          if (!closed) {
+            try {
+              controller.close();
+            } catch {
+              // Already closed by the reader going away.
+            }
+          }
         }
       },
     });
