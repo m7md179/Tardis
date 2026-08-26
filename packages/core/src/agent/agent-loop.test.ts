@@ -145,7 +145,7 @@ describe('runAgentLoop: tool call → text', () => {
         availableTools: [DIRECT_TOOL],
         executeTool: async (name, args) => {
           toolResults.push({ name, args });
-          return { sessionId: 'sess_abc', taskName: 'coding', status: 'active' };
+          return { success: true, sessionId: 'sess_abc', taskName: 'coding', status: 'active' };
         },
       })
     );
@@ -166,7 +166,7 @@ describe('runAgentLoop: tool call → text', () => {
       makeInput({
         llmProvider: llm,
         availableTools: [DIRECT_TOOL],
-        executeTool: async () => ({ ok: true }),
+        executeTool: async () => ({ success: true }),
       })
     );
 
@@ -177,7 +177,7 @@ describe('runAgentLoop: tool call → text', () => {
   });
 
   it('includes tool result in tool_result step', async () => {
-    const toolReturn = { sessionId: 'sess_1', taskName: 'coding' };
+    const toolReturn = { success: true, sessionId: 'sess_1', taskName: 'coding' };
     const llm = makeScriptedLLM([
       toolCallResponse('time-tracker.start', { taskName: 'coding' }),
       textResponse('Done.'),
@@ -250,7 +250,7 @@ describe('runAgentLoop: multi-step', () => {
         availableTools: [DIRECT_TOOL, notesTool],
         executeTool: async (name) => {
           toolCalled.push(name);
-          return { ok: true };
+          return { success: true };
         },
       })
     );
@@ -289,7 +289,7 @@ describe('runAgentLoop: multi-step', () => {
         executeTool: async (name) =>
           name === 'google-calendar.list-events'
             ? [{ title: 'Team meeting', time: '2pm' }]
-            : { taskId: 'task_123' },
+            : { success: true, taskId: 'task_123' },
       })
     );
 
@@ -402,7 +402,7 @@ describe('runAgentLoop: maxSteps limit', () => {
         llmProvider: llm,
         availableTools: [DIRECT_TOOL],
         config: { ...DEFAULT_CONFIG, maxSteps: 3 },
-        executeTool: async () => ({ ok: true }),
+        executeTool: async () => ({ success: true }),
       })
     );
 
@@ -690,7 +690,7 @@ describe('runAgentLoop: repeat guard', () => {
         config: { ...DEFAULT_CONFIG, maxSteps: 10 },
         executeTool: async () => {
           execCount++;
-          return { ok: true };
+          return { success: true };
         },
       })
     );
@@ -719,7 +719,7 @@ describe('runAgentLoop: repeat guard', () => {
         config: { ...DEFAULT_CONFIG, maxSteps: 10 },
         executeTool: async () => {
           execCount++;
-          return { ok: true };
+          return { success: true };
         },
       })
     );
@@ -743,7 +743,7 @@ describe('runAgentLoop: repeat guard', () => {
         config: { ...DEFAULT_CONFIG, maxSteps: 10 },
         executeTool: async () => {
           execCount++;
-          return { ok: true };
+          return { success: true };
         },
       })
     );
@@ -794,7 +794,7 @@ describe('runAgentLoop: claim-vs-reality guard', () => {
 
     expect(result.trace.steps.some((s) => s.type === 'tool_call')).toBe(true);
     const errStep = result.trace.steps.find((s) => s.type === 'error');
-    expect(errStep?.content).toContain('without calling any tool');
+    expect(errStep?.content).toContain('no tool reported carrying it out');
     expect(result.response).toBe('Done — reminder is set.');
   });
 
@@ -1026,7 +1026,7 @@ describe('runAgentLoop: malformed tool arguments recovery', () => {
               '[VALIDATION_ERROR] Tool "time-tracker.start" missing required argument(s): taskName'
             );
           }
-          return { ok: true };
+          return { success: true };
         },
       })
     );
@@ -1503,5 +1503,125 @@ describe('runAgentLoop: unrecorded-amount nudge', () => {
     );
 
     expect(seen.some((c) => c.includes('still unrecorded'))).toBe(false);
+  });
+});
+
+// ─── Claim guard vs. read-only tool calls ────────────────────────────────────
+//
+// Live, 1 run in 3: "Delete my most recent budget entry." made the model call
+// budget.this-month, delete nothing, and answer "I have deleted the most recent
+// budget entry." The claim guard missed it because it only fired when the turn
+// called *no* tool at all — and this turn called one, just a read.
+//
+// Plugins follow the Result pattern the project mandates: mutating skills return
+// `success`, queries return plain data. Verified across all 8 plugins — every
+// write returns a Result, every list/summary does not. So "did anything actually
+// happen" is answerable without new metadata.
+
+describe('runAgentLoop: claim guard after a read-only call', () => {
+  const READ: ToolDefinition = {
+    name: 'budget.this-month',
+    description: 'List this month spending',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+  const WRITE: ToolDefinition = {
+    name: 'budget.delete-entry',
+    description: 'Delete an entry',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+
+  it('fires when the only tool call returned plain data, not a Result', async () => {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => contentToText(m.content)));
+        call++;
+        if (call === 1) return toolCallResponse('budget.this-month', {});
+        if (call === 2) return textResponse('I have deleted the most recent budget entry.');
+        return textResponse('I could not find an entry to delete.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'Delete my most recent budget entry.',
+        availableTools: [READ, WRITE],
+        selectedPlugins: ['budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ entries: [], total: 0 }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('nothing actually happened yet'))).toBe(true);
+    expect(result.response).toBe('I could not find an entry to delete.');
+  });
+
+  it('stays quiet when a tool actually reported success', async () => {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => contentToText(m.content)));
+        call++;
+        if (call === 1) return toolCallResponse('budget.delete-entry', { id: 'x' });
+        return textResponse('I have deleted the most recent budget entry.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'Delete my most recent budget entry.',
+        availableTools: [READ, WRITE],
+        selectedPlugins: ['budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true, message: 'Deleted 2.00 JOD.' }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('nothing actually happened yet'))).toBe(false);
+  });
+
+  it('treats a failed Result as nothing having happened', async () => {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => contentToText(m.content)));
+        call++;
+        if (call === 1) return toolCallResponse('budget.delete-entry', { id: 'x' });
+        if (call === 2) return textResponse('Done.');
+        return textResponse('That entry does not exist.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'Delete my most recent budget entry.',
+        availableTools: [READ, WRITE],
+        selectedPlugins: ['budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: false, message: 'No entry with id "x".' }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('nothing actually happened yet'))).toBe(true);
   });
 });

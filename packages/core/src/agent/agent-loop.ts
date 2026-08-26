@@ -331,10 +331,24 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       // The model sometimes answers "Reminder set." having called nothing at
       // all. Retry once, telling it plainly that nothing happened, before we
       // hand a false confirmation to the user.
-      const calledAnyTool = steps.some((s) => s.type === 'tool_call');
+      //
+      // Calling *a* tool is not evidence: "Delete my most recent budget entry."
+      // made the model run budget.this-month, delete nothing, and answer "I have
+      // deleted the most recent budget entry" — 1 live run in 3. What counts is
+      // whether anything reported doing something. Plugins follow the Result
+      // pattern this project mandates, so mutating skills return `success` and
+      // queries return plain data; that holds for every skill across all eight
+      // plugins, which makes it a contract rather than a guess.
+      const recordedSomething = steps.some(
+        (s) =>
+          s.type === 'tool_result' &&
+          typeof s.toolResult === 'object' &&
+          s.toolResult !== null &&
+          (s.toolResult as Record<string, unknown>)['success'] === true
+      );
       if (
         tools !== undefined &&
-        !calledAnyTool &&
+        !recordedSomething &&
         claimRetriesUsed < MAX_CLAIM_RETRIES &&
         looksLikeCompletionClaim(text)
       ) {
@@ -342,7 +356,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         steps.push({
           type: 'error',
           content:
-            'Model claimed an action was completed without calling any tool — retrying once with a correction.',
+            'Model claimed an action was completed but no tool reported carrying it out — retrying once with a correction.',
           timestamp: stepStart,
           durationMs: Date.now() - stepStart,
         });
