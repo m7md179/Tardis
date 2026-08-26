@@ -51,7 +51,7 @@ tardis-app/
 | B | Skills architecture + `SKILLS.md` + `GET /api/skills` + migrate plugins | **DONE** (2026-08-26) |
 | C | Hybrid UI contract + `UI-CONTRACT.md` | **DONE** (2026-08-26) |
 | D | Client app foundation (new repo) — **gate: real DB change from the app** | **DONE** (2026-08-26) — gate passed on web; mobile built, no runtime proof |
-| E | New plugins: health/food (multimodal) + budget | **IN PROGRESS** — multimodal pipeline + PluginAPI.llm done; plugins next |
+| E | New plugins: health/food (multimodal) + budget | **DONE** (2026-08-26) |
 | F | TUI renderer against the same contract | NOT STARTED |
 
 Prerequisite unblocking (only as far as needed): `notes` plugin (duplicate `tagFilter`
@@ -459,3 +459,77 @@ where the deploy still reports `Loaded 6 plugin(s)`.
 around the known underestimation of calorie-dense low-volume foods) and the budget plugin.
 An `image` field type will need adding to the UI contract so photos can be captured from
 the app — a legitimate extension the locked decision already implies.
+
+
+### 2026-08-26 — Phase E (part 2): the health and budget plugins
+
+**A stale skill, worth flagging.** `tardis-plugin-creator` describes a plugin shape this
+codebase no longer uses — `plugin.json` instead of `manifest.json`, a default-exported
+`TardisPlugin` object with a `commands` map instead of named `onActivate`/`executeTool`
+exports, a `tardisVersion` field the schema does not have, and permissions (`tasks:read`,
+`tasks:write`) absent from `VALID_PERMISSIONS`. I verified the real contract by reading a
+working plugin and followed that instead. The skill file is worth updating.
+
+**health** — meals by description or photo, daily totals, macro breakdowns.
+
+The estimation prompt is built around the documented failure mode rather than hoping
+around it: the model under-counts calorie-dense, low-volume foods, which are exactly what
+dominates a meal's calories while occupying no space on the plate and being invisible in a
+photo. The prompt names that failure explicitly and **forces fats to be listed as their own
+line items** — an item the model has to write down is one it cannot quietly omit.
+
+Verified live, 3/3 meals surfaced the hidden fat:
+
+| Input | Hidden fat caught |
+|---|---|
+| "two eggs, toast with butter" | Butter, 72 kcal, separate item |
+| "grilled chicken with roasted vegetables" | **Olive oil, 120 kcal — added though never mentioned** |
+| "caesar salad with chicken" | Caesar dressing, 150 kcal, separate item |
+
+`health.log-photo` is `aiInvocable: false`: the agent loop has no image to hand it, so it is
+reachable only from a surface that can capture one. That is precisely what the flag exists
+for, and the first real use of it.
+
+**budget** — spending from a natural sentence or an explicit entry, monthly category
+summaries. Parsing verified live, 4/4:
+
+| Input | Parsed |
+|---|---|
+| "spent 45 on groceries at Tesco" | 45 / groceries @ Tesco |
+| "12.50 for lunch at the cafe today" | 12.50 / eating-out @ cafe |
+| "paid 30 for a taxi to the airport" | 30 / transport |
+| "just bought a 20 dinar shirt" | 20 / shopping |
+
+Input with no amount is **refused** rather than recorded as zero, which would quietly
+corrupt every later total. Categories normalise through an alias map so summaries do not
+fragment into food / Food / eating out / eating-out.
+
+**A bug only real output caught**: `currency()` called the async `api.config.get()`
+synchronously, rendering `[object Promise]` into every formatted amount. Every unit-level
+check would have passed. Now read once at activation and cached.
+
+**Contract extension**: added the `image` field type. It submits a data URI — the same
+shape `analyzeImage` expects. A surface without a camera falls back to a file picker; the
+TUI cannot capture one and must render the field unavailable, so a skill whose only input
+is an image is legitimately unusable from a terminal. That is a property of the capability,
+not a gap in the contract, and it is stated in UI-CONTRACT.md.
+
+**Evidence**
+
+| Check | Result |
+|---|---|
+| Production plugin load | **8 plugins** (was 6) |
+| `GET /api/skills` live | **37 skills** across 8 plugins |
+| Block coverage | form 14, list 8, timer 2, detail 1, action 1 |
+| `image` field served | yes — `health.log-photo` |
+| Photo path end to end | image → analyzeImage → parse → stored entry |
+| Suite | 661 pass / 1 known pre-existing fail |
+
+**Honest limit**: the photo path is verified as *plumbing* only. The test image was a
+synthetic shape, so the model's guess ("Egg") is meaningless — estimation quality on real
+food photos is unverified, because this environment has no real food photo. The text path,
+which is the one with measurable behaviour, is verified properly.
+
+**Next**: Phase F — the TUI renderer against the same `GET /api/skills` contract. If it is
+a small phase, the contract held; if it needs architectural change, that is signal Phase C
+was incomplete and gets reported as such.
