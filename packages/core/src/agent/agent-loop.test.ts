@@ -1397,3 +1397,111 @@ describe('runAgentLoop: completion guard', () => {
     expect(calls).toBe(2);
   });
 });
+
+// ─── Unrecorded-amount nudge ─────────────────────────────────────────────────
+//
+// Measured against the live model: "I ate 2 sandwiches today, they cost me 2 JOD
+// and had 700 calories" logged the meal and dropped the spend 3/3, and the
+// generic nudge ("you have not recorded anything with: budget") made it argue
+// the point rather than act — "the cost of 2 JOD is not a spending record".
+//
+// Naming a plugin invites a judgement about that plugin's relevance, which the
+// model is happy to decline. Naming the amount states a fact it cannot argue
+// with: the number is in the message and no tool call used it.
+
+describe('runAgentLoop: unrecorded-amount nudge', () => {
+  const HEALTH: ToolDefinition = {
+    name: 'health.log-meal',
+    description: 'Log a meal',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+  const BUDGET: ToolDefinition = {
+    name: 'budget.log-spend',
+    description: 'Log spending',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+
+  function nudgeTextFor(userMessage: string, firstCallArgs: Record<string, unknown>) {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => contentToText(m.content)));
+        call++;
+        if (call === 1) return toolCallResponse('health.log-meal', firstCallArgs);
+        return textResponse('Done.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+    return { seen, llm, userMessage };
+  }
+
+  it('quotes the unrecorded money instead of naming the plugin', async () => {
+    const { seen, llm } = nudgeTextFor('i ate 2 sandwiches, they cost me 2 JOD and had 700 calories', {
+      calories: 700,
+      description: '2 sandwiches',
+    });
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'i ate 2 sandwiches, they cost me 2 JOD and had 700 calories',
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('2 JOD is still unrecorded'))).toBe(true);
+    // and it must not fall back to the plugin-relevance wording the model argues with
+    expect(seen.some((c) => c.includes('have not recorded anything with'))).toBe(false);
+  });
+
+  it('does not claim money is unrecorded when a tool call already used that amount', async () => {
+    // The meal call carried the cost, so the only thing left is the generic
+    // "plugin went unused" case — it must not assert the amount is missing.
+    const { seen, llm } = nudgeTextFor('i ate 2 sandwiches, they cost me 2 JOD and had 700 calories', {
+      calories: 700,
+      cost: 2,
+    });
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'i ate 2 sandwiches, they cost me 2 JOD and had 700 calories',
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('still unrecorded'))).toBe(false);
+    expect(seen.some((c) => c.includes('have not recorded anything with'))).toBe(true);
+  });
+
+  it('ignores bare numbers with no currency attached', async () => {
+    // "700 calories" and "2 sandwiches" are not money and must never be
+    // reported as unrecorded spending.
+    const { seen, llm } = nudgeTextFor('i walked 700 steps and did 2 sets', { steps: 0 });
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'i walked 700 steps and did 2 sets',
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('still unrecorded'))).toBe(false);
+  });
+});

@@ -97,13 +97,87 @@ const MAX_COMPLETION_RETRIES = 1;
  * decline only as a subordinate clause, measures 3/3 and still produces a reply
  * naming both records.
  */
-function completionNudge(userMessage: string, unusedPlugins: string[]): string {
+function completionNudge(
+  userMessage: string,
+  unusedPlugins: string[],
+  unrecorded: string[]
+): string {
+  // Naming a plugin asks the model to rule on that plugin's relevance, and it
+  // will happily rule against you: "the cost of 2 JOD is not a spending record"
+  // (0/3 live). Naming the amount asserts a fact instead — the number is in the
+  // message and nothing this turn used it — which leaves nothing to argue.
+  if (unrecorded.length > 0) {
+    return (
+      `Re-read what I asked: "${userMessage}". ` +
+      `${unrecorded.join(' and ')} is still unrecorded — no tool you called this turn used that amount. ` +
+      'Call the tool that records it now.'
+    );
+  }
   return (
     `Re-read what I asked: "${userMessage}". ` +
     `You have not recorded anything with: ${unusedPlugins.join(', ')}. ` +
     'Call that tool now for the part of my message that belongs there. ' +
     'Only if no part of it belongs there, reply instead — and then list everything you did record this turn.'
   );
+}
+
+/**
+ * Money named in the user's message that no tool call this turn consumed.
+ *
+ * Anchored on a currency marker on purpose. "700 calories" and "2 sandwiches"
+ * are numbers, not amounts, and announcing them as unrecorded spending would be
+ * a worse failure than staying quiet.
+ */
+const MONEY_IN_TEXT =
+  /([$€£])\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(jod|jd|usd|eur|gbp|dinars?|dollars?|euros?|pounds?)\b/gi;
+
+function moneyValuesIn(text: string): number[] {
+  const values: number[] = [];
+  for (const match of text.matchAll(MONEY_IN_TEXT)) {
+    const raw = match[2] ?? match[3];
+    if (raw !== undefined) values.push(parseFloat(raw));
+  }
+  return values;
+}
+
+/**
+ * Numbers a tool call actually took as a quantity.
+ *
+ * Numeric arguments count outright. Numbers inside a string argument only count
+ * when the string names them as money: `health.log-meal` was called with
+ * `description: "2 sandwiches"`, and letting that "2" stand in for "2 JOD"
+ * hid the exact bug this guard exists to catch. A budget tool handed the raw
+ * sentence still counts, because the currency marker travels with it.
+ */
+function quantitiesUsed(value: unknown, into: Set<number>): void {
+  if (typeof value === 'number') {
+    into.add(value);
+  } else if (typeof value === 'string') {
+    for (const v of moneyValuesIn(value)) into.add(v);
+  } else if (Array.isArray(value)) {
+    for (const item of value) quantitiesUsed(item, into);
+  } else if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value)) quantitiesUsed(item, into);
+  }
+}
+
+function unrecordedAmounts(userMessage: string, steps: AgentStep[]): string[] {
+  const named: { value: number; label: string }[] = [];
+  for (const match of userMessage.matchAll(MONEY_IN_TEXT)) {
+    const raw = match[2] ?? match[3];
+    if (raw === undefined) continue;
+    named.push({ value: parseFloat(raw), label: match[0].trim() });
+  }
+  if (named.length === 0) return [];
+
+  const used = new Set<number>();
+  for (const step of steps) {
+    if (step.type !== 'tool_call' || !step.toolArgs) continue;
+    quantitiesUsed(step.toolArgs, used);
+  }
+
+  const labels = named.filter((n) => !used.has(n.value)).map((n) => n.label);
+  return [...new Set(labels)];
 }
 
 /**
@@ -305,7 +379,11 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
           messages.push({ role: 'assistant', content: text });
           messages.push({
             role: 'user',
-            content: completionNudge(input.userMessage, unused),
+            content: completionNudge(
+              input.userMessage,
+              unused,
+              unrecordedAmounts(input.userMessage, rawSteps)
+            ),
           });
           continue;
         }
