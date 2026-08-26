@@ -1,21 +1,28 @@
 import CronExpressionParser from 'cron-parser';
 
 /**
- * Check if a cron expression should fire at the given time.
- * We check if `now` falls within the current minute of a scheduled occurrence.
+ * Whether a cron schedule has an occurrence to run now.
+ *
+ * Fires once for each occurrence in the half-open interval `(since, now]`.
+ *
+ * The previous implementation accepted any occurrence within 60 seconds of
+ * `now` in *either* direction, so for `0 * * * *` the tick before the hour and
+ * the tick after it both matched the same occurrence and every scheduled
+ * message went out twice — 429 duplicate pairs in production before this was
+ * caught.
+ *
+ * `since` is the scheduler's previous tick. Passing it matters because
+ * `setInterval(60_000)` drifts: a strict same-minute test would eventually step
+ * straight over an occurrence and drop it. Omitting `since` falls back to
+ * matching the current minute exactly, which is what a one-off check wants.
  */
-export function isTimeToRun(cronExpr: string, now: Date = new Date()): boolean {
+export function isTimeToRun(cronExpr: string, now: Date = new Date(), since?: Date): boolean {
   try {
-    // Parse with currentDate set 1 minute before `now` so .next() gives us
-    // the occurrence at or after (now - 60s).
-    const parsed = CronExpressionParser.parse(cronExpr, {
-      currentDate: new Date(now.getTime() - 60_000),
-    });
-    const next = parsed.next();
-    const nextDate = next.toDate();
-    // Check if the next occurrence is within the 60-second window
-    const diffMs = Math.abs(now.getTime() - nextDate.getTime());
-    return diffMs < 60_000;
+    const from = since ?? new Date(new Date(now).setSeconds(0, 0) - 1);
+    if (from.getTime() >= now.getTime()) return false;
+
+    const parsed = CronExpressionParser.parse(cronExpr, { currentDate: from });
+    return parsed.next().toDate().getTime() <= now.getTime();
   } catch {
     return false;
   }

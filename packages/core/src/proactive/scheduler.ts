@@ -45,6 +45,8 @@ export class ProactiveScheduler {
   private readonly handlers = new Map<string, RegisteredTrigger>();
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  /** End of the window the last tick covered, so drift cannot skip an occurrence. */
+  private lastTickAt: Date | null = null;
 
   constructor(db: TardisDB) {
     this.db = db;
@@ -108,23 +110,32 @@ export class ProactiveScheduler {
     if (this.running) return;
     this.running = true;
 
-    // Run first tick immediately
-    this.tick().catch((err) => {
-      console.error('[scheduler] Tick error:', err instanceof Error ? err.message : String(err));
-    });
+    // Baseline before the first tick: a restart covers a zero-length window and
+    // so replays nothing. Without this, a service that restarts inside a
+    // scheduled minute re-sends that minute's messages every time it comes up.
+    this.lastTickAt = new Date();
 
     this.intervalId = setInterval(() => {
-      this.tick().catch((err) => {
-        console.error('[scheduler] Tick error:', err instanceof Error ? err.message : String(err));
-      });
+      this.runScheduledTick();
     }, 60_000);
   }
 
   /**
    * Stop the scheduler.
    */
+  /** The interval-driven tick: covers everything since the previous one. */
+  private runScheduledTick(): void {
+    const now = new Date();
+    const since = this.lastTickAt ?? undefined;
+    this.lastTickAt = now;
+    this.tick(now, since).catch((err) => {
+      console.error('[scheduler] Tick error:', err instanceof Error ? err.message : String(err));
+    });
+  }
+
   stop(): void {
     this.running = false;
+    this.lastTickAt = null;
     if (this.intervalId !== null) {
       clearInterval(this.intervalId);
       this.intervalId = null;
@@ -141,7 +152,7 @@ export class ProactiveScheduler {
   /**
    * Single scheduler tick: check all enabled triggers against current time.
    */
-  private async tick(now: Date = new Date()): Promise<void> {
+  private async tick(now: Date = new Date(), since?: Date): Promise<void> {
 
     const rows = await this.db
       .select()
@@ -159,7 +170,7 @@ export class ProactiveScheduler {
       }
 
       // Check cron schedule
-      if (!isTimeToRun(row.schedule, now)) {
+      if (!isTimeToRun(row.schedule, now, since)) {
         continue;
       }
 
