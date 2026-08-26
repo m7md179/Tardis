@@ -8,6 +8,7 @@ import { ProactivePage } from './pages/proactive';
 import { MemoriesPage } from './pages/memories';
 import { TracesPage } from './pages/traces';
 import { TraceDetailPage } from './pages/trace-detail';
+import { SpritesPage } from './pages/sprites';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { to: '/proactive', label: 'Proactive', icon: '\u231A' },
   { to: '/memories', label: 'Memories', icon: '\u2601' },
   { to: '/traces', label: 'Traces', icon: '\u25B6' },
+  { to: '/sprites', label: 'Mascot', icon: '\u25A3' },
 ] as const;
 
 function Layout() {
@@ -92,6 +94,7 @@ export function App() {
           <Route path="memories" element={<MemoriesPage />} />
           <Route path="traces" element={<TracesPage />} />
           <Route path="traces/:id" element={<TraceDetailPage />} />
+          <Route path="sprites" element={<SpritesPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
