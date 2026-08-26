@@ -619,3 +619,51 @@ recency test** that passed alone and failed in suite.
   scoped out at the start.
 - **`tardis-plugin-creator` is stale** — it documents a plugin shape this codebase no longer
   uses and would mislead a fresh session.
+
+---
+
+# 2026-08-26 — Pre-daily-use verification pass (Telegram as the mobile UI)
+
+**Verified true before starting.** Prod (PCT 106) was already running `main @ 3953e2a`,
+all 8 plugins loaded, Telegram polling, no errors in the journal. `main` was in sync with
+`origin/main`, so there was nothing to push — the work was verification, not delivery.
+
+**What real inference found that the suite did not.** Three defects, all reproduced
+against the live Gemma before being touched, and all invisible to 712 passing tests:
+
+| Defect | Evidence | After |
+|---|---|---|
+| Every proactive trigger fired **twice** per occurrence | `proactive_logs`: 429 fires at :59 and 429 at :00 | one fire, confirmed live at `14:00:16` |
+| Multi-intent message dropped the spend | 0/3 on the exact sentence reported in August | **3/3** |
+| False claim of a **destructive** action | 1/3: called `budget.this-month`, deleted nothing, said *"I have deleted the most recent budget entry"* | **4/4** correctly paused for approval |
+
+**The cron bug was a window, not a schedule.** `isTimeToRun` accepted any occurrence within
+60 seconds of `now` in *either* direction, so the tick before an occurrence and the tick
+after it both matched it. Now interval-based over `(since, now]`, which also stops
+`setInterval` drift (observed offsets :33, :43, :55 in one day) from silently skipping one.
+
+**The multi-intent bug was the nudge, not the model.** Two probes isolated it: `"The
+sandwiches cost me 2 JOD."` fires budget 3/3, and `"I spent 2 JOD on them and they had 700
+calories"` fires both 3/3. Only the fused clause fails. The guard *was* firing — but asking
+the model whether the *budget plugin* was relevant let it answer *"the cost of 2 JOD is not
+a spending record."* Naming the unrecorded **amount** instead states a fact it cannot argue
+with.
+
+**The false-delete claim was the guard's definition of "acted".** It fired only when a turn
+called no tool at all; this turn called one, just a read. It now asks whether any tool
+returned a Result with `success: true` — the pattern CLAUDE.md mandates, verified to hold
+across all 8 plugins and 60+ skills, failing safe when it does not.
+
+**Also fixed:** approving a workflow action replied with `JSON.stringify(data, null, 2)`
+when a tool returned no `message`. Never fired in production (all seven workflow skills are
+deletes that do return one) but it is the wrong default for a chat surface. This clears the
+**last failing test** — the suite is now **726 pass / 0 fail**, green for the first time.
+
+**Live regression after all four changes:** 19/19 across delete-approval, timer, reminder,
+multi-intent, query and plain chat.
+
+**Carried forward.**
+- Every budget entry (23) and health entry (30) in production is test data from today's
+  sessions. There is no real spending or food history yet — a clean slate is one wipe away.
+- The photo-estimation path and the Todoist / Google Calendar credentials remain unverified,
+  as before.
