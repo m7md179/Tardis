@@ -2,8 +2,8 @@
   "name": "budget",
   "version": "1.0.0",
   "displayName": "Budget",
-  "description": "Track spending mentioned in conversation or entered by hand, with monthly category summaries.",
-  "summary": "Track spending and budgets. Understands things said in passing like 'spent 45 on groceries at Tesco', and also takes manual entries. Reports monthly totals broken down by category.",
+  "description": "Track spending, savings goals and whether you can afford the rest of the month.",
+  "summary": "Money: spending, budgets, savings goals and cards. Logs spending said in passing like 'spent 45 on groceries at Tesco'. Tracks savings goals and progress toward them (a car, a trip, a GPU, clothes) and whether you are on pace. Answers whether you can survive or afford the rest of the month, warns when you are overspending or a category is near its limit, and reports spending habits. Records transfers between your own cards, which are not spending, and imports bank SMS.",
   "tier": 2,
   "main": "index.ts",
   "permissions": [
