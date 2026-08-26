@@ -1625,3 +1625,107 @@ describe('runAgentLoop: claim guard after a read-only call', () => {
     expect(seen.some((c) => c.includes('nothing actually happened yet'))).toBe(true);
   });
 });
+
+// ─── Clarify ─────────────────────────────────────────────────────────────────
+//
+// A 4B model that is unsure commits rather than hesitating, so every ambiguity
+// became a confident wrong record. `clarify` is intercepted by the loop rather
+// than routed to a plugin: the question becomes the reply and the turn ends.
+
+describe('runAgentLoop: clarify', () => {
+  const CLARIFY: ToolDefinition = {
+    name: 'clarify',
+    description: 'Ask the user one short question',
+    parameters: { type: 'object', properties: { question: { type: 'string' } } },
+    actionType: 'direct',
+  };
+  const BUDGET: ToolDefinition = {
+    name: 'budget.add-entry',
+    description: 'Record spending',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+
+  it('returns the question as the reply and stops the turn', async () => {
+    let executed = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('clarify', { question: 'Which card did you pay with?' }),
+      textResponse('should never be reached'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'I spent 12 on lunch',
+        availableTools: [CLARIFY, BUDGET],
+        selectedPlugins: ['budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => {
+          executed++;
+          return { success: true };
+        },
+      })
+    );
+
+    expect(result.response).toBe('Which card did you pay with?');
+    expect(executed).toBe(0); // never routed to a plugin
+    expect(result.pendingApproval).toBeUndefined();
+  });
+
+  it('records the question as a tool_call in the trace', async () => {
+    const llm = makeScriptedLLM([
+      toolCallResponse('clarify', { question: 'Which goal should this go to?' }),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [CLARIFY],
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    const call = result.trace.steps.find((s) => s.type === 'tool_call');
+    expect(call?.toolName).toBe('clarify');
+    expect(call?.toolArgs).toEqual({ question: 'Which goal should this go to?' });
+  });
+
+  it('does not end the turn on an empty question', async () => {
+    // Ending here would send the user a blank message. Better to let the model
+    // have another go.
+    const llm = makeScriptedLLM([
+      toolCallResponse('clarify', { question: '   ' }),
+      toolCallResponse('budget.add-entry', { amount: 12 }),
+      textResponse('Recorded 12.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'I spent 12 on lunch',
+        availableTools: [CLARIFY, BUDGET],
+        executeTool: async () => ({ success: true, message: 'Recorded.' }),
+      })
+    );
+
+    expect(result.response).toBe('Recorded 12.');
+  });
+
+  it('a clarifying question is not treated as a completion claim', async () => {
+    // The claim guard must not fire on it — nothing was claimed done.
+    const llm = makeScriptedLLM([
+      toolCallResponse('clarify', { question: 'Done what exactly — which entry?' }),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [CLARIFY],
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(result.response).toBe('Done what exactly — which entry?');
+    expect(result.trace.steps.some((s) => s.type === 'error')).toBe(false);
+  });
+});

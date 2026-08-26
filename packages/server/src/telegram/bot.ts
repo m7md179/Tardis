@@ -71,7 +71,8 @@ export async function handleUserMessage(
   chatId: number,
   text: string,
   state: BotState,
-  deps: BotDeps
+  deps: BotDeps,
+  images?: string[]
 ): Promise<BotResponse> {
   // ─── Authorization ──────────────────────────────────────────────────────
   if (deps.allowedChatIds.size > 0 && !deps.allowedChatIds.has(String(chatId))) {
@@ -88,6 +89,12 @@ export async function handleUserMessage(
       return { text: '✅ Google Calendar connected! You can now ask about your events.' };
     }
     return { text: `Failed to connect Google Calendar: ${result.error}` };
+  }
+
+  // ─── "What can you do" — answered from manifests, not by the model ─────
+  // Only when nothing is pending, so it cannot swallow an approval reply.
+  if (!state.pendingApprovals.has(chatId) && isCapabilityQuestion(text)) {
+    return handleHelpCommand(deps);
   }
 
   // ─── Pending workflow approval ─────────────────────────────────────────
@@ -132,6 +139,7 @@ export async function handleUserMessage(
       {
         chatId: chatIdStr,
         message: text,
+        ...(images?.length ? { images } : {}),
         // Only when there is no DB store; otherwise the service reads it.
         ...(deps.conversationStore
           ? {}
@@ -191,6 +199,87 @@ export async function handleNewCommand(
     await deps.conversationStore.clearHistory(String(chatId));
   }
   return { text: 'Conversation cleared. Start fresh!' };
+}
+
+// ─── Capability questions ─────────────────────────────────────────────────────
+
+/**
+ * "What can you do" answered from the manifests, not from the model.
+ *
+ * Asked live, the model replied "I am a capable assistant. I can help you with
+ * tasks…" — true and useless. It has no way to introspect its own 51 callable
+ * skills, and inventing a capability list is exactly the kind of confident
+ * fiction this project keeps having to guard against. The manifests already
+ * know the answer, so read it from there.
+ */
+// Two shapes, because they need different strictness. A bare "help" is a
+// capability question; "help me log lunch" is a request, and an earlier version
+// that matched `help\b` hijacked it.
+const CAPABILITY_PHRASE =
+  /^\s*(?:what\s+(?:can|do)\s+you\s+do|what\s+are\s+you\s+(?:able\s+to\s+do|capable\s+of)|what\s+can\s+you\s+help\s+(?:me\s+)?with)\b/i;
+const CAPABILITY_WORD = /^\s*(?:help|commands|capabilities)\s*[?!.]*\s*$/i;
+
+export function isCapabilityQuestion(text: string): boolean {
+  const t = text.trim();
+  return CAPABILITY_PHRASE.test(t) || CAPABILITY_WORD.test(t);
+}
+
+/** Photo sizes as Telegram sends them: ascending, smallest first. */
+export interface PhotoSize {
+  file_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+/**
+ * The biggest photo that is still small enough to be worth sending.
+ *
+ * Telegram offers several resolutions. The largest is often 1280px+, which
+ * costs context and decode time on a 4 GB card for no accuracy gain on a plate
+ * of food — and the whole image is base64'd into the request, inflating 33%.
+ * Cap the long edge and take the best one under it, falling back to the
+ * smallest available when every size is over.
+ */
+const MAX_PHOTO_EDGE = 1024;
+
+export function pickPhotoSize(sizes: PhotoSize[]): PhotoSize | null {
+  if (sizes.length === 0) return null;
+  const withinCap = sizes.filter((s) => Math.max(s.width, s.height) <= MAX_PHOTO_EDGE);
+  if (withinCap.length > 0) {
+    return withinCap.reduce((best, s) => (s.width * s.height > best.width * best.height ? s : best));
+  }
+  return sizes.reduce((smallest, s) => (s.width * s.height < smallest.width * smallest.height ? s : smallest));
+}
+
+export function handleHelpCommand(deps: BotDeps): BotResponse {
+  const manifests = deps.getAllManifests().filter((m) => m.name !== 'test-plugin');
+  const blocks = manifests.map((m) => {
+    const count = m.skills?.length ?? 0;
+    return `*${m.displayName}* — ${count} skill${count === 1 ? '' : 's'}\n${m.summary.split('.')[0]}.`;
+  });
+
+  return {
+    text: [
+      "*Just talk to me.* You don't need commands — say what happened and I'll record it.",
+      '',
+      '_Try:_',
+      '• I had two eggs and toast for breakfast',
+      '• spent 4.5 on coffee',
+      '• start a timer for studying',
+      '• remind me to call the bank in an hour',
+      '• how much have I spent this month?',
+      '• remember that I take my coffee black',
+      '',
+      'Send me a *photo of a meal* and I will log it.',
+      '',
+      ...blocks,
+      '',
+      '*Commands:* /new to clear the conversation · /help this message · /plugins details · /status current state',
+      '',
+      "Anything that deletes something asks you first — reply *yes* to confirm.",
+    ].join('\n'),
+  };
 }
 
 export function handlePluginsCommand(deps: BotDeps): BotResponse {
@@ -269,12 +358,89 @@ export class TelegramBot {
       await ctx.reply(text, { parse_mode: 'Markdown' });
     });
 
+    this.bot.command(['help', 'start'], async (ctx) => {
+      const { text } = handleHelpCommand(this.deps);
+      await ctx.reply(text, { parse_mode: 'Markdown' });
+    });
+
+    // A photo is the fastest way to log a meal, and until the app ships it is
+    // the only way to reach the vision model at all — the bot previously
+    // listened for text only, so photos silently did nothing.
+    this.bot.on(message('photo'), async (ctx) => {
+      const chatId = ctx.message.chat.id;
+      const caption = ctx.message.caption?.trim();
+      try {
+        const chosen = pickPhotoSize(ctx.message.photo as PhotoSize[]);
+        if (!chosen) {
+          await ctx.reply("I couldn't read that photo. Try sending it again?");
+          return;
+        }
+        await ctx.sendChatAction('typing');
+        const link = await ctx.telegram.getFileLink(chosen.file_id);
+        const res = await fetch(link.toString());
+        if (!res.ok) throw new Error(`download failed with ${res.status}`);
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const dataUri = `data:image/jpeg;base64,${bytes.toString('base64')}`;
+
+        // With no caption the model gets a plain instruction rather than an
+        // empty message, which it answers with a description instead of acting.
+        const prompt = caption && caption.length > 0 ? caption : 'Log this meal from the photo.';
+        const response = await handleUserMessage(chatId, prompt, this.state, this.deps, [dataUri]);
+        await ctx.reply(cleanUrls(response.text));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        console.error(`[telegram] photo handling failed for chat ${chatId}:`, err);
+        await ctx.reply(`I couldn't process that photo.\n\nError: ${msg}`);
+      }
+    });
+
     this.bot.on(message('text'), async (ctx) => {
       const chatId = ctx.message.chat.id;
       const text = ctx.message.text;
+
+      // An unregistered command reaching the agent gets answered as if it were
+      // conversation — "/plugin" came back "What would you like me to do?".
+      if (text.startsWith('/')) {
+        const typed = text.slice(1).split(/[\s@]/)[0] ?? '';
+        const known = ['new', 'help', 'start', 'plugins', 'status'];
+        const near = known.find((k) => k.startsWith(typed) || typed.startsWith(k));
+        await ctx.reply(
+          near
+            ? `There's no /${typed}. Did you mean /${near}?`
+            : `There's no /${typed}. Try /help — or just tell me what you need in plain words.`
+        );
+        return;
+      }
+
+      await ctx.sendChatAction('typing');
       const response = await handleUserMessage(chatId, text, this.state, this.deps);
       await ctx.reply(cleanUrls(response.text));
     });
+  }
+
+  /**
+   * Publishes the command list so Telegram shows its menu button.
+   *
+   * Without this the commands exist but are invisible — you have to already
+   * know they are there, which is most of why the bot felt bare.
+   */
+  private async publishCommands(): Promise<void> {
+    const commands = [
+      { command: 'help', description: 'What TARDIS can do' },
+      { command: 'new', description: 'Start a fresh conversation' },
+      { command: 'status', description: 'Current state' },
+      { command: 'plugins', description: 'Loaded plugins in detail' },
+    ];
+    try {
+      await fetch(`https://api.telegram.org/bot${this.token}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands }),
+      });
+    } catch (err) {
+      // Cosmetic only — never stop the bot starting over a menu.
+      console.warn('[telegram] could not publish command list:', err instanceof Error ? err.message : err);
+    }
   }
 
   /**
@@ -309,6 +475,7 @@ export class TelegramBot {
     await fetch(`${base}/deleteWebhook?drop_pending_updates=true`);
     // Short pause so Telegram can fully commit the session after deleteWebhook.
     await new Promise((r) => setTimeout(r, 500));
+    await this.publishCommands();
     this.polling = true;
     this.runPollingLoop().catch((err) => {
       console.error('[telegram] Polling loop crashed:', err instanceof Error ? err.message : String(err));

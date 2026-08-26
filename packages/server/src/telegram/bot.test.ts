@@ -6,7 +6,10 @@ import {
   handleStatusCommand,
   createBotState,
   isApprovalText,
+  pickPhotoSize,
+  isCapabilityQuestion,
 } from './bot.js';
+import type { PhotoSize } from './bot.js';
 import type { BotDeps, BotState } from './bot.js';
 import type {
   ToolRouter,
@@ -566,5 +569,111 @@ describe('handleUserMessage: tool calls persisted to history', () => {
     await handleUserMessage(CHAT_ID, 'hello there', createBotState(), deps);
 
     expect(written.map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+});
+
+// ─── Photo size selection ────────────────────────────────────────────────────
+//
+// Telegram offers several resolutions of the same photo. The largest is often
+// 1280px+, which is base64'd into the request (inflating 33%) and decoded on a
+// 4 GB card for no accuracy gain on a plate of food.
+
+describe('pickPhotoSize', () => {
+  const s = (width: number, height: number): PhotoSize => ({
+    file_id: `${width}x${height}`,
+    width,
+    height,
+  });
+
+  it('returns null for no sizes', () => {
+    expect(pickPhotoSize([])).toBeNull();
+  });
+
+  it('picks the largest within the cap, not the largest offered', () => {
+    const chosen = pickPhotoSize([s(90, 60), s(320, 213), s(800, 533), s(1280, 853)]);
+    expect(chosen?.file_id).toBe('800x533');
+  });
+
+  it('caps on the long edge, not on width', () => {
+    // A tall photo of a menu: 900 wide but 1600 tall is still expensive.
+    const chosen = pickPhotoSize([s(180, 320), s(576, 1024), s(900, 1600)]);
+    expect(chosen?.file_id).toBe('576x1024');
+  });
+
+  it('falls back to the smallest when every size is over the cap', () => {
+    const chosen = pickPhotoSize([s(2000, 1500), s(4000, 3000)]);
+    expect(chosen?.file_id).toBe('2000x1500');
+  });
+});
+
+// ─── "What can you do" ───────────────────────────────────────────────────────
+//
+// Asked live, the model answered "I am a capable assistant. I can help you with
+// tasks…" — it cannot introspect its own skills, and inventing a list is the
+// confident fiction this codebase keeps guarding against. Answer from manifests.
+
+describe('isCapabilityQuestion', () => {
+  it.each([
+    'What can you do',
+    'what can you do?',
+    'What do you do',
+    'what can you help me with',
+    'help',
+    'commands',
+  ])('recognises %p', (text) => {
+    expect(isCapabilityQuestion(text)).toBe(true);
+  });
+
+  it.each([
+    'help me log lunch',
+    'what did I spend today',
+    'can you do that again',
+    'what can you see in this photo',
+  ])('does not hijack %p', (text) => {
+    expect(isCapabilityQuestion(text)).toBe(false);
+  });
+});
+
+describe('handleUserMessage: capability question', () => {
+  const CHAT_ID = 1234;
+
+  it('answers from the manifests without calling the model', async () => {
+    let modelCalled = false;
+    const deps = makeDeps({
+      llmProvider: {
+        name: 'mock',
+        async chat() {
+          modelCalled = true;
+          return { type: 'text' as const, text: 'I am a capable assistant.' };
+        },
+        async generate() {
+          modelCalled = true;
+          return '';
+        },
+      },
+    });
+    const state = createBotState();
+
+    const res = await handleUserMessage(CHAT_ID, 'what can you do', state, deps);
+
+    expect(modelCalled).toBe(false);
+    expect(res.text).toContain('Just talk to me');
+  });
+
+  it('does not swallow a pending approval reply', async () => {
+    // "yes"/"no" must reach the approval branch; a capability question must not
+    // be able to jump the queue ahead of it.
+    const deps = makeDeps({});
+    const state = createBotState();
+    state.pendingApprovals.set(CHAT_ID, {
+      toolName: 'budget.delete-entry',
+      args: { id: 'x' },
+      preview: 'About to delete',
+    });
+
+    const res = await handleUserMessage(CHAT_ID, 'help', state, deps);
+
+    expect(res.text).not.toContain('Just talk to me');
+    expect(state.pendingApprovals.has(CHAT_ID)).toBe(false); // consumed as a decline
   });
 });

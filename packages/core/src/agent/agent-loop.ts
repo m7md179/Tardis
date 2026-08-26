@@ -8,6 +8,7 @@ import type {
 } from '@tardis/shared';
 import type { LLMContent, LLMMessage, LLMProvider } from '../llm/provider.js';
 import { fitToContextWindow } from './context-manager.js';
+import { CLARIFY_TOOL_NAME } from './clarify.js';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -434,6 +435,34 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         timestamp: stepStart,
         durationMs: Date.now() - stepStart,
       });
+
+      // ─── Clarify: hand the question back and end the turn ─────────────────
+      // Not routed to a plugin — there is nothing to execute. The reply *is*
+      // the question, and the user's answer arrives as an ordinary next turn.
+      if (toolName === CLARIFY_TOOL_NAME) {
+        const question = String(toolArgs['question'] ?? '').trim();
+        if (question) {
+          return {
+            response: question,
+            trace: buildTrace(input, rawSteps, question, startTime, totalTokens),
+          };
+        }
+        // Called with nothing to ask: record the miss and let the loop continue
+        // rather than ending the turn on an empty message.
+        steps.push({
+          type: 'tool_result',
+          content: toolName,
+          toolName,
+          toolResult: { error: true, message: 'clarify requires a non-empty question.' },
+          timestamp: stepStart,
+          durationMs: Date.now() - stepStart,
+        });
+        messages.push({
+          role: 'user',
+          content: 'You asked an empty question. Either ask something specific or act.',
+        });
+        continue;
+      }
 
       // ─── Workflow: pause and request user approval ────────────────────────
       if (effectiveActionType === 'workflow') {

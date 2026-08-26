@@ -8,6 +8,7 @@ import type { MemoryExecutor } from '../memory/memory-tools.js';
 import { runAgentLoop } from './agent-loop.js';
 import type { PendingApproval } from './agent-loop.js';
 import { selectPlugins } from './plugin-router.js';
+import { CLARIFY_TOOL } from './clarify.js';
 
 /**
  * One user message, all the way through TARDIS.
@@ -73,8 +74,9 @@ export async function runConversationTurn(
 
   const memories = deps.memoryRetriever ? await deps.memoryRetriever.getRelevant(message) : [];
 
-  // Memory tools are always available — they are not subject to skill selection.
-  const availableTools = [...tools, ...(deps.memoryTools ?? [])];
+  // Memory tools and clarify are always available — neither is subject to
+  // plugin selection, because both apply regardless of which plugins were picked.
+  const availableTools = [...tools, ...(deps.memoryTools ?? []), CLARIFY_TOOL];
 
   const pluginExecutor = deps.toolRouter.asExecutor();
   const executeTool = async (toolName: string, args: Record<string, unknown>): Promise<unknown> => {

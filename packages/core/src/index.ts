@@ -44,6 +44,7 @@ export { OllamaAdapter } from './llm/ollama-adapter.js';
 export type { OllamaAdapterConfig } from './llm/ollama-adapter.js';
 export { ThoughtTracer } from './agent/thought-tracer.js';
 export { selectPlugins } from './agent/plugin-router.js';
+export { CLARIFY_TOOL, CLARIFY_TOOL_NAME } from './agent/clarify.js';
 export { runConversationTurn } from './agent/conversation.js';
 export type {
   ConversationDeps,
