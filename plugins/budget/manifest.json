@@ -239,7 +239,7 @@
     },
     {
       "id": "budget.setup",
-      "description": "Set monthly income and the minimum you want left at month end.",
+      "description": "Set monthly income, the minimum you want left at month end, and your own name as the bank writes it so transfers to yourself are not counted as spending.",
       "aiInvocable": true,
       "actionType": "direct",
       "parameters": {
@@ -252,6 +252,10 @@
           "safeFloor": {
             "type": "number",
             "description": "Minimum you want left at month end"
+          },
+          "ownerName": {
+            "type": "string",
+            "description": "Your name exactly as it appears in bank SMS, e.g. 'MOHAMMAD K M MOHAMMADTAHA'"
           }
         },
         "required": [
@@ -276,6 +280,12 @@
             "type": "number",
             "label": "Keep at least",
             "min": 0
+          },
+          {
+            "name": "ownerName",
+            "type": "text",
+            "label": "Your name as the bank writes it",
+            "placeholder": "MOHAMMAD K M MOHAMMADTAHA"
           }
         ]
       }

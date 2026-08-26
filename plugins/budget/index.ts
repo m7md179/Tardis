@@ -44,10 +44,55 @@ function currency(): string {
   return currencyCode;
 }
 
-/** Money is rounded to 2dp on the way in, so totals never drift by float dust. */
+/**
+ * Money is rounded on the way in so totals never drift by float dust.
+ *
+ * Three decimals, not two: JOD is a 1000-fils currency and real balances look
+ * like 0.004, 3.500 and 4.187. Rounding those to 2dp corrupts them.
+ */
+const MONEY_DP = 3;
+const MONEY_SCALE = 10 ** MONEY_DP;
+
+function round(n: number): number {
+  return Math.round(n * MONEY_SCALE) / MONEY_SCALE;
+}
+
 function money(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(String(value).replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
+  return Number.isFinite(n) && n > 0 ? round(n) : 0;
+}
+
+/**
+ * Pulls the amount out of the raw SMS rather than trusting the model.
+ *
+ * Against a real message the model read "تم استلام3.500 دينار" as 3500 — a
+ * thousandfold error, and the worst possible failure in something that adds up
+ * money. The digits are right there in the text, so take them from there and
+ * use the model only for meaning.
+ *
+ * Handles: "51.19 JOD", "JOD4.187", "3.0 دينار", "استلام3.500 دينار",
+ * and thousands separators.
+ */
+export function extractAmount(text: string): number | null {
+  const CURRENCY = String.raw`(?:JOD|jod|JD|\u062F\u064A\u0646\u0627\u0631)`;
+  const NUM = String.raw`\d{1,3}(?:,\d{3})*(?:\.\d{1,3})?|\d+(?:\.\d{1,3})?`;
+
+  const candidates: number[] = [];
+  // number before the currency word, and number after it
+  for (const re of [
+    new RegExp(String.raw`(${NUM})\s*${CURRENCY}`, 'g'),
+    new RegExp(String.raw`${CURRENCY}\s*(${NUM})`, 'g'),
+  ]) {
+    for (const m of text.matchAll(re)) {
+      const n = Number(m[1]!.replace(/,/g, ''));
+      if (Number.isFinite(n) && n > 0) candidates.push(n);
+    }
+  }
+  if (candidates.length === 0) return null;
+
+  // A message states the amount and then the resulting balance. The amount is
+  // the FIRST currency figure; taking the largest would pick the balance.
+  return round(candidates[0]!);
 }
 
 function toNumberSafe(value: unknown): number {
@@ -123,8 +168,16 @@ async function allSpends(): Promise<Spend[]> {
   return out.sort((a, b) => b.at - a.at);
 }
 
+/**
+ * JOD is a 1000-fils currency, so real values carry three decimals (0.004,
+ * 4.187). Show up to three, but never fewer than two, so round numbers do not
+ * read as "45.000".
+ */
 function fmt(amount: number): string {
-  return `${amount.toFixed(2)} ${currency()}`;
+  const three = amount.toFixed(MONEY_DP);
+  const trimmed = three.replace(/0+$/, '');
+  const [whole, frac = ''] = trimmed.split('.');
+  return `${whole}.${frac.padEnd(2, '0')} ${currency()}`;
 }
 
 // ─── Cards, goals, budget config ─────────────────────────────────────────────
@@ -159,6 +212,24 @@ interface BudgetConfig {
   monthlyIncome: number;
   safeFloor: number;
   categoryLimits: Record<string, number>;
+  /** Your own name(s) as the bank writes them, to spot self-transfers. */
+  ownerNames: string[];
+}
+
+/** Loose name match: banks vary spacing, order and middle names. */
+function isSelf(counterparty: string, ownerNames: string[]): boolean {
+  const c = counterparty.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (c.length < 3) return false;
+  return ownerNames.some((raw) => {
+    const own = raw.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!own) return false;
+    if (c.includes(own) || own.includes(c)) return true;
+    // Every word of the shorter name appearing in the longer one is enough:
+    // "MOHAMMAD K M MOHAMMADTAHA" vs "Mohammad Taha".
+    const [short, long] = c.length <= own.length ? [c, own] : [own, c];
+    const words = short.split(' ').filter((w) => w.length > 2);
+    return words.length > 0 && words.every((w) => long.includes(w));
+  });
 }
 
 const cardKey = (id: string): string => `card:${id}`;
@@ -172,6 +243,7 @@ async function loadConfig(): Promise<BudgetConfig> {
       monthlyIncome: 0,
       safeFloor: 0,
       categoryLimits: {},
+      ownerNames: [],
     }
   );
 }
@@ -225,16 +297,21 @@ function monthsUntil(deadline: string): number | null {
  * checking both endpoints against the registered cards.
  */
 const SMS_RULES = [
-  'Read the bank SMS and report what it says. Do not judge whether it is spending.',
+  'Read the bank SMS. Messages may be in English or Arabic. Report only what it says.',
   '',
   'Reply with ONLY a JSON object, no prose and no code fences:',
-  '{"amount":0,"currency":"","merchant":"","fromAccount":"","toAccount":"","kind":"purchase|transfer|credit|unknown"}',
+  '{"direction":"out|in|unknown","counterparty":"","account":"","isMerchant":false}',
   '',
-  'amount: the number only, no symbols.',
-  'fromAccount / toAccount: any card or account identifier the message names,',
-  'usually the last 4 digits. Leave a field empty when the message does not say.',
-  'kind: "transfer" if money moved between two accounts, "purchase" if it was',
-  'paid to a merchant, "credit" if money arrived (salary, refund).',
+  'direction: "out" if money LEFT the account (transferred from your account,',
+  'purchase, payment, withdrawal). "in" if money ARRIVED (received, credited,',
+  'incoming transfer, salary). Arabic: وارد / تم استلام / لحسابكم mean money',
+  'arrived; حُوّل من حسابكم means it left.',
+  'counterparty: the other party — a person, a company or a shop. Copy the name',
+  'as written.',
+  'account: any account or card identifier the message names.',
+  'isMerchant: true only if the counterparty is a shop or business, not a person.',
+  '',
+  'Do NOT report the amount. It is read separately.',
 ].join('\n');
 
 // ─── Lifecycle ───
@@ -463,10 +540,20 @@ export const executeTool = async (
       cfg.monthlyIncome = income;
       const floor = money(args['safeFloor']);
       if (floor >= 0) cfg.safeFloor = floor;
+
+      const ownerName = String(args['ownerName'] ?? '').trim();
+      if (ownerName && !cfg.ownerNames.includes(ownerName)) {
+        cfg.ownerNames = [...cfg.ownerNames, ownerName];
+      }
+
       await api.storage.set(CONFIG_KEY, cfg);
       return {
         success: true,
-        message: `Income ${fmt(cfg.monthlyIncome)}/month, keeping at least ${fmt(cfg.safeFloor)}.`,
+        message:
+          `Income ${fmt(cfg.monthlyIncome)}/month, keeping at least ${fmt(cfg.safeFloor)}.` +
+          (cfg.ownerNames.length > 0
+            ? ` Transfers naming ${cfg.ownerNames.join(' or ')} count as your own.`
+            : ''),
       };
     }
 
@@ -703,73 +790,87 @@ export const executeTool = async (
       const text = String(args['text'] ?? '').trim();
       if (!text) return { success: false, message: 'Nothing to import.' };
 
-      const reply = await api.llm.generate(text, {
-        systemPrompt: SMS_RULES,
-        temperature: 0.1,
-        maxTokens: 220,
-      });
-      const parsed = extractJson(reply);
-      const amount = money(parsed?.['amount']);
-      if (amount <= 0) {
+      // The number comes from the text, never from the model — see extractAmount.
+      const amount = extractAmount(text);
+      if (amount === null || amount <= 0) {
         return { success: false, message: 'No amount found in that message.', raw: text };
       }
 
-      const list = await cards();
-      const from = findCard(list, String(parsed?.['fromAccount'] ?? ''));
-      const to = findCard(list, String(parsed?.['toAccount'] ?? ''));
+      const reply = await api.llm.generate(text, {
+        systemPrompt: SMS_RULES,
+        temperature: 0.1,
+        maxTokens: 200,
+      });
+      const parsed = extractJson(reply);
+      const direction = String(parsed?.['direction'] ?? 'unknown').toLowerCase();
+      const counterparty = String(parsed?.['counterparty'] ?? '').trim();
+      const isMerchant = parsed?.['isMerchant'] === true;
 
-      // The decision is made here, not by the model. If BOTH ends are cards I
-      // own, the money never left me and must not be counted as spending —
-      // otherwise every internal move inflates the month.
-      if (from && to && from.id !== to.id) {
+      const cfg = await loadConfig();
+      const list = await cards();
+      const selfMatch = isSelf(counterparty, cfg.ownerNames) || Boolean(findCard(list, counterparty));
+
+      // Money moving to yourself is a transfer whichever direction it is
+      // described from. Real messages name the destination by NAME, not by card
+      // number, which is why the owner's name is configurable.
+      if (selfMatch) {
         const t: Transfer = {
           id: randomUUID(),
           at: Date.now(),
           month: localMonth(Date.now()),
           amount,
-          from: from.name,
-          to: to.name,
+          from: direction === 'out' ? 'your account' : counterparty || 'your account',
+          to: direction === 'out' ? counterparty || 'your account' : 'your account',
         };
         await api.storage.set(transferKey(t.id), t);
         return {
           success: true,
           kind: 'transfer',
-          message: `Moved ${fmt(amount)} from ${from.name} to ${to.name}. Not spending.`,
+          message: `Moved ${fmt(amount)} between your own accounts. Not spending.`,
           transfer: t,
         };
       }
 
-      if (String(parsed?.['kind'] ?? '') === 'credit') {
+      // Money arriving is never spending, whoever sent it.
+      if (direction === 'in') {
         return {
           success: true,
           kind: 'credit',
-          message: `${fmt(amount)} arrived. Not recorded as spending.`,
+          message: `${fmt(amount)} received${counterparty ? ` from ${counterparty}` : ''}. Not spending.`,
         };
       }
 
-      const merchant = String(parsed?.['merchant'] ?? '').trim();
-      // A merchant name is not a category. Keep it as the merchant and bucket
-      // into a known category, or "other" — otherwise every new shop invents a
-      // category and the summaries fragment.
-      const guessed = normalizeCategory(merchant);
-      const category = KNOWN_CATEGORIES.includes(guessed as (typeof KNOWN_CATEGORIES)[number])
-        ? guessed
-        : 'other';
+      if (direction !== 'out') {
+        // Refusing to guess beats silently recording the wrong sign.
+        return {
+          success: false,
+          kind: 'unknown',
+          message: `Could not tell whether ${fmt(amount)} went out or came in. Not recorded.`,
+          raw: text,
+        };
+      }
+
+      const guessed = normalizeCategory(counterparty);
+      const category =
+        isMerchant && KNOWN_CATEGORIES.includes(guessed as (typeof KNOWN_CATEGORIES)[number])
+          ? guessed
+          : 'other';
+
       const spend: Spend = {
         id: randomUUID(),
         at: Date.now(),
         month: localMonth(Date.now()),
         amount,
         category,
-        description: merchant || 'card payment',
+        description: counterparty || 'card payment',
         source: 'parsed',
-        ...(merchant ? { merchant } : {}),
+        ...(counterparty ? { merchant: counterparty } : {}),
       };
       await api.storage.set(spendKey(spend.id), spend);
       return {
         success: true,
         kind: 'spend',
-        message: `Logged ${fmt(amount)}${merchant ? ` at ${merchant}` : ''} to ${spend.category}.`,
+        message: `Logged ${fmt(amount)}${counterparty ? ` to ${counterparty}` : ''} under ${category}.`,
         entry: spend,
       };
     }
