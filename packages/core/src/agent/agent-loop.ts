@@ -118,7 +118,8 @@ function completionNudge(
     `Re-read what I asked: "${userMessage}". ` +
     `You have not recorded anything with: ${unusedPlugins.join(', ')}. ` +
     'Call that tool now for the part of my message that belongs there. ' +
-    'Only if no part of it belongs there, reply instead — and then list everything you did record this turn.'
+    'Only if no part of it belongs there, answer my original message normally — ' +
+    'do not mention tools or explain what you did not do.'
   );
 }
 

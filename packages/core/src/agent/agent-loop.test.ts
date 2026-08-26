@@ -1729,3 +1729,62 @@ describe('runAgentLoop: clarify', () => {
     expect(result.trace.steps.some((s) => s.type === 'error')).toBe(false);
   });
 });
+
+// ─── The nudge must not leak into the answer ─────────────────────────────────
+//
+// Live: "im thinking of eating a late meal that'll be around 1500 calories do i
+// have that in my todays range" selected health and budget, used only health,
+// and the guard fired. The model then did exactly as told and opened its reply
+// with "I did not record anything with the `budget` tool for your request."
+//
+// The guard is an internal probe. A question the user asked should come back
+// answered, not prefixed with an apology about a tool they never mentioned.
+
+describe('runAgentLoop: completion nudge stays internal', () => {
+  const HEALTH: ToolDefinition = {
+    name: 'health.today',
+    description: "Today's calories",
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+  const BUDGET: ToolDefinition = {
+    name: 'budget.add-entry',
+    description: 'Record spending',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+
+  it('tells the model to answer normally rather than narrate the refusal', async () => {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => contentToText(m.content)));
+        call++;
+        if (call === 1) return toolCallResponse('health.today', {});
+        return textResponse("You're at 1,200 today.");
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'if I eat 1500 more calories am I over for today',
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true, message: '1200 kcal today.' }),
+      })
+    );
+
+    const nudge = seen.find((c) => c.includes('have not recorded anything with'));
+    expect(nudge).toBeDefined();
+    expect(nudge).toContain('answer my original message normally');
+    // The clause that produced the leak must be gone.
+    expect(nudge).not.toContain('list everything you did record');
+  });
+});
