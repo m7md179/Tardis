@@ -119,20 +119,34 @@ export function SpritesPage() {
   }, []);
 
   // Committed art wins over nothing, but never over what you just dropped in.
+  //
+  // Asking the server whether the file exists does not work here: the SPA
+  // fallback answers *every* unmatched path with 200 and index.html, so a HEAD
+  // check said all four sprites existed, every slot got a URL serving HTML, the
+  // images failed to decode, and the page rendered four empty boxes with the
+  // "drop your PNGs" hint suppressed because a sprite appeared to be present.
+  //
+  // Decoding it is the only honest test — HTML in a .png does not become an
+  // image no matter what status code arrives with it.
   useEffect(() => {
     let cancelled = false;
+
+    const decodes = (url: string): Promise<boolean> =>
+      new Promise((resolve) => {
+        const probe = new Image();
+        probe.onload = () => resolve(probe.naturalWidth > 0);
+        probe.onerror = () => resolve(false);
+        probe.src = url;
+      });
+
     (async () => {
       for (const slot of SLOTS) {
         const url = `/sprites/tardis-${slot.key}.png`;
-        try {
-          const res = await fetch(url, { method: 'HEAD' });
-          if (!res.ok || cancelled) continue;
-          setSprites((current) => (current[slot.key] ? current : { ...current, [slot.key]: url }));
-        } catch {
-          /* not committed yet — expected */
-        }
+        if (!(await decodes(url)) || cancelled) continue;
+        setSprites((current) => (current[slot.key] ? current : { ...current, [slot.key]: url }));
       }
     })();
+
     return () => {
       cancelled = true;
     };
