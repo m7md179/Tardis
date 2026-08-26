@@ -89,14 +89,20 @@ const MAX_COMPLETION_RETRIES = 1;
  * records. The model logs the meal, says "Done." and silently drops the
  * spending. Measured at 3/12 complete on real multi-part messages; this plus a
  * prompt line took it to 9/12.
+ *
+ * The wording is action-first on purpose. An earlier version ended with "if it
+ * genuinely does not, say so" plus a request to summarise the turn, and the
+ * model took the escape hatch: 0/3 — it explained why it had NOT logged the
+ * spending instead of logging it. Leading with the call, and offering the
+ * decline only as a subordinate clause, measures 3/3 and still produces a reply
+ * naming both records.
  */
 function completionNudge(userMessage: string, unusedPlugins: string[]): string {
   return (
     `Re-read what I asked: "${userMessage}". ` +
     `You have not recorded anything with: ${unusedPlugins.join(', ')}. ` +
-    'If part of my message belongs there, call that tool now. If it genuinely does not, say so. ' +
-    'When you reply, summarise everything you recorded this turn, not just the last thing — ' +
-    'otherwise it reads as though the earlier parts were dropped.'
+    'Call that tool now for the part of my message that belongs there. ' +
+    'Only if no part of it belongs there, reply instead — and then list everything you did record this turn.'
   );
 }
 
