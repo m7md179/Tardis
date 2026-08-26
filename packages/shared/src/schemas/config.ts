@@ -39,6 +39,20 @@ export const AuthConfigSchema = z.object({
   adminPassword: z.string().min(1).optional(),
 });
 
+/**
+ * Brute-force protection. Matters because a single shared password guards every
+ * skill, and the API is reachable from the internet through the Cloudflare tunnel.
+ */
+export const RateLimitConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Sliding window length, milliseconds. */
+  windowMs: z.number().int().min(1000).default(60_000),
+  /** Requests per window per client for the API generally. */
+  maxRequests: z.number().int().min(1).default(120),
+  /** Requests per window per client for /api/auth/login. Deliberately far stricter. */
+  maxLoginAttempts: z.number().int().min(1).default(5),
+});
+
 export const SystemConfigSchema = z.object({
   server: ServerConfigSchema.default({}),
   auth: AuthConfigSchema,
@@ -46,5 +60,6 @@ export const SystemConfigSchema = z.object({
   agent: AgentConfigSchema.extend({ personality: z.string().optional() }).default({}),
   telegram: TelegramConfigSchema.optional(),
   proactive: ProactiveConfigSchema.default({}),
+  rateLimit: RateLimitConfigSchema.default({}),
   plugins: z.record(z.string(), z.record(z.string(), z.any())).optional(),
 });
