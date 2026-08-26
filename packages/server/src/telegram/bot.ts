@@ -382,9 +382,15 @@ export class TelegramBot {
         const bytes = Buffer.from(await res.arrayBuffer());
         const dataUri = `data:image/jpeg;base64,${bytes.toString('base64')}`;
 
-        // With no caption the model gets a plain instruction rather than an
-        // empty message, which it answers with a description instead of acting.
-        const prompt = caption && caption.length > 0 ? caption : 'Log this meal from the photo.';
+        // With no caption the model needs an instruction, not an empty message.
+        // "Log this meal" assumes every photo is food and makes it argue when
+        // one isn't; leading with the action but naming the alternative covers
+        // a receipt or a screenshot without a second round trip.
+        const prompt =
+          caption && caption.length > 0
+            ? caption
+            : 'Look at this photo. If it shows food or a drink, log it as a meal with your ' +
+              'best calorie estimate. Otherwise, say what it shows.';
         const response = await handleUserMessage(chatId, prompt, this.state, this.deps, [dataUri]);
         await ctx.reply(cleanUrls(response.text));
       } catch (err) {
