@@ -86,11 +86,23 @@ async function readAsDataUri(file: File): Promise<string> {
  * into mush and looks like the sprite is at fault. Every preview here scales
  * with `pixelated` so what you judge is what the art actually is.
  */
-function Sprite({ src, scale, alt }: { src: string; scale: number; alt: string }) {
+function Sprite({
+  src,
+  scale,
+  alt,
+  onBroken,
+}: {
+  src: string;
+  scale: number;
+  alt: string;
+  /** Called when the browser cannot decode this source. */
+  onBroken?: () => void;
+}) {
   return (
     <img
       src={src}
       alt={alt}
+      onError={onBroken}
       style={{
         imageRendering: 'pixelated',
         width: `${scale * 32}px`,
@@ -188,6 +200,25 @@ export function SpritesPage() {
     delete next[key];
     setSprites(next);
     store(next);
+  };
+
+  /**
+   * Drops a source the browser refused to decode.
+   *
+   * Belt and braces after this page shipped showing four blank boxes and no
+   * instructions: whatever puts an undecodable value in a slot, the slot empties
+   * itself and the "drop your PNGs" hint comes back rather than leaving someone
+   * staring at nothing.
+   */
+  const markBroken = (key: string): void => {
+    setSprites((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      store(next);
+      return next;
+    });
+    setNote(`Could not decode the ${key} sprite — drop it in again.`);
   };
 
   const main = sprites['main'];
@@ -336,7 +367,12 @@ export function SpritesPage() {
                 style={{ background: bg }}
               >
                 {frame ? (
-                  <Sprite src={frame} scale={scale} alt={`${slot.label} animation`} />
+                  <Sprite
+                    src={frame}
+                    scale={scale}
+                    alt={`${slot.label} animation`}
+                    onBroken={() => markBroken(frame === main ? 'main' : slot.key)}
+                  />
                 ) : (
                   <span className="text-xs text-gray-700">no sprite</span>
                 )}
@@ -346,11 +382,16 @@ export function SpritesPage() {
                 <div className="flex items-end gap-3 mt-3 pt-3 border-t border-gray-800">
                   <div>
                     <p className="text-[10px] text-gray-600 mb-1">main</p>
-                    <Sprite src={main} scale={1} alt="main frame" />
+                    <Sprite src={main} scale={1} alt="main frame" onBroken={() => markBroken('main')} />
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-600 mb-1">{slot.key}</p>
-                    <Sprite src={stateSrc} scale={1} alt={`${slot.label} frame`} />
+                    <Sprite
+                      src={stateSrc}
+                      scale={1}
+                      alt={`${slot.label} frame`}
+                      onBroken={() => markBroken(slot.key)}
+                    />
                   </div>
                   <p className="text-[10px] text-gray-600 ml-auto">1× — as shipped</p>
                 </div>
@@ -378,7 +419,7 @@ export function SpritesPage() {
               const frame = showState && stateSrc ? stateSrc : main;
               return (
                 <div key={state} className="flex items-center gap-3">
-                  <Sprite src={frame} scale={1.5} alt={state} />
+                  <Sprite src={frame} scale={1.5} alt={state} onBroken={() => markBroken(state)} />
                   <p className="text-sm" style={{ color: '#dde3ec' }}>
                     {line}
                   </p>
