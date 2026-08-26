@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Budget",
   "description": "Track spending, savings goals and whether you can afford the rest of the month.",
-  "summary": "Money: spending, budgets, savings goals and cards. Logs spending said in passing like 'spent 45 on groceries at Tesco'. Tracks savings goals and progress toward them (a car, a trip, a GPU, clothes) and whether you are on pace. Answers whether you can survive or afford the rest of the month, warns when you are overspending or a category is near its limit, and reports spending habits. Records transfers between your own cards, which are not spending, and imports bank SMS.",
+  "summary": "Money: spending, budgets, savings goals, fixed monthly outgoings and cards. Logs spending said in passing like 'spent 45 on groceries at Tesco'. Tracks savings goals and progress toward them (a car, a trip, a GPU, clothes) and whether you are on pace. Knows your fixed monthly commitments such as savings and family support. Answers whether you can survive or afford the rest of the month, warns when you are overspending or a category is near its limit, and reports spending habits. Records transfers between your own cards, which are not spending, and imports bank SMS.",
   "tier": 2,
   "main": "index.ts",
   "permissions": [
@@ -760,6 +760,100 @@
             "label": "SMS text",
             "required": true
           }
+        ]
+      }
+    },
+    {
+      "id": "budget.add-commitment",
+      "description": "Record a fixed monthly outgoing that happens automatically \u2014 savings, family support, a subscription. Subtracted before anything counts as spendable.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What it is, e.g. car savings, family"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount every month"
+          }
+        },
+        "required": [
+          "name",
+          "amount"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Fixed monthly outgoing",
+        "icon": "repeat",
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "name",
+            "type": "text",
+            "label": "What is it",
+            "required": true,
+            "placeholder": "car savings"
+          },
+          {
+            "name": "amount",
+            "type": "number",
+            "label": "Every month",
+            "required": true,
+            "min": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.commitments",
+      "description": "List fixed monthly outgoings and what is left spendable after them.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "ui": {
+        "block": "list",
+        "label": "Fixed outgoings",
+        "icon": "repeat",
+        "resultPath": "commitments",
+        "emptyText": "No fixed monthly commitments.",
+        "item": {
+          "id": "id",
+          "title": "headline",
+          "subtitle": "detail"
+        },
+        "actions": [
+          {
+            "skill": "budget.remove-commitment",
+            "label": "Remove",
+            "style": "danger",
+            "args": {
+              "name": "name"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.remove-commitment",
+      "description": "Remove a fixed monthly outgoing.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ]
       }
     }

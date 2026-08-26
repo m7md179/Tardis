@@ -208,12 +208,24 @@ interface Goal {
   monthlyPayment?: number;
 }
 
+/** A fixed outgoing that happens every month regardless of behaviour. */
+interface Commitment {
+  name: string;
+  amount: number;
+}
+
 interface BudgetConfig {
   monthlyIncome: number;
   safeFloor: number;
   categoryLimits: Record<string, number>;
   /** Your own name(s) as the bank writes them, to spot self-transfers. */
   ownerNames: string[];
+  /**
+   * Money that leaves at the start of every month — savings, family support,
+   * subscriptions. It is committed before anything is spendable, so counting
+   * it as available makes "can I survive the month" wrong by exactly that much.
+   */
+  commitments: Commitment[];
 }
 
 /** Loose name match: banks vary spacing, order and middle names. */
@@ -244,6 +256,7 @@ async function loadConfig(): Promise<BudgetConfig> {
       safeFloor: 0,
       categoryLimits: {},
       ownerNames: [],
+      commitments: [],
     }
   );
 }
@@ -557,6 +570,47 @@ export const executeTool = async (
       };
     }
 
+    case 'budget.add-commitment': {
+      const cfg = await loadConfig();
+      const name = String(args['name'] ?? '').trim();
+      const amount = money(args['amount']);
+      if (!name) return { success: false, message: 'Name the commitment.' };
+      if (amount <= 0) return { success: false, message: 'Amount must be greater than zero.' };
+      cfg.commitments = [...cfg.commitments.filter((c) => c.name.toLowerCase() !== name.toLowerCase()), { name, amount }];
+      await api.storage.set(CONFIG_KEY, cfg);
+      const committed = round(cfg.commitments.reduce((sum, c) => sum + c.amount, 0));
+      return {
+        success: true,
+        message: `${name}: ${fmt(amount)}/month. ${fmt(committed)} committed in total, leaving ${fmt(round(cfg.monthlyIncome - committed - cfg.safeFloor))} spendable.`,
+      };
+    }
+
+    case 'budget.remove-commitment': {
+      const cfg = await loadConfig();
+      const name = String(args['name'] ?? '').toLowerCase().trim();
+      const before = cfg.commitments.length;
+      cfg.commitments = cfg.commitments.filter((c) => !c.name.toLowerCase().includes(name));
+      if (cfg.commitments.length === before) return { success: false, message: 'No commitment by that name.' };
+      await api.storage.set(CONFIG_KEY, cfg);
+      return { success: true, message: `Removed "${name}".` };
+    }
+
+    case 'budget.commitments': {
+      const cfg = await loadConfig();
+      if (cfg.commitments.length === 0) return { commitments: [], message: 'No fixed monthly commitments.' };
+      const committed = round(cfg.commitments.reduce((sum, c) => sum + c.amount, 0));
+      return {
+        commitments: cfg.commitments.map((c) => ({
+          id: c.name,
+          name: c.name,
+          headline: `${c.name} — ${fmt(c.amount)}/month`,
+          detail: cfg.monthlyIncome > 0 ? `${Math.round((c.amount / cfg.monthlyIncome) * 100)}% of income` : '',
+        })),
+        total: committed,
+        message: `${fmt(committed)} committed each month, leaving ${fmt(round(cfg.monthlyIncome - committed - cfg.safeFloor))} spendable.`,
+      };
+    }
+
     case 'budget.set-limit': {
       const cfg = await loadConfig();
       const category = normalizeCategory(args['category']);
@@ -591,8 +645,17 @@ export const executeTool = async (
         detail: `burning ${fmt(Math.round(burn * 100) / 100)}/day, ${daysLeft} days left`,
       });
 
+      const committed = round(cfg.commitments.reduce((sum, c) => sum + c.amount, 0));
+      if (committed > 0) {
+        lines.push({
+          key: 'committed',
+          headline: `${fmt(committed)} committed before anything else`,
+          detail: cfg.commitments.map((c) => `${c.name} ${fmt(c.amount)}`).join(' · '),
+        });
+      }
+
       if (cfg.monthlyIncome > 0) {
-        const allowance = cfg.monthlyIncome - cfg.safeFloor;
+        const allowance = round(cfg.monthlyIncome - committed - cfg.safeFloor);
         const overBy = Math.round((projected - allowance) * 100) / 100;
         if (overBy > 0) {
           // The number that actually answers "can I survive the month".
@@ -602,13 +665,13 @@ export const executeTool = async (
           lines.push({
             key: 'warning',
             headline: `On pace to overshoot by ${fmt(overBy)}`,
-            detail: `Projected ${fmt(projected)} against ${fmt(allowance)} spendable. Ease to ${fmt(safeDaily)}/day to land safe.`,
+            detail: `Projected ${fmt(projected)} against ${fmt(allowance)} spendable (${fmt(cfg.monthlyIncome)} in, less ${fmt(committed)} committed and ${fmt(cfg.safeFloor)} kept back). Ease to ${fmt(safeDaily)}/day to land safe.`,
           });
         } else {
           lines.push({
             key: 'ok',
             headline: `On pace to finish ${fmt(Math.abs(overBy))} under`,
-            detail: `Projected ${fmt(projected)} against ${fmt(allowance)} spendable.`,
+            detail: `Projected ${fmt(projected)} against ${fmt(allowance)} spendable (${fmt(cfg.monthlyIncome)} in, less ${fmt(committed)} committed and ${fmt(cfg.safeFloor)} kept back).`,
           });
         }
       } else {
