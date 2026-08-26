@@ -94,7 +94,9 @@ function completionNudge(userMessage: string, unusedPlugins: string[]): string {
   return (
     `Re-read what I asked: "${userMessage}". ` +
     `You have not recorded anything with: ${unusedPlugins.join(', ')}. ` +
-    'If part of my message belongs there, call that tool now. If it genuinely does not, say so.'
+    'If part of my message belongs there, call that tool now. If it genuinely does not, say so. ' +
+    'When you reply, summarise everything you recorded this turn, not just the last thing — ' +
+    'otherwise it reads as though the earlier parts were dropped.'
   );
 }
 
