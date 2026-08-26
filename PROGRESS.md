@@ -52,7 +52,7 @@ tardis-app/
 | C | Hybrid UI contract + `UI-CONTRACT.md` | **DONE** (2026-08-26) |
 | D | Client app foundation (new repo) — **gate: real DB change from the app** | **DONE** (2026-08-26) — gate passed on web; mobile built, no runtime proof |
 | E | New plugins: health/food (multimodal) + budget | **DONE** (2026-08-26) |
-| F | TUI renderer against the same contract | NOT STARTED |
+| F | TUI renderer against the same contract | **DONE** (2026-08-26) |
 
 Prerequisite unblocking (only as far as needed): `notes` plugin (duplicate `tagFilter`
 declaration at `plugins/notes/index.ts:111-112`) and `google-calendar` (4 build errors).
@@ -533,3 +533,89 @@ which is the one with measurable behaviour, is verified properly.
 **Next**: Phase F — the TUI renderer against the same `GET /api/skills` contract. If it is
 a small phase, the contract held; if it needs architectural change, that is signal Phase C
 was incomplete and gets reported as such.
+
+
+### 2026-08-26 — Phase F: the TUI, and the answer to the question it was asking
+
+Phase F existed to test whether Phase C's contract actually held. **It did.**
+
+The terminal client required **zero** changes to `packages/core`, **zero** to the server,
+and **zero** to the descriptor schema. Only new files under `apps/tui`. It is a renderer,
+exactly as the plan predicted a working contract would allow.
+
+**Where the terminal cannot comply, it says so.** A skill whose required input is an
+`image` renders as:
+
+```
+  12. Log from a photo — unavailable: needs image, which a terminal cannot capture
+```
+
+That is the contract's own rule, not a workaround. The capability is legitimately unusable
+from a terminal, and the honest rendering is to disable it with a reason rather than show a
+field nobody can fill.
+
+**One addition worth noting**: `input.ts`, so the TUI accepts piped stdin as well as a TTY.
+readline over a pipe closes on EOF before sequential awaits consume the buffered lines,
+which killed it on its first question. That is TUI ergonomics, not architecture — and it is
+what makes the thing testable without a pty.
+
+**Evidence** — the real binary, scripted against the live server:
+rendered 26 skills across 7 plugins, started a timer through the form block, rendered it in
+the timer block with a live clock, and stopped it via a descriptor-declared item action.
+Confirmed independently in production sqlite:
+
+```
+[completed] "phase-f-tui-check"  start=2026-08-26T00:11:06.147Z
+```
+
+---
+
+# Final summary — all six phases
+
+| Phase | Outcome | Headline evidence |
+|---|---|---|
+| **A** Persistent memory | Done | `memory.save` recall **2/15 → 15/15**, 0/10 spurious; 5 real rows |
+| **B** Skills architecture | Done | **15 skills** served live; workflow refused over HTTP with `APPROVAL_REQUIRED` |
+| **C** UI contract | Done | 5 blocks cover 26 real skills; **all six plugins load** (was four) |
+| **D** Client foundation | Done | Gate 4/4 — real DOM events wrote a real `sessions` row |
+| **E** Multimodal + plugins | Done | Live vision confirmed; **3/3 meals surfaced hidden fats**; **8 plugins** |
+| **F** TUI | Done | Zero shared-layer changes; real DB row from the terminal |
+
+### What the system looks like now
+
+- **8 plugins**, **37 skills**, served from one `GET /api/skills` contract.
+- **Three client surfaces** — web, mobile, terminal — sharing one implementation of every
+  binding rule. A bug fixed in `@tardis-app/core` is fixed on all three.
+- Memory, multimodal input, and direct skill invocation all working against a local
+  4B model on a 4 GB GPU.
+
+### The through-line: the model lies convincingly, and only real inference catches it
+
+Four separate times, a change that passed every unit test failed against the live model:
+
+1. A claim-correction nudge that read as meta made the model **apologise and repeat the
+   lie** — 0/3 tool calls until the request was restated imperatively.
+2. `"Match the user's energy. Short command = short confirmation"` in the system prompt
+   scored **0/9** on its own — a short statement read as deserving a short *confirmation*
+   rather than an *action*.
+3. Rewording the memory prompt to fix blank replies **regressed saves 15/15 → 1/4**: the
+   model spoke the acknowledgement *instead of* acting.
+4. `currency()` calling an async config getter synchronously printed `[object Promise]` into
+   every formatted amount — invisible to types and tests, obvious in one real run.
+
+Two more were caught by reading rather than running: a **temporal dead zone** that would
+have stopped every plugin loading (invisible to `tsc` through a closure), and a **flaky
+recency test** that passed alone and failed in suite.
+
+### Carried forward, not buried
+
+- **No mobile runtime proof.** The components typecheck and share tested logic, but
+  `jest-expo` will not resolve in this workspace. "Typechecks" is not "works".
+- **Photo estimation quality unverified** — only the plumbing. The test image was synthetic;
+  there is no real food photo in this environment.
+- **Todoist and Google Calendar remain credential-blocked**, so two `resultPath` bindings are
+  correct by inspection but unverified at runtime.
+- **One pre-existing test failure** (`bot.test.ts` workflow approval) left untouched, as
+  scoped out at the start.
+- **`tardis-plugin-creator` is stale** — it documents a plugin shape this codebase no longer
+  uses and would mislead a fresh session.
