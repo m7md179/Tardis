@@ -44,6 +44,14 @@ export interface AgentLoopInput {
    * The agent loop calls this and treats any thrown error as a tool error result.
    */
   executeTool: (toolName: string, args: Record<string, unknown>) => Promise<unknown>;
+  /**
+   * Called as each step happens, so a caller can stream progress.
+   *
+   * A turn takes seconds — plugin selection, then one LLM round trip per step.
+   * Without this a client shows a blank wait and looks broken, which is most of
+   * why the chat surfaces felt dead.
+   */
+  onStep?: (step: AgentStep) => void;
 }
 
 export interface AgentLoopOutput {
@@ -130,8 +138,24 @@ function toolCallSignature(
 
 export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutput> {
   const startTime = Date.now();
-  const steps: AgentStep[] = [];
+  const rawSteps: AgentStep[] = [];
   let totalTokens = 0;
+
+  // Every recorded step is emitted as it happens. A listener that throws must
+  // not take down the turn — streaming is a nicety, the answer is not.
+  const steps = {
+    push(step: AgentStep): number {
+      const n = rawSteps.push(step);
+      try {
+        input.onStep?.(step);
+      } catch {
+        // A broken listener is not the turn's problem.
+      }
+      return n;
+    },
+    some: (fn: (s: AgentStep) => boolean) => rawSteps.some(fn),
+    filter: (fn: (s: AgentStep) => boolean) => rawSteps.filter(fn),
+  };
 
   // The prompt is split into a stable half and a volatile half so that prefix
   // caching survives from turn to turn — see buildSystemPrompt/buildContextPreamble.
@@ -219,7 +243,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       // An empty reply is never useful, and Telegram rejects empty message
       // text outright — so treat it as a failure and substitute something
       // truthful rather than shipping a blank turn.
-      const finalText = text.trim() ? text : fallbackForEmptyResponse(steps);
+      const finalText = text.trim() ? text : fallbackForEmptyResponse(rawSteps);
 
       steps.push({
         type: 'reasoning',
@@ -229,7 +253,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       });
       return {
         response: finalText,
-        trace: buildTrace(input, steps, finalText, startTime, totalTokens),
+        trace: buildTrace(input, rawSteps, finalText, startTime, totalTokens),
       };
     }
 
@@ -258,7 +282,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         const preview = generatePreview(toolName, toolArgs);
         return {
           response: preview,
-          trace: buildTrace(input, steps, null, startTime, totalTokens),
+          trace: buildTrace(input, rawSteps, null, startTime, totalTokens),
           pendingApproval: { toolName, args: toolArgs, preview },
         };
       }
@@ -318,7 +342,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
   // ─── Stopped early: repeat guard tripped, or max steps reached ────────────
   const completedTools = [
     ...new Set(
-      steps
+      rawSteps
         .filter((s) => s.type === 'tool_result' && s.toolName)
         .map((s) => s.toolName as string)
     ),
@@ -339,7 +363,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
 
   return {
     response: stopResponse,
-    trace: buildTrace(input, steps, stopResponse, startTime, totalTokens),
+    trace: buildTrace(input, rawSteps, stopResponse, startTime, totalTokens),
   };
 }
 

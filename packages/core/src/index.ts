@@ -44,6 +44,12 @@ export { OllamaAdapter } from './llm/ollama-adapter.js';
 export type { OllamaAdapterConfig } from './llm/ollama-adapter.js';
 export { ThoughtTracer } from './agent/thought-tracer.js';
 export { selectPlugins } from './agent/plugin-router.js';
+export { runConversationTurn } from './agent/conversation.js';
+export type {
+  ConversationDeps,
+  ConversationTurnInput,
+  ConversationTurnResult,
+} from './agent/conversation.js';
 export type { PluginSelectionResult } from './agent/plugin-router.js';
 export { ToolRouter } from './agent/tool-router.js';
 export type { ToolResult, ToolResultCode } from './agent/tool-router.js';

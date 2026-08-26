@@ -7,6 +7,7 @@ import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
 import type { LLMProviderConfig, SystemConfig } from '@tardis/shared';
 import type { PluginManager } from '@tardis/core';
+import { runConversationTurn } from '@tardis/core';
 import { createRateLimiters, rateLimitMiddleware, safeEqual } from './rate-limit.js';
 
 // ─── App dependencies ─────────────────────────────────────────────────────────
@@ -17,6 +18,11 @@ export interface AppDeps {
   pluginManager: PluginManager;
   /** Routes direct (non-LLM) skill invocations. Same validation path the agent loop uses. */
   toolRouter?: import('@tardis/core').ToolRouter;
+  /**
+   * Everything needed to run a conversation turn. Without this the agent is
+   * reachable only from Telegram, which is how TARDIS shipped until now.
+   */
+  conversation?: import('@tardis/core').ConversationDeps;
   /** Called when PUT /api/config/llm succeeds — persist the change. */
   saveConfig: (updated: SystemConfig) => void;
   /** Proactive scheduler instance (optional, added in Phase 5). */
@@ -171,6 +177,105 @@ export function createApp(deps: AppDeps): Hono {
         toolCount: m.tools.length,
       }))
     );
+  });
+
+  // ─── Chat ─────────────────────────────────────────────────────────────────
+  //
+  // The agent loop over HTTP. Same pipeline Telegram uses — plugin selection,
+  // memory retrieval, tools, trace and history persistence — via the shared
+  // conversation service.
+
+  app.post('/api/chat', async (c) => {
+    if (!deps.conversation) {
+      return c.json({ error: 'Chat is not configured', code: 'NOT_CONFIGURED' }, 503);
+    }
+    let body: { message?: string; chatId?: string; images?: string[] };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const message = (body.message ?? '').trim();
+    if (!message) return c.json({ error: 'message is required' }, 400);
+
+    const result = await runConversationTurn(
+      {
+        chatId: body.chatId ?? 'web',
+        message,
+        ...(body.images?.length ? { images: body.images } : {}),
+      },
+      deps.conversation
+    );
+
+    return c.json({
+      response: result.response,
+      selectedPlugins: result.selectedPlugins,
+      traceId: result.trace.id,
+      steps: result.trace.steps,
+      ...(result.pendingApproval ? { pendingApproval: result.pendingApproval } : {}),
+    });
+  });
+
+  app.post('/api/chat/stream', async (c) => {
+    if (!deps.conversation) {
+      return c.json({ error: 'Chat is not configured', code: 'NOT_CONFIGURED' }, 503);
+    }
+    let body: { message?: string; chatId?: string; images?: string[] };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const message = (body.message ?? '').trim();
+    if (!message) return c.json({ error: 'message is required' }, 400);
+
+    const conversation = deps.conversation;
+    const encoder = new TextEncoder();
+
+    // A turn takes seconds. Emitting plugin selection and each step as they
+    // happen is the difference between "working" and "looks frozen".
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (event: string, data: unknown): void => {
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+          );
+        };
+        try {
+          const result = await runConversationTurn(
+            {
+              chatId: body.chatId ?? 'web',
+              message,
+              ...(body.images?.length ? { images: body.images } : {}),
+              onPluginsSelected: (plugins) => send('plugins', { plugins }),
+              onStep: (step) => send('step', step),
+            },
+            conversation
+          );
+          send('done', {
+            response: result.response,
+            traceId: result.trace.id,
+            selectedPlugins: result.selectedPlugins,
+            ...(result.pendingApproval ? { pendingApproval: result.pendingApproval } : {}),
+          });
+        } catch (err) {
+          send('error', { error: err instanceof Error ? err.message : String(err) });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        // Cloudflare buffers responses it thinks are compressible; this keeps
+        // events flowing through the tunnel instead of arriving all at once.
+        'X-Accel-Buffering': 'no',
+      },
+    });
   });
 
   // ─── Skills ───────────────────────────────────────────────────────────────

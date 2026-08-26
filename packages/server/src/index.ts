@@ -130,8 +130,25 @@ async function main(): Promise<void> {
   }
 
   // 6. Start Hono HTTP server (Bun native)
+  // Shared with the Telegram bot: one pipeline, every surface.
+  const conversationDeps = {
+    llmProvider,
+    toolRouter,
+    agentConfig: config.agent,
+    getAllManifests: () => pluginManager.getAllManifests(),
+    memoryRetriever,
+    memoryTools: MEMORY_TOOLS,
+    memoryExecutor,
+    conversationStore,
+    thoughtTracer,
+    ...(config.llm.contextWindowSize !== undefined
+      ? { contextWindowSize: config.llm.contextWindowSize }
+      : {}),
+  };
+
   const app = createApp({
     toolRouter,
+    conversation: conversationDeps,
     db,
     config,
     pluginManager,

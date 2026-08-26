@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
-import { runAgentLoop, selectPlugins } from '@tardis/core';
+import { runConversationTurn } from '@tardis/core';
 import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever, ConversationStore, ThoughtTracer } from '@tardis/core';
 import type { MemoryExecutor } from '@tardis/core';
 import type { AgentConfig, PluginManifest, ToolDefinition } from '@tardis/shared';
@@ -115,97 +115,43 @@ export async function handleUserMessage(
   }
 
   // ─── Normal agent flow ─────────────────────────────────────────────────
+  //
+  // Delegates to the shared conversation service so Telegram and the HTTP chat
+  // endpoint run the identical pipeline. This logic used to live only here,
+  // which is why the agent was unreachable from anything but Telegram.
   try {
-    const allManifests = deps.getAllManifests();
-    const { tools, selectedPlugins } = await selectPlugins(
-      text,
-      allManifests,
-      deps.llmProvider
+    const chatIdStr = String(chatId);
+    const result = await runConversationTurn(
+      {
+        chatId: chatIdStr,
+        message: text,
+        // Only when there is no DB store; otherwise the service reads it.
+        ...(deps.conversationStore
+          ? {}
+          : { history: state.conversationHistory.get(chatId) ?? [] }),
+      },
+      {
+        llmProvider: deps.llmProvider,
+        toolRouter: deps.toolRouter,
+        agentConfig: deps.agentConfig,
+        getAllManifests: deps.getAllManifests,
+        ...(deps.memoryRetriever ? { memoryRetriever: deps.memoryRetriever } : {}),
+        ...(deps.memoryTools ? { memoryTools: deps.memoryTools } : {}),
+        ...(deps.memoryExecutor ? { memoryExecutor: deps.memoryExecutor } : {}),
+        ...(deps.conversationStore ? { conversationStore: deps.conversationStore } : {}),
+        ...(deps.thoughtTracer ? { thoughtTracer: deps.thoughtTracer } : {}),
+        ...(deps.contextWindowSize !== undefined
+          ? { contextWindowSize: deps.contextWindowSize }
+          : {}),
+      }
     );
 
-    // Retrieve relevant memories for context injection
-    const memories = deps.memoryRetriever
-      ? await deps.memoryRetriever.getRelevant(text)
-      : [];
-
-    // Combine plugin tools with always-available memory tools
-    const allTools = [...tools, ...(deps.memoryTools ?? [])];
-
-    // Build executor that routes memory.* to memoryExecutor, rest to toolRouter
-    const pluginExecutor = deps.toolRouter.asExecutor();
-    const combinedExecutor = async (toolName: string, args: Record<string, unknown>) => {
-      if (toolName.startsWith('memory.') && deps.memoryExecutor) {
-        return deps.memoryExecutor.execute(toolName, args);
-      }
-      return pluginExecutor(toolName, args);
-    };
-
-    // Load history: prefer DB store (persistent), fall back to in-memory map
-    const chatIdStr = String(chatId);
-    const maxMessages = deps.agentConfig.conversationHistoryLength * 2;
-    const history = deps.conversationStore
-      ? await deps.conversationStore.getHistory(chatIdStr, maxMessages)
-      : (state.conversationHistory.get(chatId) ?? []);
-
-    const result = await runAgentLoop({
-      userMessage: text,
-      conversationHistory: history,
-      memories,
-      availableTools: allTools,
-      selectedPlugins,
-      config: deps.agentConfig,
-      llmProvider: deps.llmProvider,
-      ...(deps.contextWindowSize !== undefined ? { contextWindowSize: deps.contextWindowSize } : {}),
-      executeTool: combinedExecutor,
-    });
-
-    // Persist the thought trace. Best-effort: a tracing failure must never
-    // turn a successful reply into an error message for the user.
-    if (deps.thoughtTracer) {
-      try {
-        await deps.thoughtTracer.save(result.trace);
-      } catch (err) {
-        console.error(`[TelegramBot] Failed to save thought trace for chat ${chatId}:`, err);
-      }
-    }
-
-    // Persist new messages
-    if (deps.conversationStore) {
-      await deps.conversationStore.appendMessage(chatIdStr, { role: 'user', content: text });
-
-      // Replay completed tool calls into history. Without them the stored
-      // history reads as a bare "user asks → assistant confirms" exchange,
-      // which teaches the model it can claim an action succeeded without ever
-      // calling the tool. Only complete call/result pairs are written: an
-      // approval pause produces a call with no result, and persisting that
-      // dangling tool_call would make the next request's sequence invalid.
-      const steps = result.trace.steps;
-      for (let i = 0; i < steps.length; i++) {
-        const call = steps[i];
-        const observed = steps[i + 1];
-        if (call?.type !== 'tool_call' || !call.toolName) continue;
-        if (observed?.type !== 'tool_result' || observed.toolName !== call.toolName) continue;
-
-        await deps.conversationStore.appendMessage(chatIdStr, {
-          role: 'assistant',
-          content: null,
-          tool_calls: [
-            { id: call.toolName, name: call.toolName, arguments: call.toolArgs ?? {} },
-          ],
-        });
-        await deps.conversationStore.appendMessage(chatIdStr, {
-          role: 'tool',
-          content: JSON.stringify(observed.toolResult ?? null),
-          name: call.toolName,
-        });
-        i++; // the result step is consumed by the pair above
-      }
-
-      await deps.conversationStore.appendMessage(chatIdStr, { role: 'assistant', content: result.response });
-    } else {
-      // Fallback: in-memory history capped at conversationHistoryLength * 2
+    // Without a DB store the service keeps no history, so the bot retains its
+    // own in-memory fallback for that case.
+    if (!deps.conversationStore) {
+      const maxMessages = deps.agentConfig.conversationHistoryLength * 2;
       const updatedHistory: LLMMessage[] = [
-        ...history,
+        ...(state.conversationHistory.get(chatId) ?? []),
         { role: 'user' as const, content: text },
         { role: 'assistant' as const, content: result.response },
       ].slice(-maxMessages);
