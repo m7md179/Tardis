@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Budget",
   "description": "Track spending, savings goals and whether you can afford the rest of the month.",
-  "summary": "Money: spending, budgets, savings goals, fixed monthly outgoings and cards. Logs spending said in passing like 'spent 45 on groceries at Tesco'. Tracks savings goals and progress toward them (a car, a trip, a GPU, clothes) and whether you are on pace. Knows your fixed monthly commitments such as savings and family support. Answers whether you can survive or afford the rest of the month, warns when you are overspending or a category is near its limit, and reports spending habits. Records transfers between your own cards, which are not spending, and imports bank SMS.",
+  "summary": "Money: spending, budgets, savings goals, fixed monthly outgoings and cards. Logs spending said in passing like 'spent 45 on groceries'. Tracks savings goals (car, trip, GPU) and whether you are on pace. Knows fixed commitments like savings and family support. Answers whether you can afford or survive the rest of the month, warns about overspending, and reports habits. Records transfers between your own cards, which are not spending, and imports bank SMS.",
   "tier": 2,
   "main": "index.ts",
   "permissions": [
