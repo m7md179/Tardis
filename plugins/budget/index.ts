@@ -249,16 +249,31 @@ const goalKey = (id: string): string => `goal:${id}`;
 const transferKey = (id: string): string => `transfer:${id}`;
 const CONFIG_KEY = 'budget-config';
 
+const DEFAULT_CONFIG: BudgetConfig = {
+  monthlyIncome: 0,
+  safeFloor: 0,
+  categoryLimits: {},
+  ownerNames: [],
+  commitments: [],
+};
+
+/**
+ * Always returns a complete config.
+ *
+ * A config stored before a field existed comes back without it, and
+ * `cfg.commitments.filter(...)` on undefined throws — which is exactly what
+ * happened the first time commitments shipped. Merging over the defaults
+ * backfills anything a new version added.
+ */
 async function loadConfig(): Promise<BudgetConfig> {
-  return (
-    (await api.storage.get<BudgetConfig>(CONFIG_KEY)) ?? {
-      monthlyIncome: 0,
-      safeFloor: 0,
-      categoryLimits: {},
-      ownerNames: [],
-      commitments: [],
-    }
-  );
+  const stored = await api.storage.get<Partial<BudgetConfig>>(CONFIG_KEY);
+  return {
+    ...DEFAULT_CONFIG,
+    ...(stored ?? {}),
+    categoryLimits: stored?.categoryLimits ?? {},
+    ownerNames: stored?.ownerNames ?? [],
+    commitments: stored?.commitments ?? [],
+  };
 }
 
 async function listAll<T>(prefix: string): Promise<T[]> {
