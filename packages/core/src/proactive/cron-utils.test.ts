@@ -74,3 +74,60 @@ describe('isDuringQuietHours', () => {
     expect(isDuringQuietHours(now, 'bad', 'format')).toBe(false);
   });
 });
+
+// ─── Firing exactly once per occurrence ──────────────────────────────────────
+//
+// Production evidence: `0 * * * *` fired at :59 and again at :00, every hour,
+// 429 times each. The old check accepted any occurrence within 60s of `now` in
+// either direction, so the tick before the hour and the tick after it both
+// matched the same occurrence. Every scheduled message arrived twice.
+
+describe('isTimeToRun: fires once per occurrence', () => {
+  it('does not fire in the minute BEFORE the scheduled time', () => {
+    expect(isTimeToRun('0 18 * * *', new Date('2026-02-26T17:59:33'))).toBe(false);
+  });
+
+  it('fires in the scheduled minute', () => {
+    expect(isTimeToRun('0 18 * * *', new Date('2026-02-26T18:00:33'))).toBe(true);
+  });
+
+  it('does not fire in the minute after', () => {
+    expect(isTimeToRun('0 18 * * *', new Date('2026-02-26T18:01:33'))).toBe(false);
+  });
+
+  it('an hourly schedule matches the top of the hour only', () => {
+    const fires = [];
+    for (let m = 57; m < 63; m++) {
+      const t = new Date(Date.UTC(2026, 1, 26, 12, 0, 0));
+      t.setMinutes(m);
+      if (isTimeToRun('0 * * * *', t)) fires.push(t.getHours() + ':' + t.getMinutes());
+    }
+    expect(fires).toHaveLength(1);
+  });
+});
+
+// ─── Drift ───────────────────────────────────────────────────────────────────
+//
+// setInterval(60s) wanders — observed offsets :33, :43, :55 across one day. A
+// strict same-minute check would eventually step straight over an occurrence
+// and skip it silently, so the scheduler passes the previous tick time and asks
+// for occurrences in the interval it actually covered.
+
+describe('isTimeToRun: interval form survives tick drift', () => {
+  it('catches an occurrence the tick stepped over', () => {
+    const previous = new Date('2026-02-26T17:59:59.500');
+    const now = new Date('2026-02-26T18:01:00.100');
+    expect(isTimeToRun('0 18 * * *', now, previous)).toBe(true);
+  });
+
+  it('does not re-fire the same occurrence on the next tick', () => {
+    const previous = new Date('2026-02-26T18:01:00.100');
+    const now = new Date('2026-02-26T18:02:00.300');
+    expect(isTimeToRun('0 18 * * *', now, previous)).toBe(false);
+  });
+
+  it('fires nothing when no time has passed (a restart must not replay)', () => {
+    const t = new Date('2026-02-26T18:00:30');
+    expect(isTimeToRun('0 18 * * *', t, t)).toBe(false);
+  });
+});

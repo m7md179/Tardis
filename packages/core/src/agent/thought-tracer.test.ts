@@ -326,7 +326,9 @@ describe('ThoughtTracer: integration with runAgentLoop', () => {
       config: DEFAULT_CONFIG,
       llmProvider: llm,
       executeTool: async (name) =>
-        name === 'time-tracker.start' ? { sessionId: 'sess_1' } : { saved: true },
+        name === 'time-tracker.start'
+          ? { success: true, sessionId: 'sess_1' }
+          : { success: true, saved: true },
     });
 
     // Sanity check the live result
@@ -350,9 +352,9 @@ describe('ThoughtTracer: integration with runAgentLoop', () => {
     // Verify tool call details survived the round-trip
     expect(loaded?.steps[0]?.toolName).toBe('time-tracker.start');
     expect(loaded?.steps[0]?.toolArgs).toEqual({ taskName: 'integration test' });
-    expect(loaded?.steps[1]?.toolResult).toEqual({ sessionId: 'sess_1' });
+    expect(loaded?.steps[1]?.toolResult).toEqual({ success: true, sessionId: 'sess_1' });
     expect(loaded?.steps[2]?.toolName).toBe('notes.save');
-    expect(loaded?.steps[3]?.toolResult).toEqual({ saved: true });
+    expect(loaded?.steps[3]?.toolResult).toEqual({ success: true, saved: true });
     expect(loaded?.steps[4]?.content).toBe('Timer started and note saved.');
   });
 
