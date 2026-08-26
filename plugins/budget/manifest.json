@@ -6,8 +6,14 @@
   "summary": "Track spending and budgets. Understands things said in passing like 'spent 45 on groceries at Tesco', and also takes manual entries. Reports monthly totals broken down by category.",
   "tier": 2,
   "main": "index.ts",
-  "permissions": ["storage:read", "storage:write", "llm:use"],
-  "config": { "currency": "JOD" },
+  "permissions": [
+    "storage:read",
+    "storage:write",
+    "llm:use"
+  ],
+  "config": {
+    "currency": "JOD"
+  },
   "skills": [
     {
       "id": "budget.log-spend",
@@ -17,9 +23,14 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "text": { "type": "string", "description": "What was spent, in plain language" }
+          "text": {
+            "type": "string",
+            "description": "What was spent, in plain language"
+          }
         },
-        "required": ["text"]
+        "required": [
+          "text"
+        ]
       },
       "ui": {
         "block": "form",
@@ -27,7 +38,13 @@
         "icon": "wallet",
         "submitLabel": "Log",
         "fields": [
-          { "name": "text", "type": "text", "label": "What did you spend?", "required": true, "placeholder": "45 on groceries at Tesco" }
+          {
+            "name": "text",
+            "type": "text",
+            "label": "What did you spend?",
+            "required": true,
+            "placeholder": "45 on groceries at Tesco"
+          }
         ]
       }
     },
@@ -39,11 +56,23 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "amount": { "type": "number", "description": "Amount spent" },
-          "category": { "type": "string", "description": "Category, e.g. groceries, transport, eating-out" },
-          "description": { "type": "string", "description": "What it was for" }
+          "amount": {
+            "type": "number",
+            "description": "Amount spent"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category, e.g. groceries, transport, eating-out"
+          },
+          "description": {
+            "type": "string",
+            "description": "What it was for"
+          }
         },
-        "required": ["amount", "category"]
+        "required": [
+          "amount",
+          "category"
+        ]
       },
       "ui": {
         "block": "form",
@@ -51,23 +80,54 @@
         "icon": "plus",
         "submitLabel": "Add",
         "fields": [
-          { "name": "amount", "type": "number", "label": "Amount", "required": true, "min": 0 },
+          {
+            "name": "amount",
+            "type": "number",
+            "label": "Amount",
+            "required": true,
+            "min": 0
+          },
           {
             "name": "category",
             "type": "select",
             "label": "Category",
             "required": true,
             "options": [
-              { "value": "groceries", "label": "Groceries" },
-              { "value": "eating-out", "label": "Eating out" },
-              { "value": "transport", "label": "Transport" },
-              { "value": "bills", "label": "Bills" },
-              { "value": "shopping", "label": "Shopping" },
-              { "value": "health", "label": "Health" },
-              { "value": "other", "label": "Other" }
+              {
+                "value": "groceries",
+                "label": "Groceries"
+              },
+              {
+                "value": "eating-out",
+                "label": "Eating out"
+              },
+              {
+                "value": "transport",
+                "label": "Transport"
+              },
+              {
+                "value": "bills",
+                "label": "Bills"
+              },
+              {
+                "value": "shopping",
+                "label": "Shopping"
+              },
+              {
+                "value": "health",
+                "label": "Health"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
             ]
           },
-          { "name": "description", "type": "text", "label": "What for" }
+          {
+            "name": "description",
+            "type": "text",
+            "label": "What for"
+          }
         ]
       }
     },
@@ -76,16 +136,34 @@
       "description": "List this month's spending entries with a running total.",
       "aiInvocable": true,
       "actionType": "direct",
-      "parameters": { "type": "object", "properties": {} },
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
       "ui": {
         "block": "list",
         "label": "This month",
         "icon": "wallet",
         "resultPath": "entries",
         "emptyText": "Nothing recorded this month.",
-        "item": { "id": "id", "title": "summary", "subtitle": "description", "meta": ["category", "loggedAt"] },
+        "item": {
+          "id": "id",
+          "title": "summary",
+          "subtitle": "description",
+          "meta": [
+            "category",
+            "loggedAt"
+          ]
+        },
         "actions": [
-          { "skill": "budget.delete-entry", "label": "Delete", "style": "danger", "args": { "id": "id" } }
+          {
+            "skill": "budget.delete-entry",
+            "label": "Delete",
+            "style": "danger",
+            "args": {
+              "id": "id"
+            }
+          }
         ]
       }
     },
@@ -97,7 +175,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "month": { "type": "string", "description": "Month as YYYY-MM. Defaults to the current month." }
+          "month": {
+            "type": "string",
+            "description": "Month as YYYY-MM. Defaults to the current month."
+          }
         }
       },
       "ui": {
@@ -106,7 +187,14 @@
         "icon": "chart",
         "resultPath": "categories",
         "emptyText": "Nothing recorded.",
-        "item": { "id": "category", "title": "category", "subtitle": "summary", "meta": ["share"] }
+        "item": {
+          "id": "category",
+          "title": "category",
+          "subtitle": "summary",
+          "meta": [
+            "share"
+          ]
+        }
       }
     },
     {
@@ -116,8 +204,553 @@
       "actionType": "workflow",
       "parameters": {
         "type": "object",
-        "properties": { "id": { "type": "string", "description": "Entry id to delete" } },
-        "required": ["id"]
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entry id to delete"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": "budget.status",
+      "description": "Whether you can survive the month: burn rate, projection to month end, and any category over its limit.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "ui": {
+        "block": "list",
+        "label": "Can I survive the month?",
+        "icon": "gauge",
+        "resultPath": "lines",
+        "emptyText": "Set your income first.",
+        "item": {
+          "id": "key",
+          "title": "headline",
+          "subtitle": "detail"
+        }
+      }
+    },
+    {
+      "id": "budget.setup",
+      "description": "Set monthly income and the minimum you want left at month end.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "monthlyIncome": {
+            "type": "number",
+            "description": "Money coming in each month"
+          },
+          "safeFloor": {
+            "type": "number",
+            "description": "Minimum you want left at month end"
+          }
+        },
+        "required": [
+          "monthlyIncome"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Monthly budget",
+        "icon": "gauge",
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "monthlyIncome",
+            "type": "number",
+            "label": "Monthly income",
+            "required": true,
+            "min": 0
+          },
+          {
+            "name": "safeFloor",
+            "type": "number",
+            "label": "Keep at least",
+            "min": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.set-limit",
+      "description": "Set a monthly spending limit for one category.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Category name"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Monthly limit, 0 removes it"
+          }
+        },
+        "required": [
+          "category",
+          "limit"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Category limit",
+        "icon": "gauge",
+        "submitLabel": "Set",
+        "fields": [
+          {
+            "name": "category",
+            "type": "select",
+            "label": "Category",
+            "required": true,
+            "options": [
+              {
+                "value": "groceries",
+                "label": "Groceries"
+              },
+              {
+                "value": "eating-out",
+                "label": "Eating out"
+              },
+              {
+                "value": "transport",
+                "label": "Transport"
+              },
+              {
+                "value": "bills",
+                "label": "Bills"
+              },
+              {
+                "value": "shopping",
+                "label": "Shopping"
+              },
+              {
+                "value": "health",
+                "label": "Health"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          {
+            "name": "limit",
+            "type": "number",
+            "label": "Monthly limit",
+            "required": true,
+            "min": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.add-goal",
+      "description": "Start saving for something: a car, a trip, a GPU. Target amount and optional deadline.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What you are saving for"
+          },
+          "target": {
+            "type": "number",
+            "description": "Total amount needed"
+          },
+          "deadline": {
+            "type": "string",
+            "description": "Optional target date, YYYY-MM-DD"
+          },
+          "monthlyPayment": {
+            "type": "number",
+            "description": "Optional recurring payment once bought, e.g. car finance"
+          }
+        },
+        "required": [
+          "name",
+          "target"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "New goal",
+        "icon": "target",
+        "submitLabel": "Create",
+        "fields": [
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Saving for",
+            "required": true,
+            "placeholder": "GPU"
+          },
+          {
+            "name": "target",
+            "type": "number",
+            "label": "Target amount",
+            "required": true,
+            "min": 0
+          },
+          {
+            "name": "deadline",
+            "type": "date",
+            "label": "Want it by"
+          },
+          {
+            "name": "monthlyPayment",
+            "type": "number",
+            "label": "Monthly payment after buying",
+            "min": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.goals",
+      "description": "Progress on every savings goal, including whether you are on pace for any deadline.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "ui": {
+        "block": "list",
+        "label": "Goals",
+        "icon": "target",
+        "resultPath": "goals",
+        "emptyText": "No goals yet.",
+        "item": {
+          "id": "id",
+          "title": "headline",
+          "subtitle": "detail",
+          "meta": [
+            "pace"
+          ]
+        },
+        "actions": [
+          {
+            "skill": "budget.contribute",
+            "label": "Add money",
+            "style": "primary",
+            "args": {
+              "name": "name"
+            }
+          },
+          {
+            "skill": "budget.delete-goal",
+            "label": "Delete",
+            "style": "danger",
+            "args": {
+              "name": "name"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.contribute",
+      "description": "Put money toward a goal.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Goal name"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount to add"
+          }
+        },
+        "required": [
+          "name",
+          "amount"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Add to a goal",
+        "icon": "target",
+        "submitLabel": "Add",
+        "fields": [
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Goal",
+            "required": true
+          },
+          {
+            "name": "amount",
+            "type": "number",
+            "label": "Amount",
+            "required": true,
+            "min": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.delete-goal",
+      "description": "Delete a savings goal.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "id": "budget.add-card",
+      "description": "Register a card and what you use it for, so transfers between your own cards are not counted as spending.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What you call it, e.g. tap, online, savings"
+          },
+          "purpose": {
+            "type": "string",
+            "description": "tap, online or holding"
+          },
+          "last4": {
+            "type": "string",
+            "description": "Last 4 digits, used to match bank SMS"
+          }
+        },
+        "required": [
+          "name",
+          "purpose"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Add a card",
+        "icon": "card",
+        "submitLabel": "Add",
+        "fields": [
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Name",
+            "required": true,
+            "placeholder": "tap"
+          },
+          {
+            "name": "purpose",
+            "type": "select",
+            "label": "Used for",
+            "required": true,
+            "options": [
+              {
+                "value": "tap",
+                "label": "Tap to pay"
+              },
+              {
+                "value": "online",
+                "label": "Online"
+              },
+              {
+                "value": "holding",
+                "label": "Holds the money"
+              }
+            ]
+          },
+          {
+            "name": "last4",
+            "type": "text",
+            "label": "Last 4 digits",
+            "placeholder": "1234"
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.cards",
+      "description": "List your cards and what each is for.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "ui": {
+        "block": "list",
+        "label": "Cards",
+        "icon": "card",
+        "resultPath": "cards",
+        "emptyText": "No cards registered.",
+        "item": {
+          "id": "id",
+          "title": "headline",
+          "subtitle": "detail"
+        },
+        "actions": [
+          {
+            "skill": "budget.delete-card",
+            "label": "Remove",
+            "style": "danger",
+            "args": {
+              "name": "name"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.delete-card",
+      "description": "Remove a registered card.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "id": "budget.transfer",
+      "description": "Record moving money between your own cards. This is NOT spending and never counts against the budget.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Amount moved"
+          },
+          "from": {
+            "type": "string",
+            "description": "Card money left"
+          },
+          "to": {
+            "type": "string",
+            "description": "Card money arrived on"
+          }
+        },
+        "required": [
+          "amount",
+          "from",
+          "to"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Move money",
+        "icon": "card",
+        "submitLabel": "Record",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "number",
+            "label": "Amount",
+            "required": true,
+            "min": 0
+          },
+          {
+            "name": "from",
+            "type": "text",
+            "label": "From card",
+            "required": true
+          },
+          {
+            "name": "to",
+            "type": "text",
+            "label": "To card",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "budget.habits",
+      "description": "What your spending actually looks like: busiest categories, weekday vs weekend, biggest single expenses.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "months": {
+            "type": "number",
+            "description": "How many months back, default 3"
+          }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Spending habits",
+        "icon": "chart",
+        "resultPath": "findings",
+        "emptyText": "Not enough history yet.",
+        "item": {
+          "id": "key",
+          "title": "headline",
+          "subtitle": "detail"
+        }
+      }
+    },
+    {
+      "id": "budget.import-sms",
+      "description": "Parse a bank SMS into a spend or a transfer between your own cards.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The raw SMS body"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Import a bank SMS",
+        "icon": "message",
+        "submitLabel": "Import",
+        "fields": [
+          {
+            "name": "text",
+            "type": "textarea",
+            "label": "SMS text",
+            "required": true
+          }
+        ]
       }
     }
   ]
