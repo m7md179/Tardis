@@ -52,6 +52,14 @@ export interface AgentLoopInput {
    * why the chat surfaces felt dead.
    */
   onStep?: (step: AgentStep) => void;
+  /**
+   * How the plugins were chosen.
+   *
+   * The completion guard only fires on a deliberate selection. When the router
+   * falls back it returns every plugin, and "you selected 8 but used 1" is
+   * meaningless — nudging there would fire on almost every turn.
+   */
+  pluginSelectionMethod?: 'llm' | 'explicit' | 'fallback' | 'empty';
 }
 
 export interface AgentLoopOutput {
@@ -69,6 +77,26 @@ export interface AgentLoopOutput {
  * land the second time, the model genuinely has nothing to call.
  */
 const MAX_CLAIM_RETRIES = 1;
+
+/** One nudge when a multi-part request looks half-done. */
+const MAX_COMPLETION_RETRIES = 1;
+
+/**
+ * Sent when the router deliberately picked several plugins but the turn only
+ * used some of them.
+ *
+ * "I ate two sandwiches, they cost 2 JOD and were 700 calories" is two separate
+ * records. The model logs the meal, says "Done." and silently drops the
+ * spending. Measured at 3/12 complete on real multi-part messages; this plus a
+ * prompt line took it to 9/12.
+ */
+function completionNudge(userMessage: string, unusedPlugins: string[]): string {
+  return (
+    `Re-read what I asked: "${userMessage}". ` +
+    `You have not recorded anything with: ${unusedPlugins.join(', ')}. ` +
+    'If part of my message belongs there, call that tool now. If it genuinely does not, say so.'
+  );
+}
 
 /**
  * Sent back to the model when it claims an action is done but called no tool.
@@ -199,6 +227,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
   let stepCount = 0;
   let lastToolSignature: string | null = null;
   let claimRetriesUsed = 0;
+  let completionRetriesUsed = 0;
   let stoppedForRepeat = false;
 
   while (stepCount < input.config.maxSteps) {
@@ -244,6 +273,35 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       // text outright — so treat it as a failure and substitute something
       // truthful rather than shipping a blank turn.
       const finalText = text.trim() ? text : fallbackForEmptyResponse(rawSteps);
+
+      // ─── Completion guard ─────────────────────────────────────────────────
+      // The router deliberately chose these plugins. If the turn is ending with
+      // some of them untouched, a part of the request is probably unhandled.
+      const deliberate =
+        input.pluginSelectionMethod === 'llm' || input.pluginSelectionMethod === 'explicit';
+      if (deliberate && tools !== undefined && completionRetriesUsed < MAX_COMPLETION_RETRIES) {
+        const usedPlugins = new Set(
+          rawSteps
+            .filter((s) => s.type === 'tool_call' && s.toolName)
+            .map((s) => (s.toolName as string).split('.')[0]!)
+        );
+        const unused = input.selectedPlugins.filter((p) => !usedPlugins.has(p));
+        if (input.selectedPlugins.length > 1 && unused.length > 0) {
+          completionRetriesUsed++;
+          steps.push({
+            type: 'error',
+            content: `Turn ended without using ${unused.join(', ')} — checking whether part of the request is unhandled.`,
+            timestamp: stepStart,
+            durationMs: Date.now() - stepStart,
+          });
+          messages.push({ role: 'assistant', content: text });
+          messages.push({
+            role: 'user',
+            content: completionNudge(input.userMessage, unused),
+          });
+          continue;
+        }
+      }
 
       steps.push({
         type: 'reasoning',
@@ -414,6 +472,10 @@ export function buildSystemPrompt(input: AgentLoopInput): string {
     lines.push('- Use memory.recall if the user asks about something you might have stored previously.');
     lines.push('- Use memory.forget if the user explicitly asks you to forget something.');
   }
+
+  lines.push(
+    '\nA message can contain several separate things to record — money, food, reminders, tasks. Handle each one with its own tool call. Call a tool, read the result, then continue with the next part. Only reply once every part is done.'
+  );
 
   lines.push('\n## Response style');
   lines.push(

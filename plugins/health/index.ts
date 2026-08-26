@@ -158,6 +158,35 @@ export const executeTool = async (
       const description = String(args['description'] ?? '').trim();
       if (!description) return { success: false, message: 'Describe what you ate.' };
 
+      // A figure the user stated beats anything the model would guess. Estimating
+      // over the top of it — and silently reporting a different number — is worse
+      // than not logging at all.
+      const statedCalories = Math.round(toNumber(args['calories']));
+      if (statedCalories > 0) {
+        const entry: Entry = {
+          id: randomUUID(),
+          at: Date.now(),
+          date: localDate(Date.now()),
+          source: 'text',
+          mealType: String(args['mealType'] ?? 'meal'),
+          description,
+          items: [{ name: description, kcal: statedCalories }],
+          totalKcal: statedCalories,
+        };
+        await saveEntry(entry);
+        return {
+          success: true,
+          message: `Logged ${statedCalories} kcal.`,
+          entry: {
+            id: entry.id,
+            totalKcal: statedCalories,
+            items: entry.items,
+            macros: macroTotals(entry.items),
+            estimated: false,
+          },
+        };
+      }
+
       const reply = await api.llm.generate(`Meal: ${description}`, {
         systemPrompt: ESTIMATION_RULES,
         temperature: 0.2,

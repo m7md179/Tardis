@@ -64,7 +64,7 @@ export async function runConversationTurn(
 ): Promise<ConversationTurnResult> {
   const { chatId, message } = input;
 
-  const { tools, selectedPlugins } = await selectPlugins(
+  const { tools, selectedPlugins, method } = await selectPlugins(
     message,
     deps.getAllManifests(),
     deps.llmProvider
@@ -101,6 +101,7 @@ export async function runConversationTurn(
     ...(deps.contextWindowSize !== undefined ? { contextWindowSize: deps.contextWindowSize } : {}),
     ...(input.images?.length ? { userImages: input.images } : {}),
     ...(input.onStep ? { onStep: input.onStep } : {}),
+    pluginSelectionMethod: method,
   });
 
   // Best-effort: a tracing failure must never turn a good answer into an error.

@@ -1205,3 +1205,195 @@ describe('claim-vs-reality guard: memory claims', () => {
     expect(result.response).toBe('Got it.');
   });
 });
+
+// ─── Completion guard for multi-part requests ────────────────────────────────
+//
+// "I ate two sandwiches, they cost 2 JOD and were 700 calories" is two records.
+// The model logged the meal, said "Done." and silently dropped the spending.
+// Measured 3/12 complete on real multi-part messages before this guard.
+
+describe('runAgentLoop: completion guard', () => {
+  const HEALTH: ToolDefinition = {
+    name: 'health.log-meal',
+    description: 'Log a meal',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+  const BUDGET: ToolDefinition = {
+    name: 'budget.log-spend',
+    description: 'Log spending',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+
+  it('nudges when a deliberately selected plugin went unused', async () => {
+    const llm = makeScriptedLLM([
+      toolCallResponse('health.log-meal', { description: '2 sandwiches' }),
+      textResponse('Done.'), // drops the spending
+      toolCallResponse('budget.log-spend', { text: '2 jod' }),
+      textResponse('Logged both.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'i ate 2 sandwiches, cost 2 jod, 700 calories',
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    const used = result.trace.steps
+      .filter((s) => s.type === 'tool_call')
+      .map((s) => s.toolName);
+    expect(used).toEqual(['health.log-meal', 'budget.log-spend']);
+    expect(result.response).toBe('Logged both.');
+  });
+
+  it('names the unused plugin in the nudge', async () => {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => contentToText(m.content)));
+        call++;
+        if (call === 1) return toolCallResponse('health.log-meal', {});
+        return textResponse('Done.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('budget'))).toBe(true);
+    expect(seen.some((c) => c.includes('have not recorded anything with'))).toBe(true);
+  });
+
+  it('does NOT nudge when the router fell back to every plugin', async () => {
+    // A fallback selects everything, so "picked 8, used 1" means nothing and
+    // would fire on almost every turn.
+    let calls = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat() {
+        calls++;
+        return calls === 1 ? toolCallResponse('health.log-meal', {}) : textResponse('Done.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'fallback',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(calls).toBe(2);
+    expect(result.response).toBe('Done.');
+  });
+
+  it('does not nudge when every selected plugin was used', async () => {
+    let calls = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('health.log-meal', {}),
+      toolCallResponse('budget.log-spend', {}),
+      textResponse('Both logged.'),
+    ]);
+    const counting: LLMProvider = {
+      name: 'mock',
+      async chat(p) {
+        calls++;
+        return llm.chat(p);
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: counting,
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(calls).toBe(3);
+    expect(result.response).toBe('Both logged.');
+  });
+
+  it('nudges at most once', async () => {
+    let calls = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat() {
+        calls++;
+        return calls === 1 ? toolCallResponse('health.log-meal', {}) : textResponse('Nothing else.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [HEALTH, BUDGET],
+        selectedPlugins: ['health', 'budget'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    // tool call, "Done", nudge, "Nothing else" — then it stops arguing.
+    expect(calls).toBe(3);
+    expect(result.response).toBe('Nothing else.');
+  });
+
+  it('does not nudge a single-plugin turn', async () => {
+    let calls = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat() {
+        calls++;
+        return calls === 1 ? toolCallResponse('health.log-meal', {}) : textResponse('Logged.');
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [HEALTH],
+        selectedPlugins: ['health'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    expect(calls).toBe(2);
+  });
+});

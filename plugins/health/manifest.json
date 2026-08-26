@@ -6,11 +6,15 @@
   "summary": "Log food and track calories. Understands natural descriptions like 'two eggs and toast with butter', and can estimate from a photo of a meal. Reports daily totals and macro breakdowns.",
   "tier": 2,
   "main": "index.ts",
-  "permissions": ["storage:read", "storage:write", "llm:use"],
+  "permissions": [
+    "storage:read",
+    "storage:write",
+    "llm:use"
+  ],
   "skills": [
     {
       "id": "health.log-meal",
-      "description": "Log a meal from a natural-language description. Estimates calories and macros.",
+      "description": "Log a meal from a natural-language description. Estimates calories only when the user has not stated them. Pass the user's own words, including any calorie or portion figures they gave.",
       "aiInvocable": true,
       "actionType": "direct",
       "parameters": {
@@ -18,14 +22,20 @@
         "properties": {
           "description": {
             "type": "string",
-            "description": "What was eaten, e.g. 'two scrambled eggs, toast with butter, black coffee'"
+            "description": "What was eaten, in the user's own words. Keep any amounts they stated, e.g. 'two sandwiches, 700 calories'"
           },
           "mealType": {
             "type": "string",
             "description": "breakfast, lunch, dinner or snack"
+          },
+          "calories": {
+            "type": "number",
+            "description": "Total calories, ONLY if the user stated them. Omit to estimate."
           }
         },
-        "required": ["description"]
+        "required": [
+          "description"
+        ]
       },
       "ui": {
         "block": "form",
@@ -33,16 +43,40 @@
         "icon": "utensils",
         "submitLabel": "Log",
         "fields": [
-          { "name": "description", "type": "textarea", "label": "What did you eat?", "required": true, "placeholder": "two scrambled eggs, toast with butter" },
+          {
+            "name": "description",
+            "type": "textarea",
+            "label": "What did you eat?",
+            "required": true,
+            "placeholder": "two scrambled eggs, toast with butter"
+          },
+          {
+            "name": "calories",
+            "type": "number",
+            "label": "Calories (leave blank to estimate)",
+            "min": 0
+          },
           {
             "name": "mealType",
             "type": "select",
             "label": "Meal",
             "options": [
-              { "value": "breakfast", "label": "Breakfast" },
-              { "value": "lunch", "label": "Lunch" },
-              { "value": "dinner", "label": "Dinner" },
-              { "value": "snack", "label": "Snack" }
+              {
+                "value": "breakfast",
+                "label": "Breakfast"
+              },
+              {
+                "value": "lunch",
+                "label": "Lunch"
+              },
+              {
+                "value": "dinner",
+                "label": "Dinner"
+              },
+              {
+                "value": "snack",
+                "label": "Snack"
+              }
             ]
           }
         ]
@@ -50,17 +84,28 @@
     },
     {
       "id": "health.log-photo",
-      "description": "Log a meal from one photo. Analyses a single image — send multiple photos as separate calls.",
+      "description": "Log a meal from one photo. Analyses a single image \u2014 send multiple photos as separate calls.",
       "aiInvocable": false,
       "actionType": "direct",
       "parameters": {
         "type": "object",
         "properties": {
-          "image": { "type": "string", "description": "A single meal photo as a data URI" },
-          "note": { "type": "string", "description": "Anything the photo does not show, e.g. 'cooked in olive oil'" },
-          "mealType": { "type": "string", "description": "breakfast, lunch, dinner or snack" }
+          "image": {
+            "type": "string",
+            "description": "A single meal photo as a data URI"
+          },
+          "note": {
+            "type": "string",
+            "description": "Anything the photo does not show, e.g. 'cooked in olive oil'"
+          },
+          "mealType": {
+            "type": "string",
+            "description": "breakfast, lunch, dinner or snack"
+          }
         },
-        "required": ["image"]
+        "required": [
+          "image"
+        ]
       },
       "ui": {
         "block": "form",
@@ -68,17 +113,39 @@
         "icon": "camera",
         "submitLabel": "Analyse",
         "fields": [
-          { "name": "image", "type": "image", "label": "Meal photo", "required": true },
-          { "name": "note", "type": "text", "label": "Anything the photo misses", "placeholder": "cooked in olive oil" },
+          {
+            "name": "image",
+            "type": "image",
+            "label": "Meal photo",
+            "required": true
+          },
+          {
+            "name": "note",
+            "type": "text",
+            "label": "Anything the photo misses",
+            "placeholder": "cooked in olive oil"
+          },
           {
             "name": "mealType",
             "type": "select",
             "label": "Meal",
             "options": [
-              { "value": "breakfast", "label": "Breakfast" },
-              { "value": "lunch", "label": "Lunch" },
-              { "value": "dinner", "label": "Dinner" },
-              { "value": "snack", "label": "Snack" }
+              {
+                "value": "breakfast",
+                "label": "Breakfast"
+              },
+              {
+                "value": "lunch",
+                "label": "Lunch"
+              },
+              {
+                "value": "dinner",
+                "label": "Dinner"
+              },
+              {
+                "value": "snack",
+                "label": "Snack"
+              }
             ]
           }
         ]
@@ -89,16 +156,34 @@
       "description": "List everything logged today with a running calorie total.",
       "aiInvocable": true,
       "actionType": "direct",
-      "parameters": { "type": "object", "properties": {} },
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
       "ui": {
         "block": "list",
         "label": "Today",
         "icon": "utensils",
         "resultPath": "entries",
         "emptyText": "Nothing logged today.",
-        "item": { "id": "id", "title": "summary", "subtitle": "detail", "meta": ["mealType", "loggedAt"] },
+        "item": {
+          "id": "id",
+          "title": "summary",
+          "subtitle": "detail",
+          "meta": [
+            "mealType",
+            "loggedAt"
+          ]
+        },
         "actions": [
-          { "skill": "health.delete-entry", "label": "Delete", "style": "danger", "args": { "id": "id" } }
+          {
+            "skill": "health.delete-entry",
+            "label": "Delete",
+            "style": "danger",
+            "args": {
+              "id": "id"
+            }
+          }
         ]
       }
     },
@@ -110,7 +195,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "days": { "type": "number", "description": "How many days back to summarise (default 7)" }
+          "days": {
+            "type": "number",
+            "description": "How many days back to summarise (default 7)"
+          }
         }
       },
       "ui": {
@@ -119,7 +207,14 @@
         "icon": "chart",
         "resultPath": "days",
         "emptyText": "Nothing logged yet.",
-        "item": { "id": "date", "title": "date", "subtitle": "summary", "meta": ["entryCount"] }
+        "item": {
+          "id": "date",
+          "title": "date",
+          "subtitle": "summary",
+          "meta": [
+            "entryCount"
+          ]
+        }
       }
     },
     {
@@ -129,8 +224,15 @@
       "actionType": "workflow",
       "parameters": {
         "type": "object",
-        "properties": { "id": { "type": "string", "description": "Entry id to delete" } },
-        "required": ["id"]
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Entry id to delete"
+          }
+        },
+        "required": [
+          "id"
+        ]
       }
     }
   ]
