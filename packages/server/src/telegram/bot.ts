@@ -99,11 +99,18 @@ export async function handleUserMessage(
       try {
         const result = await deps.toolRouter.execute(pending.toolName, pending.args);
         if (result.success) {
+          // Every workflow skill today returns a `message`, but a tool that
+          // does not must never dump pretty-printed JSON into the chat. The
+          // user already saw the preview and approved it; a plain confirmation
+          // is the honest fallback.
           const data = result.data as Record<string, unknown> | null;
-          const msg = typeof data?.['message'] === 'string'
-            ? data['message']
-            : JSON.stringify(data, null, 2);
-          return { text: msg };
+          const spoken =
+            typeof data?.['message'] === 'string'
+              ? data['message']
+              : typeof data?.['summary'] === 'string'
+                ? data['summary']
+                : 'Done.';
+          return { text: spoken };
         }
         return { text: `Failed: ${result.error}` };
       } catch (err) {
