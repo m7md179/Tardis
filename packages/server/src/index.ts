@@ -180,6 +180,13 @@ async function main(): Promise<void> {
     fetch: app.fetch,
     port: config.server.port,
     hostname: config.server.host,
+    // Bun closes an idle connection after 10s by default, and a chat turn spends
+    // far longer than that inside a single model call. The SSE stream sends a
+    // keep-alive comment to hold the socket open, but a 10s heartbeat against a
+    // 10s timeout is a dead heat — curl survived it, Bun's fetch did not, and
+    // the turn died at 40s with "socket connection closed unexpectedly".
+    // Give the heartbeat room to win rather than tie.
+    idleTimeout: 120,
   });
 
   console.log(`[tardis] HTTP server listening on http://${bunServer.hostname}:${bunServer.port}`);

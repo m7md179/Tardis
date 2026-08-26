@@ -261,11 +261,15 @@ export function createApp(deps: AppDeps): Hono {
         };
 
         // A turn can spend 20+ seconds inside one model call with nothing to
-        // report. No bytes flow in that window, and Cloudflare drops the idle
-        // connection — observed live as "socket connection closed unexpectedly"
-        // between a tool result and the answer. An SSE comment is ignored by
-        // every parser but is still traffic, which is all the tunnel wants.
-        const heartbeat = setInterval(() => write(': ping\n\n'), deps.streamHeartbeatMs ?? 10_000);
+        // report, and a socket with no traffic gets closed — observed live as
+        // "socket connection closed unexpectedly" between a tool result and the
+        // answer, identically on the LAN and through the tunnel, so this was
+        // never Cloudflare. An SSE comment is ignored by every parser but is
+        // still traffic.
+        //
+        // 5s against the server's 120s idle timeout. The first attempt used 10s
+        // against Bun's 10s default, which is a tie the socket sometimes wins.
+        const heartbeat = setInterval(() => write(': ping\n\n'), deps.streamHeartbeatMs ?? 5_000);
 
         try {
           const result = await runConversationTurn(
