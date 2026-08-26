@@ -4,6 +4,7 @@ import type {
   LLMProviderConfigSchema,
   TelegramConfigSchema,
   ProactiveConfigSchema,
+  RateLimitConfigSchema,
   ServerConfigSchema,
   AuthConfigSchema,
 } from '../schemas/config.js';
@@ -12,6 +13,7 @@ import type {
 export type LLMProviderConfig = z.infer<typeof LLMProviderConfigSchema>;
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
 export type ProactiveConfig = z.infer<typeof ProactiveConfigSchema>;
+export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 export type SystemConfig = z.infer<typeof SystemConfigSchema>;

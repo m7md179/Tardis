@@ -33,6 +33,7 @@ const MOCK_CONFIG: SystemConfig = {
     actionOverrides: {},
   },
   proactive: { enabled: true },
+  rateLimit: { enabled: false, windowMs: 60000, maxRequests: 120, maxLoginAttempts: 5 },
 };
 
 // ─── Storage ───

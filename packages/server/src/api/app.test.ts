@@ -25,6 +25,7 @@ const BASE_CONFIG: SystemConfig = {
     actionOverrides: {},
   },
   proactive: { enabled: false },
+  rateLimit: { enabled: false, windowMs: 60000, maxRequests: 120, maxLoginAttempts: 5 },
 };
 
 function makeManifest(name: string): PluginManifest {
@@ -839,6 +840,104 @@ describe('POST /api/skills/:id/invoke', () => {
       expect(res.status).toBe(409);
       expect((await res.json()) as { code: string }).toMatchObject({ code: 'APPROVAL_REQUIRED' });
       expect(called).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ─── Rate limiting through the real app ──────────────────────────────────────
+
+describe('login rate limiting', () => {
+  const LIMITED_CONFIG: SystemConfig = {
+    ...BASE_CONFIG,
+    rateLimit: { enabled: true, windowMs: 60_000, maxRequests: 120, maxLoginAttempts: 3 },
+  };
+
+  function withIp(ip: string): HeadersInit {
+    // Cloudflare sets this; the limiter keys on it so one abusive client
+    // cannot throttle everyone behind the tunnel.
+    return { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip };
+  }
+
+  it('blocks brute-force login attempts with 429 and Retry-After', async () => {
+    const { app, cleanup } = await makeApp({ config: LIMITED_CONFIG, adminPassword: 'correct' });
+    try {
+      const attempt = () =>
+        app.request('/api/auth/login', {
+          method: 'POST',
+          headers: withIp('203.0.113.9'),
+          body: JSON.stringify({ password: 'wrong' }),
+        });
+
+      expect((await attempt()).status).toBe(401);
+      expect((await attempt()).status).toBe(401);
+      expect((await attempt()).status).toBe(401);
+
+      const blocked = await attempt();
+      expect(blocked.status).toBe(429);
+      expect(blocked.headers.get('Retry-After')).toBeTruthy();
+      expect((await blocked.json()) as { code: string }).toMatchObject({ code: 'RATE_LIMITED' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('blocks the correct password too once the budget is spent', async () => {
+    // Otherwise an attacker learns they found it by the response changing.
+    const { app, cleanup } = await makeApp({ config: LIMITED_CONFIG, adminPassword: 'correct' });
+    try {
+      for (let i = 0; i < 3; i++) {
+        await app.request('/api/auth/login', {
+          method: 'POST',
+          headers: withIp('203.0.113.10'),
+          body: JSON.stringify({ password: 'wrong' }),
+        });
+      }
+      const res = await app.request('/api/auth/login', {
+        method: 'POST',
+        headers: withIp('203.0.113.10'),
+        body: JSON.stringify({ password: 'correct' }),
+      });
+      expect(res.status).toBe(429);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('does not punish a different client', async () => {
+    const { app, cleanup } = await makeApp({ config: LIMITED_CONFIG, adminPassword: 'correct' });
+    try {
+      for (let i = 0; i < 4; i++) {
+        await app.request('/api/auth/login', {
+          method: 'POST',
+          headers: withIp('203.0.113.11'),
+          body: JSON.stringify({ password: 'wrong' }),
+        });
+      }
+      const other = await app.request('/api/auth/login', {
+        method: 'POST',
+        headers: withIp('203.0.113.12'),
+        body: JSON.stringify({ password: 'correct' }),
+      });
+      expect(other.status).toBe(200);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('leaves /api/health reachable so monitoring still works', async () => {
+    const { app, cleanup } = await makeApp({ config: LIMITED_CONFIG, adminPassword: 'correct' });
+    try {
+      for (let i = 0; i < 10; i++) {
+        await app.request('/api/auth/login', {
+          method: 'POST',
+          headers: withIp('203.0.113.13'),
+          body: JSON.stringify({ password: 'wrong' }),
+        });
+      }
+      const health = await app.request('/api/health', { headers: withIp('203.0.113.13') });
+      expect(health.status).toBe(200);
     } finally {
       cleanup();
     }

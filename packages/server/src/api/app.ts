@@ -7,6 +7,7 @@ import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
 import type { LLMProviderConfig, SystemConfig } from '@tardis/shared';
 import type { PluginManager } from '@tardis/core';
+import { createRateLimiters, rateLimitMiddleware, safeEqual } from './rate-limit.js';
 
 // ─── App dependencies ─────────────────────────────────────────────────────────
 
@@ -105,6 +106,14 @@ export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const tracer = new ThoughtTracer(deps.db);
 
+  // ─── Rate limiting ────────────────────────────────────────────────────────
+  //
+  // Applied before everything, including the public routes, because the login
+  // endpoint is exactly what needs protecting: one shared password guards every
+  // skill, and the API is internet-reachable through the tunnel.
+  const limiters = createRateLimiters(deps.config.rateLimit);
+  app.use('/api/*', rateLimitMiddleware(deps.config.rateLimit, limiters));
+
   // ─── Public routes ────────────────────────────────────────────────────────
 
   app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
@@ -124,9 +133,11 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: 'Password is required' }, 400);
     }
 
-    // Compare against adminPassword if set, otherwise fall back to jwtSecret
+    // Compare against adminPassword if set, otherwise fall back to jwtSecret.
+    // Constant-time: a plain !== short-circuits at the first differing byte,
+    // which leaks the prefix given enough samples.
     const expected = deps.adminPassword ?? deps.config.auth.jwtSecret;
-    if (password !== expected) {
+    if (!safeEqual(password, expected)) {
       return c.json({ error: 'Invalid password' }, 401);
     }
 
