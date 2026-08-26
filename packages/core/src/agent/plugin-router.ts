@@ -133,10 +133,22 @@ function findExplicitPlugin(userMessage: string, plugins: PluginManifest[]): Plu
 }
 
 /**
- * Parse the LLM's JSON response into an array of plugin name strings.
- * Returns null if the response is not a valid JSON array.
+ * Parse the LLM's response into plugin names.
+ *
+ * Strict JSON is tried first, then a name scan. gemma-4-E2B frequently answers
+ * `[time-tracker]` — the RIGHT plugin, but unquoted, so JSON.parse throws. That
+ * sent the router to its fallback and loaded ALL plugins' schemas: measured at
+ * 2 of 3 realistic queries once the plugin count reached eight, costing roughly
+ * 3,000 tokens of tool definitions per turn and confusing the model with 37
+ * tools when it needed six.
+ *
+ * Scanning for known names is safe precisely because the valid set is known:
+ * anything the model invents simply will not match.
+ *
+ * Returns null only when nothing recognisable is present, which is the one case
+ * that genuinely warrants falling back to everything.
  */
-function parsePluginNames(raw: string, _allPlugins: PluginManifest[]): string[] | null {
+function parsePluginNames(raw: string, allPlugins: PluginManifest[]): string[] | null {
   // Strip markdown code fences if the LLM wrapped the response
   const cleaned = raw
     .replace(/```(?:json)?\s*/gi, '')
@@ -145,10 +157,20 @@ function parsePluginNames(raw: string, _allPlugins: PluginManifest[]): string[] 
 
   try {
     const parsed: unknown = JSON.parse(cleaned);
-    if (!Array.isArray(parsed)) return null;
-    if (!parsed.every((item) => typeof item === 'string')) return null;
-    return parsed as string[];
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+      return parsed as string[];
+    }
   } catch {
-    return null;
+    // Fall through to the name scan.
   }
+
+  // An explicit empty array means "no plugins needed" and must not be treated
+  // as unparseable, or casual conversation would load every tool schema.
+  if (/^\[\s*\]$/.test(cleaned)) return [];
+
+  const matched = allPlugins
+    .map((p) => p.name)
+    .filter((name) => new RegExp(`(^|[^a-z0-9-])${name}([^a-z0-9-]|$)`, 'i').test(cleaned));
+
+  return matched.length > 0 ? matched : null;
 }

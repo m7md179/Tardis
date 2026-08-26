@@ -146,11 +146,13 @@ describe('selectPlugins: fallback on malformed response', () => {
     expect(result.selectedPlugins).toHaveLength(ALL_PLUGINS.length);
   });
 
-  it('falls back to all plugins when LLM returns a JSON object instead of array', async () => {
+  it('recovers the plugin from a JSON object instead of falling back to everything', async () => {
+    // Previously this fell back and loaded ALL plugins. The model plainly said
+    // time-tracker; honouring that beats sending it 37 tools it did not ask for.
     const llm = makeLLM('{"plugins": ["time-tracker"]}');
     const result = await selectPlugins('Start timer', ALL_PLUGINS, llm);
 
-    expect(result.method).toBe('fallback');
+    expect(result.selectedPlugins).toEqual(['time-tracker']);
   });
 
   it('falls back to all plugins when LLM returns an array of non-strings', async () => {
@@ -242,5 +244,59 @@ describe('selectPlugins: explicit plugin mention', () => {
 
     expect(result.method).toBe('explicit');
     expect(result.selectedPlugins).toContain('todoist');
+  });
+});
+
+// ─── Tolerating the model's actual output shape ──────────────────────────────
+//
+// gemma-4-E2B routinely answers `[time-tracker]` — the correct plugin, but
+// unquoted, so JSON.parse throws. That sent the router to its fallback and
+// loaded every plugin's schemas: 2 of 3 realistic queries once eight plugins
+// were installed, ~3,000 wasted tokens and 37 tools where six were needed.
+
+describe('selectPlugins: malformed-but-recognisable responses', () => {
+  it('accepts an unquoted single name', async () => {
+    const llm = makeLLM('[time-tracker]');
+    const result = await selectPlugins('what am I tracking?', ALL_PLUGINS, llm);
+    expect(result.selectedPlugins).toEqual(['time-tracker']);
+    expect(result.method).toBe('llm');
+  });
+
+  it('accepts unquoted names with prose around them', async () => {
+    const llm = makeLLM('The relevant plugin is [notes].');
+    const result = await selectPlugins('save a note', ALL_PLUGINS, llm);
+    expect(result.selectedPlugins).toEqual(['notes']);
+  });
+
+  it('picks up several unquoted names', async () => {
+    const llm = makeLLM('[time-tracker, notes]');
+    const result = await selectPlugins('track and note', ALL_PLUGINS, llm);
+    expect(result.selectedPlugins).toContain('time-tracker');
+    expect(result.selectedPlugins).toContain('notes');
+  });
+
+  it('still prefers strict JSON when the model gets it right', async () => {
+    const llm = makeLLM('["notes"]');
+    expect((await selectPlugins('note', ALL_PLUGINS, llm)).selectedPlugins).toEqual(['notes']);
+  });
+
+  it('treats an empty array as "no plugins", not as unparseable', async () => {
+    // Otherwise casual conversation would load every tool schema.
+    const llm = makeLLM('[]');
+    const result = await selectPlugins('hello there', ALL_PLUGINS, llm);
+    expect(result.selectedPlugins).toEqual([]);
+    expect(result.tools).toEqual([]);
+  });
+
+  it('ignores names the model invented', async () => {
+    const llm = makeLLM('[weather, stocks]');
+    const result = await selectPlugins('what is the weather', ALL_PLUGINS, llm);
+    // Nothing recognisable — falling back to everything is correct here.
+    expect(result.method).toBe('fallback');
+  });
+
+  it('does not match a plugin name embedded in a longer word', async () => {
+    const llm = makeLLM('[notesapp]');
+    expect((await selectPlugins('x', ALL_PLUGINS, llm)).method).toBe('fallback');
   });
 });
