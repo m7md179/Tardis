@@ -395,3 +395,69 @@ describe('ToolRouter.asExecutor()', () => {
     expect((err as Error).message).toContain('EXECUTION_ERROR');
   });
 });
+
+// ─── Non-AI skills must still be directly invocable ──────────────────────────
+
+describe('ToolRouter: aiInvocable: false skills', () => {
+  it('executes a skill the LLM is never offered', async () => {
+    // The whole point of the flag: reachable from a button or an SMS
+    // forwarder, never surfaced to the model. Resolving against the derived
+    // `tools` array made every such skill unreachable.
+    const manifest = PluginManifestSchema.parse({
+      name: 'budget',
+      version: '1.0.0',
+      displayName: 'Budget',
+      description: 'budget plugin',
+      tier: 1,
+      main: 'index.ts',
+      summary: 'money',
+      permissions: [],
+      skills: [
+        {
+          id: 'budget.import-sms',
+          description: 'Parse a bank SMS',
+          aiInvocable: false,
+          parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+        },
+      ],
+    });
+
+    // Derived tools exclude it, which is correct…
+    expect(manifest.tools).toHaveLength(0);
+
+    const router = new ToolRouter(
+      makeMockManager([{ manifest, executeTool: async () => ({ ok: true }) }])
+    );
+    // …but invoking it directly must still work.
+    const result = await router.execute('budget.import-sms', { text: 'anything' });
+    expect(result.success).toBe(true);
+  });
+
+  it('still validates required arguments on a non-AI skill', async () => {
+    const manifest = PluginManifestSchema.parse({
+      name: 'budget',
+      version: '1.0.0',
+      displayName: 'Budget',
+      description: 'budget plugin',
+      tier: 1,
+      main: 'index.ts',
+      summary: 'money',
+      permissions: [],
+      skills: [
+        {
+          id: 'budget.import-sms',
+          description: 'Parse a bank SMS',
+          aiInvocable: false,
+          parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+        },
+      ],
+    });
+
+    const router = new ToolRouter(
+      makeMockManager([{ manifest, executeTool: async () => ({ ok: true }) }])
+    );
+    const result = await router.execute('budget.import-sms', {});
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.code).toBe('VALIDATION_ERROR');
+  });
+});

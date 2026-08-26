@@ -344,7 +344,8 @@ export function createApp(deps: AppDeps): Hono {
 
     const result = await deps.toolRouter.execute(id, args);
     if (!result.success) {
-      const status = result.code === 'VALIDATION_ERROR' ? 400 : 500;
+      const status =
+        result.code === 'VALIDATION_ERROR' ? 400 : result.code === 'TOOL_NOT_FOUND' ? 404 : 500;
       return c.json({ success: false, error: result.error, code: result.code }, status);
     }
     return c.json({ success: true, data: result.data });

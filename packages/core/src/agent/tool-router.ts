@@ -46,8 +46,12 @@ export class ToolRouter {
       };
     }
 
-    const tool = plugin.manifest.tools.find((t) => t.name === toolName);
-    if (!tool) {
+    // Look up against skills, NOT the derived tools array. `tools` contains only
+    // the AI-invocable subset, so validating against it made every
+    // `aiInvocable: false` skill unreachable — which is the exact opposite of
+    // what that flag is for: reachable directly, just never offered to the LLM.
+    const skill = plugin.manifest.skills.find((sk) => sk.id === toolName);
+    if (!skill) {
       return {
         success: false,
         error: `Tool "${toolName}" not found in plugin "${pluginName}"`,
@@ -56,7 +60,7 @@ export class ToolRouter {
     }
 
     // ─── 2. Validate required arguments ─────────────────────────────────────
-    const validationError = validateArgs(toolName, tool.parameters, args);
+    const validationError = validateArgs(toolName, skill.parameters, args);
     if (validationError) {
       return { success: false, error: validationError, code: 'VALIDATION_ERROR' };
     }
