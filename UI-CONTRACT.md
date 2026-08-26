@@ -66,8 +66,14 @@ default; declare `fields` only to override order, labels, or widget choice.
 ```
 
 **Field types:** `text`, `textarea`, `number`, `date`, `time`, `datetime`, `select`,
-`tags`, `checkbox`. Every surface must implement all nine — a TUI renders `date` as a
-validated text input, which is a rendering choice, not an excuse to skip it.
+`tags`, `checkbox`, `image`. Every surface must implement all of them — a TUI renders
+`date` as a validated text input, which is a rendering choice, not an excuse to skip it.
+
+`image` submits a **data URI**, the same shape `PluginAPI.llm.analyzeImage` expects. A
+surface with a camera offers one; a surface without falls back to a file picker; the TUI
+cannot capture an image at all and must render the field as unavailable rather than
+pretending. A skill whose only input is an `image` is therefore legitimately unusable from
+a terminal — that is a property of the capability, not a gap in the contract.
 
 ### `list`
 A collection, with optional per-item actions.

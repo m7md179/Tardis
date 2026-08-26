@@ -1,0 +1,124 @@
+{
+  "name": "budget",
+  "version": "1.0.0",
+  "displayName": "Budget",
+  "description": "Track spending mentioned in conversation or entered by hand, with monthly category summaries.",
+  "summary": "Track spending and budgets. Understands things said in passing like 'spent 45 on groceries at Tesco', and also takes manual entries. Reports monthly totals broken down by category.",
+  "tier": 2,
+  "main": "index.ts",
+  "permissions": ["storage:read", "storage:write", "llm:use"],
+  "config": { "currency": "JOD" },
+  "skills": [
+    {
+      "id": "budget.log-spend",
+      "description": "Record spending from a natural sentence, e.g. 'spent 45 on groceries at Tesco'. Extracts amount, category and merchant.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "What was spent, in plain language" }
+        },
+        "required": ["text"]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Log spending",
+        "icon": "wallet",
+        "submitLabel": "Log",
+        "fields": [
+          { "name": "text", "type": "text", "label": "What did you spend?", "required": true, "placeholder": "45 on groceries at Tesco" }
+        ]
+      }
+    },
+    {
+      "id": "budget.add-entry",
+      "description": "Record spending with the amount and category given explicitly. No interpretation.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": { "type": "number", "description": "Amount spent" },
+          "category": { "type": "string", "description": "Category, e.g. groceries, transport, eating-out" },
+          "description": { "type": "string", "description": "What it was for" }
+        },
+        "required": ["amount", "category"]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Add entry",
+        "icon": "plus",
+        "submitLabel": "Add",
+        "fields": [
+          { "name": "amount", "type": "number", "label": "Amount", "required": true, "min": 0 },
+          {
+            "name": "category",
+            "type": "select",
+            "label": "Category",
+            "required": true,
+            "options": [
+              { "value": "groceries", "label": "Groceries" },
+              { "value": "eating-out", "label": "Eating out" },
+              { "value": "transport", "label": "Transport" },
+              { "value": "bills", "label": "Bills" },
+              { "value": "shopping", "label": "Shopping" },
+              { "value": "health", "label": "Health" },
+              { "value": "other", "label": "Other" }
+            ]
+          },
+          { "name": "description", "type": "text", "label": "What for" }
+        ]
+      }
+    },
+    {
+      "id": "budget.this-month",
+      "description": "List this month's spending entries with a running total.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": { "type": "object", "properties": {} },
+      "ui": {
+        "block": "list",
+        "label": "This month",
+        "icon": "wallet",
+        "resultPath": "entries",
+        "emptyText": "Nothing recorded this month.",
+        "item": { "id": "id", "title": "summary", "subtitle": "description", "meta": ["category", "loggedAt"] },
+        "actions": [
+          { "skill": "budget.delete-entry", "label": "Delete", "style": "danger", "args": { "id": "id" } }
+        ]
+      }
+    },
+    {
+      "id": "budget.summary",
+      "description": "Spending totals grouped by category for a given month.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "month": { "type": "string", "description": "Month as YYYY-MM. Defaults to the current month." }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "By category",
+        "icon": "chart",
+        "resultPath": "categories",
+        "emptyText": "Nothing recorded.",
+        "item": { "id": "category", "title": "category", "subtitle": "summary", "meta": ["share"] }
+      }
+    },
+    {
+      "id": "budget.delete-entry",
+      "description": "Delete a spending entry by its id.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": { "id": { "type": "string", "description": "Entry id to delete" } },
+        "required": ["id"]
+      }
+    }
+  ]
+}

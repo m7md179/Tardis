@@ -1,0 +1,137 @@
+{
+  "name": "health",
+  "version": "1.0.0",
+  "displayName": "Health",
+  "description": "Log meals by description or photo and track calories and macros.",
+  "summary": "Log food and track calories. Understands natural descriptions like 'two eggs and toast with butter', and can estimate from a photo of a meal. Reports daily totals and macro breakdowns.",
+  "tier": 2,
+  "main": "index.ts",
+  "permissions": ["storage:read", "storage:write", "llm:use"],
+  "skills": [
+    {
+      "id": "health.log-meal",
+      "description": "Log a meal from a natural-language description. Estimates calories and macros.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "What was eaten, e.g. 'two scrambled eggs, toast with butter, black coffee'"
+          },
+          "mealType": {
+            "type": "string",
+            "description": "breakfast, lunch, dinner or snack"
+          }
+        },
+        "required": ["description"]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Log a meal",
+        "icon": "utensils",
+        "submitLabel": "Log",
+        "fields": [
+          { "name": "description", "type": "textarea", "label": "What did you eat?", "required": true, "placeholder": "two scrambled eggs, toast with butter" },
+          {
+            "name": "mealType",
+            "type": "select",
+            "label": "Meal",
+            "options": [
+              { "value": "breakfast", "label": "Breakfast" },
+              { "value": "lunch", "label": "Lunch" },
+              { "value": "dinner", "label": "Dinner" },
+              { "value": "snack", "label": "Snack" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "health.log-photo",
+      "description": "Log a meal from one photo. Analyses a single image — send multiple photos as separate calls.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image": { "type": "string", "description": "A single meal photo as a data URI" },
+          "note": { "type": "string", "description": "Anything the photo does not show, e.g. 'cooked in olive oil'" },
+          "mealType": { "type": "string", "description": "breakfast, lunch, dinner or snack" }
+        },
+        "required": ["image"]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Log from a photo",
+        "icon": "camera",
+        "submitLabel": "Analyse",
+        "fields": [
+          { "name": "image", "type": "image", "label": "Meal photo", "required": true },
+          { "name": "note", "type": "text", "label": "Anything the photo misses", "placeholder": "cooked in olive oil" },
+          {
+            "name": "mealType",
+            "type": "select",
+            "label": "Meal",
+            "options": [
+              { "value": "breakfast", "label": "Breakfast" },
+              { "value": "lunch", "label": "Lunch" },
+              { "value": "dinner", "label": "Dinner" },
+              { "value": "snack", "label": "Snack" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "health.today",
+      "description": "List everything logged today with a running calorie total.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": { "type": "object", "properties": {} },
+      "ui": {
+        "block": "list",
+        "label": "Today",
+        "icon": "utensils",
+        "resultPath": "entries",
+        "emptyText": "Nothing logged today.",
+        "item": { "id": "id", "title": "summary", "subtitle": "detail", "meta": ["mealType", "loggedAt"] },
+        "actions": [
+          { "skill": "health.delete-entry", "label": "Delete", "style": "danger", "args": { "id": "id" } }
+        ]
+      }
+    },
+    {
+      "id": "health.summary",
+      "description": "Calorie and macro totals over the last N days.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "days": { "type": "number", "description": "How many days back to summarise (default 7)" }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Recent days",
+        "icon": "chart",
+        "resultPath": "days",
+        "emptyText": "Nothing logged yet.",
+        "item": { "id": "date", "title": "date", "subtitle": "summary", "meta": ["entryCount"] }
+      }
+    },
+    {
+      "id": "health.delete-entry",
+      "description": "Delete a logged entry by its id.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": { "id": { "type": "string", "description": "Entry id to delete" } },
+        "required": ["id"]
+      }
+    }
+  ]
+}

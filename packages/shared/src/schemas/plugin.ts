@@ -18,7 +18,14 @@ export const ToolDefinitionSchema = z.object({
 
 // ─── UI descriptors (Phase C — see UI-CONTRACT.md) ───────────────────────────
 
-/** Widget vocabulary. Every surface must implement all nine. */
+/**
+ * Widget vocabulary. Every surface must implement all of these.
+ *
+ * `image` captures a photo and submits it as a data URI — the same shape
+ * PluginAPI.llm.analyzeImage expects. A surface without a camera falls back to
+ * a file picker; the TUI cannot capture one at all and should render the field
+ * as unavailable rather than pretending.
+ */
 export const SkillUiFieldTypeSchema = z.enum([
   'text',
   'textarea',
@@ -29,6 +36,7 @@ export const SkillUiFieldTypeSchema = z.enum([
   'select',
   'tags',
   'checkbox',
+  'image',
 ]);
 
 export const SkillUiFieldSchema = z.object({
