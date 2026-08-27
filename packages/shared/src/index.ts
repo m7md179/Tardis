@@ -2,6 +2,7 @@
 export type {
   PluginTier,
   ActionType,
+  Permission,
   ToolDefinition,
   SkillDefinition,
   SkillUiDescriptor,
@@ -29,6 +30,7 @@ export type {
 export {
   PluginTierSchema,
   ActionTypeSchema,
+  PermissionSchema,
   ToolDefinitionSchema,
   SkillDefinitionSchema,
   SkillUiDescriptorSchema,

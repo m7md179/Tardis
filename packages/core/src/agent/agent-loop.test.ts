@@ -1895,3 +1895,105 @@ describe('runAgentLoop: recovers a printed tool call', () => {
     expect(result.trace.steps.some((s) => s.type === 'tool_call')).toBe(true);
   });
 });
+
+// ─── Graded permissions in the loop ──────────────────────────────────────────
+//
+// The skill declares a baseline and configuration grades it. `deny` is the
+// capability the old two-state model could not express: forbid this outright,
+// not merely ask me first.
+
+describe('runAgentLoop: permissions', () => {
+  const READ: ToolDefinition = {
+    name: 'budget.this-month',
+    description: 'List spending',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+  const DELETE: ToolDefinition = {
+    name: 'budget.delete-goal',
+    description: 'Delete a goal',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'workflow',
+  };
+
+  type Rule = 'allow' | 'ask' | 'deny' | 'direct' | 'workflow';
+
+  function inputWith(overrides: Record<string, Rule>, llm: LLMProvider, executed: string[]) {
+    const base = makeInput({
+      llmProvider: llm,
+      userMessage: 'do the thing',
+      availableTools: [READ, DELETE],
+      executeTool: async (name) => {
+        executed.push(name);
+        return { success: true, message: 'done' };
+      },
+    });
+    return { ...base, config: { ...base.config, actionOverrides: overrides } };
+  }
+
+  it('denies a tool outright and lets the model explain', async () => {
+    const executed: string[] = [];
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.delete-goal', { id: 'g1' }),
+      textResponse("I'm not allowed to delete goals."),
+    ]);
+
+    const result = await runAgentLoop(inputWith({ '*.delete-*': 'deny' }, llm, executed));
+
+    expect(executed).toHaveLength(0); // never reached the plugin
+    expect(result.pendingApproval).toBeUndefined(); // and never asked either
+    expect(result.response).toBe("I'm not allowed to delete goals.");
+
+    const denial = result.trace.steps.find((s) => s.type === 'tool_result');
+    expect((denial?.toolResult as { denied?: boolean })?.denied).toBe(true);
+  });
+
+  it('raises a direct tool to needing approval', async () => {
+    const executed: string[] = [];
+    const llm = makeScriptedLLM([toolCallResponse('budget.this-month', {})]);
+
+    const result = await runAgentLoop(
+      inputWith({ 'budget.this-month': 'ask' }, llm, executed)
+    );
+
+    expect(executed).toHaveLength(0);
+    expect(result.pendingApproval?.toolName).toBe('budget.this-month');
+  });
+
+  it('cannot be configured to silence a workflow tool', async () => {
+    // The safety claim a plugin author makes is not configuration's to void.
+    const executed: string[] = [];
+    const llm = makeScriptedLLM([toolCallResponse('budget.delete-goal', { id: 'g1' })]);
+
+    const result = await runAgentLoop(inputWith({ '*': 'allow' }, llm, executed));
+
+    expect(executed).toHaveLength(0);
+    expect(result.pendingApproval?.toolName).toBe('budget.delete-goal');
+  });
+
+  it('leaves an unmatched tool alone', async () => {
+    const executed: string[] = [];
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.this-month', {}),
+      textResponse('You spent 12.'),
+    ]);
+
+    const result = await runAgentLoop(inputWith({ 'health.*': 'deny' }, llm, executed));
+
+    expect(executed).toEqual(['budget.this-month']);
+    expect(result.response).toBe('You spent 12.');
+  });
+
+  it('keeps working with no rules at all', async () => {
+    const executed: string[] = [];
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.this-month', {}),
+      textResponse('Done.'),
+    ]);
+
+    const result = await runAgentLoop(inputWith({}, llm, executed));
+
+    expect(executed).toEqual(['budget.this-month']);
+    expect(result.response).toBe('Done.');
+  });
+});

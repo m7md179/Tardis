@@ -9,6 +9,7 @@ import type {
 import type { LLMContent, LLMMessage, LLMProvider } from '../llm/provider.js';
 import { fitToContextWindow } from './context-manager.js';
 import { CLARIFY_TOOL_NAME } from './clarify.js';
+import { resolvePermission } from './permissions.js';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -492,10 +493,14 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       const toolArgs = llmResponse.toolArgs ?? {};
       const toolCallId = llmResponse.toolCallId ?? toolName;
 
-      // Determine effective action type (user overrides take precedence)
+      // The skill declares a baseline; configuration grades it and may only
+      // tighten. See permissions.ts for why that direction is one-way.
       const tool = input.availableTools.find((t) => t.name === toolName);
-      const effectiveActionType =
-        input.config.actionOverrides[toolName] ?? tool?.actionType ?? 'direct';
+      const permission = resolvePermission(
+        toolName,
+        tool?.actionType ?? 'direct',
+        input.config.actionOverrides
+      );
 
       steps.push({
         type: 'tool_call',
@@ -534,8 +539,40 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         continue;
       }
 
-      // ─── Workflow: pause and request user approval ────────────────────────
-      if (effectiveActionType === 'workflow') {
+      // ─── Denied: refuse, and let the model say so ─────────────────────────
+      // Recorded as an ordinary tool result rather than thrown. The turn should
+      // end with TARDIS telling the user it is not allowed to do that — an
+      // exception would surface as "Something went wrong", which is both less
+      // useful and untrue.
+      if (permission === 'deny') {
+        const refusal = {
+          success: false,
+          denied: true,
+          message: `Not permitted: ${toolName} is denied by your configuration.`,
+        };
+        steps.push({
+          type: 'tool_result',
+          content: toolName,
+          toolName,
+          toolResult: refusal,
+          timestamp: stepStart,
+          durationMs: Date.now() - stepStart,
+        });
+        messages.push({
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: toolCallId, name: toolName, arguments: toolArgs }],
+        });
+        messages.push({
+          role: 'tool',
+          content: JSON.stringify(refusal),
+          name: toolName,
+        });
+        continue;
+      }
+
+      // ─── Ask: pause and request user approval ─────────────────────────────
+      if (permission === 'ask') {
         const preview = generatePreview(toolName, toolArgs);
         return {
           response: preview,

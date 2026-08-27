@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ActionTypeSchema } from './plugin.js';
+import { ActionTypeSchema, PermissionSchema } from './plugin.js';
 
 export const AgentStepSchema = z.object({
   type: z.enum([
@@ -34,5 +34,12 @@ export const AgentConfigSchema = z.object({
   conversationHistoryLength: z.number().int().min(1).max(100).default(10),
   memoryTokenBudget: z.number().int().min(0).default(2000),
   enableFallbackIntent: z.boolean().default(true),
-  actionOverrides: z.record(ActionTypeSchema).default({}),
+  /**
+   * Per-tool permission rules, keyed by glob. Last matching rule wins, and no
+   * rule may make a tool weaker than the skill declared for itself.
+   *
+   * The legacy `direct`/`workflow` values are still accepted so an existing
+   * config keeps working: they read as `allow` and `ask`.
+   */
+  actionOverrides: z.record(z.union([PermissionSchema, ActionTypeSchema])).default({}),
 });

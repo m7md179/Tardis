@@ -4,6 +4,14 @@ export const PluginTierSchema = z.union([z.literal(1), z.literal(2), z.literal(3
 
 export const ActionTypeSchema = z.enum(['direct', 'workflow']);
 
+/**
+ * What configuration may say about a tool, as opposed to what the skill declares
+ * about itself. `deny` is the capability the original two-state model could not
+ * express: forbid this outright, not merely ask me first.
+ */
+export const PermissionSchema = z.enum(['allow', 'ask', 'deny']);
+export type Permission = z.infer<typeof PermissionSchema>;
+
 export const ToolDefinitionSchema = z.object({
   name: z
     .string()

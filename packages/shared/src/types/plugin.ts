@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type {
   PluginTierSchema,
   ActionTypeSchema,
+  PermissionSchema,
   ToolDefinitionSchema,
   SkillDefinitionSchema,
   SkillUiDescriptorSchema,
@@ -15,6 +16,13 @@ import type {
 // Types derived from Zod schemas to ensure exactOptionalPropertyTypes compatibility
 export type PluginTier = z.infer<typeof PluginTierSchema>;
 export type ActionType = z.infer<typeof ActionTypeSchema>;
+
+/**
+ * What configuration may say about a tool. Distinct from ActionType, which is
+ * what a skill declares about itself — configuration grades that declaration
+ * upward and may never weaken it.
+ */
+export type Permission = z.infer<typeof PermissionSchema>;
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 /** One capability a plugin registers. See SKILLS.md. */
 export type SkillDefinition = z.infer<typeof SkillDefinitionSchema>;
