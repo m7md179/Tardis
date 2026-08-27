@@ -774,19 +774,70 @@ files on the container survive deploys.
 | Cross-repo contract skew | Medium | Ship tardis-app support first (§11, Phase 1). |
 | Ranking picks the wrong epic | Medium | Top 3 + "none of these" + "show all". Never a dead end. |
 | A `MEMBER` with sparse `allowedTransitions` finds moves mysteriously unavailable | Low | Surface the grants you actually have when a move is unavailable, rather than hiding the option silently. |
-| Item list pagination | Low | **Unverified.** `GET /workspaces/:id/work-items` was not checked for a page limit. Confirm before relying on a full-list fetch in `ranking.ts`. |
+| Client types drift to camelCase against a snake_case wire | **High** | §18.4. Fails silently as "unrestricted", so it is caught by a fixture test, not by review. |
 | Prod writes from a misfiring agent loop | Low after Phase 0-2 | Staged rollout; destructive skills gated by D7. |
 
 ---
 
-## 18. Open items to confirm during implementation
+## 18. Resolved before planning
 
-1. Pagination on `GET /workspaces/:id/work-items` — does it cap results?
-2. Access-token TTL — determines how often the refresh path runs and therefore how well
-   it needs to be tested.
-3. `GET /workspaces/:id/members` response shape, for the assignee picker's `value`/`text`
-   paths.
-4. Whether `my_settings` is serialised as `my_settings` (snake) on the wire while the
-   website types call it `mySettings` — the website type carries a comment that it is
-   *"returned on the workspace payload as `my_settings`"*, so the client mirror needs
-   the right key.
+All four open items were verified against the source rather than left for implementation.
+
+### 18.1 No pagination on work-item lists
+
+`FindAllWorkItemDto` declares `status`, `type`, `sprint_id`, `assignee_account_id`,
+`parent_id`, `q` and `archived` — and no `take`, `skip`, `limit` or `page`. `findAll`
+returns every matching row.
+
+**Consequence:** the full-list fetch in `ranking.ts` (§8) is correct and safe. It also
+means the response grows linearly with the workspace, so the `?type=EPIC` filter is not
+an optimisation but the thing keeping the payload sane. Keep it.
+
+### 18.2 Token TTL: access 24 h, refresh 30 days
+
+`token.service.ts:128,137` — `expiry_date: dayjs().add(24, 'h')` for access,
+`dayjs().add(30, 'd')` for refresh.
+
+**Consequence, and it is the counter-intuitive one:** the refresh path runs roughly once
+a day and the re-login path essentially never. That makes them the *least* exercised and
+*most* likely to be broken in a way nobody notices for a day. §14's `io-client.ts` tests
+are not optional coverage — they are the only place these paths get exercised at all.
+
+### 18.3 Members response shape
+
+`MEMBER_SELECT` (`workspace-member.service.ts:38`) returns:
+
+```
+id, workspace_id, account_id, role, own_items_only, act_own_only,
+hidden_tabs, revoked_capabilities, transition_grants[{from_status,to_status}],
+created_at, account { id, first_name, last_name, email }
+```
+
+**Consequence:** the assignee picker binds `value: "account_id"`, but there is no single
+display field — a person's name is `first_name` + `last_name`. `remote-select.text` is
+one field path, and widening it to accept a template would put string composition into a
+contract whose first rule is *"descriptors are declarative data. No expressions."*
+
+So `workspace.members` composes a `displayName` in `format.ts` and returns it alongside
+the raw fields. The presentation choice lives in the plugin, where it belongs, and the
+contract stays a field path. No contract change.
+
+### 18.4 The wire is snake_case — this one matters
+
+`workspace.service.ts:120-137` builds the payload as `my_role` and `my_settings`, with
+`own_items_only`, `act_own_only`, `hidden_tabs`, `revoked_capabilities` and
+`allowed_transitions: [{ from, to }]` inside it. There is no camelCase interceptor
+anywhere in the server; the website's `mySettings` types are mapped on its own side.
+
+**This is a trap, and it fails in the dangerous direction.** A plugin typed in camelCase
+compiles, runs, and reads `undefined` for every rule field. `revokedCapabilities`
+undefined reads as "nothing revoked"; `allowedTransitions` undefined reads as "no
+restrictions to check". The plugin would silently treat a restricted `MEMBER` as
+unrestricted and offer every action the server is about to `403`.
+
+**Consequence:** `types.ts` mirrors the wire in snake_case, and §14 gains a fixture test
+asserting a snake_case `my_settings` payload parses into a restricted permission set —
+so the failure is caught by a test rather than by a confusing 403 months later.
+
+Also confirmed: `my_settings` is `null` for **both ADMIN and LEAD**. `null` means
+unrestricted, not "not a member".
