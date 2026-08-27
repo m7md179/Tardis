@@ -1,0 +1,33 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "displayName": "Workspace",
+  "description": "Read and manage work items in the internal-operation Workspaces module.",
+  "summary": "Agile project management: workspaces, boards, backlogs, sprints and work items from the internal-operation system. Use for anything about epics, stories, sub-tasks, sprints or what is assigned to me.",
+  "tier": 3,
+  "main": "index.ts",
+  "permissions": ["http:external", "storage:read", "storage:write", "llm:use"],
+  "skills": [
+    {
+      "id": "workspace.list-workspaces",
+      "description": "List the internal-operation workspaces you are a member of, with your role in each.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": { "type": "object", "properties": {} },
+      "ui": {
+        "block": "list",
+        "label": "Workspaces",
+        "icon": "folder",
+        "resultPath": "workspaces",
+        "emptyText": "You are not a member of any workspace.",
+        "item": { "id": "id", "title": "name", "subtitle": "summary" }
+      }
+    }
+  ],
+  "config": {
+    "baseUrl": "",
+    "email": "",
+    "password": "",
+    "defaultWorkspaceKey": ""
+  }
+}

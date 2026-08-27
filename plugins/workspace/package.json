@@ -1,0 +1,11 @@
+{
+  "name": "@tardis-plugin/workspace",
+  "version": "1.0.0",
+  "description": "Workspace plugin for TARDIS — internal-operation agile PM",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@tardis/core": "workspace:*",
+    "@tardis/shared": "workspace:*"
+  }
+}
