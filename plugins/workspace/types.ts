@@ -84,7 +84,11 @@ export interface WorkItem {
   parent_id: number | null;
   sprint_id: number | null;
   reporter_account_id: number;
-  assignees: Assignee[];
+  /**
+   * null on create/update responses, [] on board/list responses. Verified
+   * against a real server — the asymmetry is the server's, not a typo.
+   */
+  assignees: Assignee[] | null;
   archived_at: string | null;
 }
 

@@ -76,6 +76,17 @@ describe('formatWorkItem', () => {
   });
 });
 
+describe('assignees can be null, not just empty', () => {
+  // Board and list endpoints return assignees: []. Create and update return
+  // assignees: null. Verified against a real server; the asymmetry is real and
+  // an unguarded .length here is a crash on the happy path of Plan 2.
+  it('treats a null assignee list as nobody, rather than throwing', () => {
+    const nulled = { ...ITEM, assignees: null } as unknown as WorkItem;
+    expect(() => formatWorkItem(nulled)).not.toThrow();
+    expect(formatWorkItem(nulled)).toContain('#114');
+  });
+});
+
 describe('formatBoard', () => {
   it('renders every column, including empty ones', () => {
     const board: Board = {

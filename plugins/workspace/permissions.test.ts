@@ -96,6 +96,31 @@ describe('MEMBER with rules (the snake_case wire payload)', () => {
   });
 });
 
+describe('assignees can be null, not just empty', () => {
+  it('does not throw when act_own_only meets a null assignee list', () => {
+    const p = resolvePermissions(
+      ws(
+        {
+          role: 'MEMBER',
+          own_items_only: false,
+          act_own_only: true,
+          hidden_tabs: [],
+          revoked_capabilities: [],
+          allowed_transitions: [],
+        },
+        'MEMBER'
+      ),
+      ME
+    );
+    const item = { assignees: null, reporter_account_id: ME } as unknown as {
+      assignees: { account_id: number }[];
+      reporter_account_id: number;
+    };
+    expect(() => p.canActOnItem(item)).not.toThrow();
+    expect(p.canActOnItem(item)).toBe(false);
+  });
+});
+
 describe('fail closed', () => {
   // A camelCase mirror, or a server that drops a field, lands here. The old
   // failure was silent and permissive; this asserts it is now restrictive.

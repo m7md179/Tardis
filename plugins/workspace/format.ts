@@ -37,7 +37,8 @@ export function formatWorkItem(item: WorkItem): string {
   if (item.estimate_hours !== null) bits.push(`${item.estimate_hours}h`);
   const due = asDate(item.due_date);
   if (due !== null) bits.push(`due ${due}`);
-  if (item.assignees.length > 0) bits.push(item.assignees.map(displayName).join(', '));
+  const assignees = item.assignees ?? [];
+  if (assignees.length > 0) bits.push(assignees.map(displayName).join(', '));
 
   return `#${item.id} ${item.title}\n  ${bits.join(' · ')}`;
 }

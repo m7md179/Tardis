@@ -24,7 +24,10 @@ export interface Permissions {
   can(cap: CapabilityKey): boolean;
   canTransition(from: WorkItemStatus, to: WorkItemStatus): boolean;
   allowedTargets(from: WorkItemStatus): WorkItemStatus[];
-  canActOnItem(item: { assignees: { account_id: number }[]; reporter_account_id: number }): boolean;
+  canActOnItem(item: {
+    assignees: { account_id: number }[] | null;
+    reporter_account_id: number;
+  }): boolean;
 }
 
 const UNRESTRICTED: Permissions = {
@@ -71,6 +74,6 @@ export function resolvePermissions(workspace: Workspace, myAccountId: number): P
     canTransition: (from, to) => edges.some((e) => e.from === from && e.to === to),
     allowedTargets: (from) => edges.filter((e) => e.from === from).map((e) => e.to),
     canActOnItem: (item) =>
-      !s.act_own_only || item.assignees.some((a) => a.account_id === myAccountId),
+      !s.act_own_only || (item.assignees ?? []).some((a) => a.account_id === myAccountId),
   };
 }
