@@ -305,3 +305,118 @@ describe('ProactiveScheduler', () => {
     });
   });
 });
+
+// ─── RRULE schedules and next_run_at ─────────────────────────────────────────
+//
+// Cron cannot say "the last Friday of the month", which is the shape a budget
+// assistant reporting on a pay cycle needs. And TARDIS recomputed the match on
+// every 60s tick, which is correct but makes "when will you next tell me about
+// my spending?" unanswerable without simulating the matcher.
+
+describe('ProactiveScheduler: rrule and next_run_at', () => {
+  let scheduler: ProactiveScheduler;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    const t = makeTestDb();
+    scheduler = new ProactiveScheduler(t.db);
+    cleanup = t.cleanup;
+  });
+
+  afterEach(() => {
+    scheduler.stop();
+    cleanup();
+  });
+
+  const register = (schedule: string, enabled = true, onFire?: () => void) =>
+    scheduler.registerPlugin(
+      'budget',
+      [
+        {
+          name: 'pay-cycle',
+          description: 'Report on the pay cycle',
+          defaultSchedule: schedule,
+          defaultEnabled: enabled,
+          handler: 'payCycle',
+        },
+      ],
+      { payCycle: async () => onFire?.() }
+    );
+
+  it('stores a next run at registration', async () => {
+    await register('0 9 * * *');
+    const [t] = await scheduler.listTriggers();
+    expect(t!.nextRunAt).not.toBeNull();
+    expect(new Date(t!.nextRunAt!).getHours()).toBe(9);
+  });
+
+  it('reports which dialect a schedule is written in', async () => {
+    await register('FREQ=MONTHLY;BYDAY=-1FR;BYHOUR=17;BYMINUTE=0;BYSECOND=0');
+    const [t] = await scheduler.listTriggers();
+    expect(t!.scheduleKind).toBe('rrule');
+
+    await scheduler.updateSchedule('budget', 'pay-cycle', '0 9 * * *');
+    const [after] = await scheduler.listTriggers();
+    expect(after!.scheduleKind).toBe('cron');
+  });
+
+  it('fires an rrule that cron cannot express', async () => {
+    // 28 August 2026 is the last Friday of that month.
+    let fired = 0;
+    await register('FREQ=MONTHLY;BYDAY=-1FR;BYHOUR=17;BYMINUTE=0;BYSECOND=0', true, () => {
+      fired++;
+    });
+
+    await scheduler.tickNow(new Date('2026-08-21T17:00:00'));
+    expect(fired).toBe(0); // an earlier Friday — cron's `0 17 * * 5` would fire here
+
+    await scheduler.tickNow(new Date('2026-08-28T17:00:00'));
+    expect(fired).toBe(1);
+  });
+
+  it('recomputes the next run on every tick, healing a stale value', async () => {
+    await register('0 9 * * *');
+    await scheduler.tickNow(new Date('2026-08-27T12:00:00'));
+
+    const [t] = await scheduler.listTriggers();
+    const next = new Date(t!.nextRunAt!);
+    expect(next.getDate()).toBe(28);
+    expect(next.getHours()).toBe(9);
+  });
+
+  it('updates the next run when the schedule changes', async () => {
+    await register('0 9 * * *');
+    const before = (await scheduler.listTriggers())[0]!.nextRunAt;
+
+    await scheduler.updateSchedule('budget', 'pay-cycle', '0 17 * * *');
+    const after = (await scheduler.listTriggers())[0]!.nextRunAt;
+
+    expect(after).not.toBe(before);
+    expect(new Date(after!).getHours()).toBe(17);
+  });
+
+  it('refuses a schedule that cannot be parsed', async () => {
+    // occursIn returns false on a parse failure, so an unvalidated bad
+    // expression would be stored happily and then simply never fire.
+    await register('0 9 * * *');
+    expect(await scheduler.updateSchedule('budget', 'pay-cycle', 'every other tuesday')).toBe(
+      false
+    );
+    expect((await scheduler.listTriggers())[0]!.schedule).toBe('0 9 * * *');
+  });
+
+  it('reports no next run for a disabled trigger', async () => {
+    await register('0 9 * * *', false);
+    expect((await scheduler.listTriggers())[0]!.nextRunAt).toBeNull();
+  });
+
+  it('accounts for quiet hours, because the tick skips rather than defers', async () => {
+    await register('0 2 * * *');
+    await scheduler.setQuietHours('budget', 'pay-cycle', '22:00', '08:00');
+    // Every occurrence lands inside quiet hours, so there is no next run.
+    expect((await scheduler.listTriggers())[0]!.nextRunAt).toBeNull();
+
+    await scheduler.setQuietHours('budget', 'pay-cycle', null, null);
+    expect((await scheduler.listTriggers())[0]!.nextRunAt).not.toBeNull();
+  });
+});

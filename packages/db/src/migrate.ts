@@ -49,7 +49,8 @@ const STATEMENTS = [
     schedule TEXT NOT NULL,
     config TEXT,
     quiet_hours_start TEXT,
-    quiet_hours_end TEXT
+    quiet_hours_end TEXT,
+    next_run_at INTEGER
   )`,
   `CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -85,6 +86,12 @@ const ALTER_STATEMENTS: Array<{ check: string; alter: string }> = [
     // Add tool_calls column to conversations if missing (replaces tool_args)
     check: `SELECT COUNT(*) as cnt FROM pragma_table_info('conversations') WHERE name='tool_calls'`,
     alter: `ALTER TABLE conversations ADD COLUMN tool_calls TEXT`,
+  },
+  {
+    // When this trigger next fires, so "when will you next tell me about my
+    // spending?" is a lookup rather than a simulation of the matcher.
+    check: `SELECT COUNT(*) as cnt FROM pragma_table_info('proactive_settings') WHERE name='next_run_at'`,
+    alter: `ALTER TABLE proactive_settings ADD COLUMN next_run_at INTEGER`,
   },
   {
     // Hierarchy for memories. Costs one nullable column now and is painful to

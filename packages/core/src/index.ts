@@ -41,6 +41,8 @@ export { estimateTokens, estimateMessagesTokens } from './agent/token-estimator.
 export { ProactiveScheduler } from './proactive/scheduler.js';
 export type { TriggerHandler, TriggerInfo, ProactiveLogEntry } from './proactive/scheduler.js';
 export { isTimeToRun, isDuringQuietHours } from './proactive/cron-utils.js';
+export { occursIn, nextRunAt, isValidSchedule, scheduleKind } from './proactive/schedule.js';
+export type { ScheduleKind } from './proactive/schedule.js';
 export { LLMProviderError } from './llm/provider.js';
 export type { LLMMessage, LLMToolCall, LLMResponse, LLMProvider } from './llm/provider.js';
 export { OpenAIAdapter } from './llm/openai-adapter.js';

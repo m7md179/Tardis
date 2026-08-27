@@ -24,7 +24,7 @@ just as hard to conversation state, permissions and scheduling.
 | 2 | `mutates` on skills → read-only mode | **done** — 837 tests, 3/3 live on three cases |
 | 3 | Hybrid vector memory | **done** — 892 tests, 8/8 paraphrase / 10/10 quiet live |
 | 4 | Turn filters | **done** — 919 tests |
-| 5 | rrule scheduling | queued |
+| 5 | rrule scheduling | **done** — 950 tests |
 | 6 | Typed plugin config | queued |
 | 7 | Published OpenAPI schema | queued |
 
@@ -377,6 +377,50 @@ unanswerable without simulating the matcher.
 
 **Preserve the interval matching.** The `(since, now]` logic added after the double-fire
 bug is correct and hard-won. rrule replaces the *expression*, not the tick.
+
+### What was built
+
+Both dialects live behind `occursIn` and `nextRunAt` in `proactive/schedule.ts`,
+and nothing outside that file knows which one a schedule is written in.
+Detection needs no heuristics: `FREQ=` is required in every RRULE and cannot
+appear in cron. `isTimeToRun` stays as the cron-shaped name and delegates, so
+there is one implementation of the interval rule rather than two that drift.
+
+**TZID is not supported, and that is a finding rather than a shortcut.** rrule
+needs luxon for timezones and, without it, does not error — it silently applies
+the *machine's* offset to another zone's rule. Measured:
+`DTSTART;TZID=Europe/London:20260115T090000` produced 12:00Z on an Asia/Amman
+box, which is 09:00 Amman, not 09:00 London. A schedule that is quietly three
+hours wrong is worse than one that is unsupported. RRULE times are therefore
+read as local wall-clock, matching cron, and a test pins that
+`FREQ=DAILY;BYHOUR=9` and `0 9 * * *` resolve to the same instant. Two dialects
+on one server disagreeing about what 9am means would be a genuinely nasty bug.
+
+A bare `FREQ=…` is anchored to a fixed epoch rather than to "now" — otherwise
+`FREQ=MONTHLY;BYMONTHDAY=1` written on the 15th first fires *next* month, and a
+rule would mean different things depending on when it was typed.
+
+**`next_run_at` honours quiet hours**, because the tick *skips* a run that lands
+inside them rather than deferring it. Reporting an 02:00 occurrence under quiet
+hours of 22:00–08:00 would be a lie. The search is bounded at 500 candidates:
+quiet hours can cover every occurrence a rule ever has, and an unbounded walk
+would hang the scheduler rather than return null.
+
+It is recomputed on every tick rather than only when the schedule changes — a
+handful of rows, and it self-heals a value left stale by a crash or a clock
+change. A stale answer to *"when will you next tell me?"* is a wrong answer, not
+a slow one.
+
+`PUT /api/proactive/triggers/schedule` now rejects an unparseable schedule with
+`400 INVALID_SCHEDULE` and returns the new `nextRunAt`. Previously an invalid
+expression was stored happily and then simply never fired, because `occursIn`
+returns false on a parse failure.
+
+**The upgrade path is now tested.** Every other database test starts from
+`CREATE TABLE`, which already declares the newest columns — so the `ALTER`
+statements that actually run against production had never been exercised. There
+is now a test that builds a database in its pre-upgrade shape, migrates it, and
+checks both that the columns appear and that the existing rows are untouched.
 
 ---
 

@@ -56,10 +56,11 @@ export const proactiveSettings = sqliteTable('proactive_settings', {
   pluginName: text('plugin_name').notNull(),
   triggerName: text('trigger_name').notNull(),
   enabled: integer('enabled').notNull().default(0), // boolean (0/1)
-  schedule: text('schedule').notNull(), // cron expression
+  schedule: text('schedule').notNull(), // cron expression or RRULE
   config: text('config'), // JSON — plugin-specific settings
   quietHoursStart: text('quiet_hours_start'), // "22:00"
   quietHoursEnd: text('quiet_hours_end'), // "08:00"
+  nextRunAt: integer('next_run_at'), // epoch ms; derived from schedule + quiet hours
 });
 
 // ─── Sessions (for time-tracker plugin) ───

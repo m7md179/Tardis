@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { jwt, sign } from 'hono/jwt';
 import { randomUUID } from 'crypto';
 import { eq, desc, like, or, memories, thoughtTraces } from '@tardis/db';
-import { ThoughtTracer, OllamaAdapter, OpenAIAdapter } from '@tardis/core';
+import { ThoughtTracer, OllamaAdapter, OpenAIAdapter, isValidSchedule } from '@tardis/core';
 import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
 import type { LLMProviderConfig, SystemConfig } from '@tardis/shared';
@@ -758,9 +758,25 @@ export function createApp(deps: AppDeps): Hono {
     if (!pluginName || !triggerName || !schedule) {
       return c.json({ error: 'pluginName, triggerName, and schedule are required' }, 400);
     }
+    // Checked here as well as in updateSchedule so the caller learns *which*
+    // thing was wrong. A schedule that fails to parse simply never fires, so
+    // "saved" would be the least useful possible answer.
+    if (!isValidSchedule(schedule)) {
+      return c.json(
+        {
+          error: `"${schedule}" is not a valid cron expression or RRULE`,
+          code: 'INVALID_SCHEDULE',
+        },
+        400
+      );
+    }
     const found = await deps.scheduler.updateSchedule(pluginName, triggerName, schedule);
     if (!found) return c.json({ error: 'Trigger not found' }, 404);
-    return c.json({ success: true });
+
+    const updated = (await deps.scheduler.listTriggers()).find(
+      (t) => t.pluginName === pluginName && t.triggerName === triggerName
+    );
+    return c.json({ success: true, nextRunAt: updated?.nextRunAt ?? null });
   });
 
   app.get('/api/proactive/logs', async (c) => {

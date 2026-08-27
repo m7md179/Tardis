@@ -12,6 +12,7 @@ import {
   sessions,
 } from './schema.js';
 import { eq } from 'drizzle-orm';
+import { Database } from 'bun:sqlite';
 
 const TEST_DB_PATH = `/tmp/tardis-test-${randomUUID()}.db`;
 
@@ -211,5 +212,76 @@ describe('sessions', () => {
     const rows = await db.select().from(sessions).where(eq(sessions.id, id));
     expect(rows[0]!.status).toBe('completed');
     expect(rows[0]!.duration).toBe(3600);
+  });
+});
+
+// ─── The upgrade path ────────────────────────────────────────────────────────
+//
+// Every other test here starts from CREATE TABLE, which already declares the
+// newest columns — so the ALTER statements that will actually run against the
+// production database are otherwise never exercised. This builds a database in
+// its pre-upgrade shape and migrates it, the way the server will.
+
+describe('migrate: upgrading an existing database', () => {
+  const path = `/tmp/tardis-upgrade-${randomUUID()}.db`;
+
+  function buildOldSchema(): void {
+    const db = new Database(path, { create: true });
+    db.exec(`CREATE TABLE memories (
+      id TEXT PRIMARY KEY, type TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+      source TEXT, plugin_name TEXT, created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL, accessed_at INTEGER)`);
+    db.exec(`CREATE TABLE proactive_settings (
+      id TEXT PRIMARY KEY, plugin_name TEXT NOT NULL, trigger_name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0, schedule TEXT NOT NULL, config TEXT,
+      quiet_hours_start TEXT, quiet_hours_end TEXT)`);
+    db.run(
+      `INSERT INTO memories VALUES ('m1','user_fact','car-savings','Saving for a vehicle','user',NULL,1,1,NULL)`
+    );
+    db.run(`INSERT INTO proactive_settings VALUES ('p1','budget','daily',1,'0 9 * * *',NULL,NULL,NULL)`);
+    db.close();
+  }
+
+  function columns(table: string): string[] {
+    const db = new Database(path);
+    const rows = db
+      .query<{ name: string }, []>(`SELECT name FROM pragma_table_info('${table}')`)
+      .all();
+    db.close();
+    return rows.map((r) => r.name);
+  }
+
+  afterEach(() => {
+    if (existsSync(path)) unlinkSync(path);
+  });
+
+  it('adds the new columns without touching existing rows', () => {
+    buildOldSchema();
+    migrate(path);
+
+    expect(columns('memories')).toEqual(
+      expect.arrayContaining(['path', 'embedding', 'embedding_model'])
+    );
+    expect(columns('proactive_settings')).toContain('next_run_at');
+
+    const db = new Database(path);
+    const memory = db
+      .query<Record<string, unknown>, []>(`SELECT * FROM memories WHERE id = 'm1'`)
+      .get();
+    const trigger = db
+      .query<Record<string, unknown>, []>(`SELECT * FROM proactive_settings WHERE id = 'p1'`)
+      .get();
+    db.close();
+
+    expect(memory!['value']).toBe('Saving for a vehicle');
+    expect(memory!['embedding']).toBeNull();
+    expect(trigger!['schedule']).toBe('0 9 * * *');
+    expect(trigger!['next_run_at']).toBeNull();
+  });
+
+  it('is idempotent — a second run is a no-op, not a duplicate-column error', () => {
+    buildOldSchema();
+    migrate(path);
+    expect(() => migrate(path)).not.toThrow();
   });
 });
