@@ -33,6 +33,12 @@ door, which is the point.
    per-workspace permissions and shows only what you can actually do.
 4. `internal-operation-server` and `internal-operation-website` ship zero changes.
 
+> **Verified against a live server 2026-08-27.** See `docs/workspace-plugin-setup.md`
+> for behaviour confirmed by request rather than by reading source. Three findings
+> there amend this document: the global API-key guard (§5), the `assignees`
+> null/array asymmetry, and a description being **required** before a work item
+> can leave `BACKLOG` — which §7 does not yet model.
+
 ---
 
 ## 2. The two systems
@@ -404,10 +410,14 @@ Required to commit — server would reject without them:
 1. `type`
 2. `title`
 3. `parent_id` — skipped entirely when `type === EPIC`
+4. `description` — **only when the target status is not `BACKLOG`**. The server
+   returns `400 A work item needs a description before it can enter To Do`.
+   Discovered during live verification; it is a hard gate, not a nicety, so it
+   belongs above the prompt-policy list rather than inside it.
 
 Then prompt-policy order, which stops as soon as you say "that's enough":
 
-4. `description`
+4. `description` — when the draft is staying in `BACKLOG` and it is therefore optional
 5. `story_points`
 6. `estimate_hours`
 7. `due_date`
