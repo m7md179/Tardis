@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { extractText, hostOf, trim } from './index.js';
+import { buildSearchUrl, extractText, hostOf, trim } from './index.js';
 
 // ─── Turning a page into something a small model can read ────────────────────
 //
@@ -64,5 +64,37 @@ describe('trim', () => {
     const out = trim('abcdefghij', 5);
     expect(out).toHaveLength(5);
     expect(out.endsWith('…')).toBe(true);
+  });
+});
+
+// ─── The endpoint ────────────────────────────────────────────────────────────
+//
+// `api.config.get` is async. Calling it inline and using the result as a value
+// gives a Promise, and the first deploy logged "SearXNG at [object Promise]" —
+// the same mistake that once printed "[object Promise]" into formatted money.
+// Types did not catch it and neither did any test, so the invariant is checked
+// here at the point where a bad base URL would otherwise be concatenated into a
+// request that quietly returns nothing.
+
+describe('buildSearchUrl', () => {
+  it('builds a search URL and encodes the query', () => {
+    expect(buildSearchUrl('http://localhost:8888', 'jod to usd')).toBe(
+      'http://localhost:8888/search?q=jod%20to%20usd&format=json'
+    );
+  });
+
+  it('tolerates a trailing slash on the base', () => {
+    expect(buildSearchUrl('http://localhost:8888/', 'x')).toContain('8888/search?q=x');
+  });
+
+  it('throws on a Promise rather than searching "[object Promise]"', () => {
+    expect(() => buildSearchUrl(Promise.resolve('http://localhost:8888'), 'x')).toThrow(
+      /not a usable URL/
+    );
+  });
+
+  it('throws on an empty or malformed base', () => {
+    expect(() => buildSearchUrl('', 'x')).toThrow(/not a usable URL/);
+    expect(() => buildSearchUrl('localhost:8888', 'x')).toThrow(/not a usable URL/);
   });
 });

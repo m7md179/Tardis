@@ -51,15 +51,42 @@ const DEFAULTS = {
   timeoutMs: 12_000,
 };
 
+/**
+ * Settings, resolved once at activation.
+ *
+ * `api.config.get` is async. Calling it inline and using the result as a value
+ * yields a Promise, and the failure is silent in the worst way: the URL becomes
+ * "[object Promise]/search" and the timeout coerces to NaN, so every search
+ * aborts instantly. Types do not catch it and neither do tests — the first
+ * deploy logged `SearXNG at [object Promise]`, which is precisely how the same
+ * mistake was found once before, printing "[object Promise]" into money.
+ *
+ * These are read at startup and never change during a run, so resolving them
+ * once removes the hazard rather than requiring every call site to remember.
+ */
+let settings = { ...DEFAULTS };
+
 function config<K extends keyof typeof DEFAULTS>(key: K): (typeof DEFAULTS)[K] {
-  return (api.config.get<(typeof DEFAULTS)[K]>(key) ?? DEFAULTS[key]) as (typeof DEFAULTS)[K];
+  return settings[key];
+}
+
+async function loadSettings(): Promise<void> {
+  const resolved = { ...DEFAULTS };
+  for (const key of Object.keys(DEFAULTS) as (keyof typeof DEFAULTS)[]) {
+    const value = await api.config.get(key);
+    if (value !== null && value !== undefined) {
+      (resolved as Record<string, unknown>)[key] = value;
+    }
+  }
+  settings = resolved;
 }
 
 // ─── Lifecycle ───
 
 export const onActivate = async (pluginApi: PluginAPI): Promise<void> => {
   api = pluginApi;
-  api.logger.info(`Web plugin activated — SearXNG at ${config('searxngUrl')}`);
+  await loadSettings();
+  api.logger.info(`Web plugin activated — SearXNG at ${settings.searxngUrl}`);
 };
 
 export const onDeactivate = async (): Promise<void> => {
@@ -117,6 +144,20 @@ export function decodeEntities(s: string): string {
     .replace(/&#39;/g, "'");
 }
 
+/**
+ * The search endpoint, with the base URL checked.
+ *
+ * Exists so a base that is not a real URL — a Promise, an empty string, a typo
+ * in config — throws here instead of being concatenated into a request that
+ * quietly returns nothing.
+ */
+export function buildSearchUrl(base: unknown, query: string): string {
+  if (typeof base !== 'string' || !/^https?:\/\//i.test(base)) {
+    throw new Error(`searxngUrl is not a usable URL: ${String(base)}`);
+  }
+  return `${base.replace(/\/$/, '')}/search?q=${encodeURIComponent(query)}&format=json`;
+}
+
 async function withTimeout<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config('timeoutMs'));
@@ -141,9 +182,14 @@ export const executeTool = async (
       const requested = Number(args['limit'] ?? config('maxResults'));
       const limit = Math.min(Math.max(Number.isFinite(requested) ? requested : 5, 1), 10);
 
-      const endpoint =
-        `${config('searxngUrl').replace(/\/$/, '')}/search` +
-        `?q=${encodeURIComponent(query)}&format=json`;
+      let endpoint: string;
+      try {
+        endpoint = buildSearchUrl(config('searxngUrl'), query);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        api.logger.error(reason);
+        return { success: false, message: `Search is misconfigured: ${reason}` };
+      }
 
       let body: SearxResponse;
       try {
