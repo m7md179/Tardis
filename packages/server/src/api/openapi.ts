@@ -123,19 +123,22 @@ const TURN = {
  * `AgentStep` and `Turn` as named types instead of a fresh anonymous shape per
  * endpoint — the difference between a usable SDK and a pile of structs.
  */
-const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+const ref = (name: string): Record<string, unknown> => ({
+  $ref: `#/components/schemas/${name}`,
+});
 
-const jsonBody = (schema: unknown, required = true) => ({
+const jsonBody = (schema: unknown, required = true): Record<string, unknown> => ({
   required,
   content: { 'application/json': { schema } },
 });
 
-const jsonResponse = (description: string, schema?: unknown) => ({
+const jsonResponse = (description: string, schema?: unknown): Record<string, unknown> => ({
   description,
   ...(schema ? { content: { 'application/json': { schema } } } : {}),
 });
 
-const errorResponse = (description: string) => jsonResponse(description, ref('Error'));
+const errorResponse = (description: string): Record<string, unknown> =>
+  jsonResponse(description, ref('Error'));
 
 /**
  * Every authed operation can return this. A generated client with no 401 case
@@ -143,14 +146,14 @@ const errorResponse = (description: string) => jsonResponse(description, ref('Er
  */
 const UNAUTHORIZED = errorResponse('Missing or invalid bearer token');
 
-const query = (name: string, schema: unknown, description: string) => ({
+const query = (name: string, schema: unknown, description: string): Record<string, unknown> => ({
   name,
   in: 'query',
   schema,
   description,
 });
 
-const path = (name: string, description: string) => ({
+const path = (name: string, description: string): Record<string, unknown> => ({
   name,
   in: 'path',
   required: true,
