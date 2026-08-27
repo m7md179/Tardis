@@ -1,0 +1,91 @@
+{
+  "name": "web",
+  "version": "1.0.0",
+  "displayName": "Web",
+  "description": "Search the live web and read pages, through a self-hosted SearXNG.",
+  "summary": "Searches the live web and reads specific pages, through a self-hosted SearXNG. Use only for what TARDIS cannot already know: current events, prices, exchange rates, documentation, anything past the model's training cutoff. Never for the user's own data — spending, meals, notes, reminders and calendar live in other plugins and are always more accurate there. Every result carries the URL it came from, so answers can cite a source.",
+  "tardisVersion": ">=2.0.0",
+  "tier": 2,
+  "main": "index.ts",
+  "permissions": ["http:external", "llm:use"],
+  "config": {
+    "enabled": true,
+    "searxngUrl": "http://localhost:8888",
+    "maxResults": 5,
+    "timeoutMs": 12000
+  },
+  "skills": [
+    {
+      "id": "web.search",
+      "description": "Search the web and get back titles, URLs and snippets. Use for facts that change or postdate your training — prices, rates, news, releases, documentation. Answer from the snippets and cite the URL you used. Do not use it for anything the user has told TARDIS themselves.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to search for, phrased as a search query rather than a sentence"
+          },
+          "limit": {
+            "type": "number",
+            "description": "How many results to return (1-10, default 5)"
+          }
+        },
+        "required": ["query"]
+      },
+      "ui": {
+        "block": "list",
+        "label": "Search the web",
+        "icon": "search",
+        "resultPath": "results",
+        "emptyText": "Nothing found.",
+        "item": {
+          "id": "url",
+          "title": "title",
+          "subtitle": "snippet",
+          "meta": ["source"]
+        },
+        "actions": [
+          {
+            "skill": "web.read-page",
+            "label": "Read",
+            "style": "secondary",
+            "args": { "url": "url" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "web.read-page",
+      "description": "Fetch one web page and summarise it. Use after web.search when a snippet is not enough, or when the user gives you a URL to read. Pass their question so the summary answers it rather than describing the page.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full URL of the page to read"
+          },
+          "question": {
+            "type": "string",
+            "description": "What to look for on the page. Omit for a general summary."
+          }
+        },
+        "required": ["url"]
+      },
+      "ui": {
+        "block": "detail",
+        "label": "Read a page",
+        "icon": "file-text",
+        "item": {
+          "id": "url",
+          "title": "title",
+          "subtitle": "url",
+          "body": "summary"
+        }
+      }
+    }
+  ]
+}
