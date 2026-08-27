@@ -42,6 +42,165 @@
         "submitLabel": "Use",
         "fields": [{ "name": "key", "type": "text", "label": "Workspace key", "required": true }]
       }
+    },
+    {
+      "id": "workspace.board",
+      "description": "Show the Kanban board for the current workspace: every work item grouped into BACKLOG, TODO, IN_PROGRESS, IN_REVIEW and DONE.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceKey": {
+            "type": "string",
+            "description": "Optional workspace key; defaults to the current one."
+          }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Board",
+        "icon": "columns",
+        "resultPath": "items",
+        "emptyText": "The board is empty.",
+        "item": { "id": "id", "title": "title", "subtitle": "subtitle" }
+      }
+    },
+    {
+      "id": "workspace.backlog",
+      "description": "Show the product backlog for the current workspace, in backlog order.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceKey": {
+            "type": "string",
+            "description": "Optional workspace key; defaults to the current one."
+          }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Backlog",
+        "icon": "list",
+        "resultPath": "items",
+        "emptyText": "The backlog is empty.",
+        "item": { "id": "id", "title": "title", "subtitle": "subtitle" }
+      }
+    },
+    {
+      "id": "workspace.my-items",
+      "description": "List work items assigned to me across every workspace, soonest due first.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Optional status filter: BACKLOG, TODO, IN_PROGRESS, IN_REVIEW or DONE."
+          }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "My items",
+        "icon": "check-square",
+        "resultPath": "items",
+        "emptyText": "Nothing is assigned to you.",
+        "item": { "id": "id", "title": "title", "subtitle": "subtitle" }
+      }
+    },
+    {
+      "id": "workspace.search-items",
+      "description": "Search work items in the current workspace by title.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "description": "Text to match against work item titles." },
+          "workspaceKey": {
+            "type": "string",
+            "description": "Optional workspace key; defaults to the current one."
+          }
+        },
+        "required": ["q"]
+      },
+      "ui": {
+        "block": "list",
+        "label": "Search items",
+        "icon": "search",
+        "resultPath": "items",
+        "emptyText": "No matching work items.",
+        "item": { "id": "id", "title": "title", "subtitle": "subtitle" }
+      }
+    },
+    {
+      "id": "workspace.get-item",
+      "description": "Show one work item in full, by its numeric id.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "number", "description": "The work item's numeric id." }
+        },
+        "required": ["itemId"]
+      },
+      "ui": {
+        "block": "detail",
+        "label": "Work item",
+        "icon": "file",
+        "item": { "title": "title", "body": "body", "meta": ["status", "priority", "due"] }
+      }
+    },
+    {
+      "id": "workspace.sprints",
+      "description": "List the sprints in the current workspace.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceKey": {
+            "type": "string",
+            "description": "Optional workspace key; defaults to the current one."
+          }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Sprints",
+        "icon": "calendar",
+        "resultPath": "sprints",
+        "emptyText": "No sprints.",
+        "item": { "id": "id", "title": "name", "subtitle": "status" }
+      }
+    },
+    {
+      "id": "workspace.members",
+      "description": "List the members of the current workspace. Used to populate assignee pickers.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspaceKey": {
+            "type": "string",
+            "description": "Optional workspace key; defaults to the current one."
+          }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Members",
+        "icon": "users",
+        "resultPath": "members",
+        "emptyText": "No members.",
+        "item": { "id": "account_id", "title": "displayName", "subtitle": "role" }
+      }
     }
   ],
   "config": {
