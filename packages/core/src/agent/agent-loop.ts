@@ -607,6 +607,29 @@ export function buildSystemPrompt(input: AgentLoopInput): string {
     '\nA message can contain several separate things to record — money, food, reminders, tasks. Handle each one with its own tool call. Call a tool, read the result, then continue with the next part. Only reply once every part is done.'
   );
 
+  // ─── Asking vs telling ────────────────────────────────────────────────────
+  //
+  // "give me 10 healthy low calorie recipes" put the *question* into the food
+  // diary: the selector picked `health` because the message said calories, and
+  // the model reached for the most prominent skill there — "I have logged '10
+  // healthy low calorie recipes to try' as a snack." The same tunnel produced
+  // the opposite failure on another run: "I do not have a database of recipes.
+  // I can only assist with logging, summarizing, or deleting your health
+  // entries" — reporting its tool inventory as the limit of what it can do.
+  //
+  // Both come from the same missing distinction. Tools are how TARDIS *acts*;
+  // they are not the boundary of what it can *answer*.
+  const hasWebSearch = input.availableTools.some((t) => t.name === 'web.search');
+  lines.push('\n## Asking is not recording');
+  lines.push(
+    '- When the user asks for information, ideas, a recipe, an explanation or a recommendation, answer them and record nothing. Write tools are for what the user tells you happened, or asks you to set up.'
+  );
+  lines.push(
+    hasWebSearch
+      ? '- Never decline because no tool covers a question. Answer from what you know, or use web.search when it is something you could not know. Saying you only handle logging or that you lack a database is wrong.'
+      : '- Never decline because no tool covers a question. Answer it from what you know. Saying you only handle logging or that you lack a database is wrong.'
+  );
+
   lines.push('\n## Response style');
   lines.push(
     'These rules govern how you word your reply. They never decide whether to call a tool — if a tool is needed, call it first, then apply these to the wording.'
