@@ -22,6 +22,8 @@ export const ToolDefinitionSchema = z.object({
   description: z.string().min(1),
   parameters: z.record(z.unknown()),
   actionType: ActionTypeSchema,
+  /** See `mutates` on SkillDefinitionSchema. Derived, never authored here. */
+  mutates: z.boolean().optional(),
 });
 
 // ─── UI descriptors (Phase C — see UI-CONTRACT.md) ───────────────────────────
@@ -174,6 +176,19 @@ export const SkillDefinitionSchema = z.object({
   /** When false the agent loop never sees this skill — it is invocable only directly. */
   aiInvocable: z.boolean().default(true),
   actionType: ActionTypeSchema.default('direct'),
+  /**
+   * Whether running this skill changes anything.
+   *
+   * A separate axis from `actionType`, which grades **how much ceremony an
+   * action needs**. Read-only mode needs the other question — **does it change
+   * anything** — and `direct` answers it for neither `budget.this-month` nor
+   * `budget.add-entry`.
+   *
+   * Omitted, it is derived: a `workflow` skill mutates, a `direct` skill does
+   * not. Every existing manifest therefore stays valid, and only a direct skill
+   * that writes has to say so.
+   */
+  mutates: z.boolean().optional(),
   /** JSON Schema. The single argument contract shared by the LLM and the UI. */
   parameters: z.record(z.unknown()),
   /** Additive to the plugin's own permissions. */
@@ -190,6 +205,19 @@ export const ProactiveTriggerSchema = z.object({
   defaultEnabled: z.boolean(),
   handler: z.string().min(1),
 });
+
+/**
+ * Does this skill change anything?
+ *
+ * An explicit declaration wins. Otherwise it is derived from the ceremony the
+ * skill asked for: needing approval implies there is something to approve.
+ */
+export function resolveMutates(skill: {
+  mutates?: boolean | undefined;
+  actionType: z.infer<typeof ActionTypeSchema>;
+}): boolean {
+  return skill.mutates ?? skill.actionType === 'workflow';
+}
 
 /**
  * Raw manifest as authored on disk.
@@ -253,15 +281,20 @@ export const PluginManifestSchema = PluginManifestInputSchema.superRefine((m, ct
     });
   }
 }).transform((m) => {
-  const skills: z.infer<typeof SkillDefinitionSchema>[] =
+  const authored: z.infer<typeof SkillDefinitionSchema>[] =
     m.skills ??
     (m.tools ?? []).map((t) => ({
       id: t.name,
       description: t.description,
       aiInvocable: true,
       actionType: t.actionType,
+      mutates: t.mutates,
       parameters: t.parameters,
     }));
+
+  // Resolve `mutates` once, here, so nothing downstream has to remember the
+  // derivation rule — or worse, guess differently.
+  const skills = authored.map((s) => ({ ...s, mutates: resolveMutates(s) }));
 
   const summary = m.summary ?? m.skillSummary ?? '';
 
@@ -272,6 +305,7 @@ export const PluginManifestSchema = PluginManifestInputSchema.superRefine((m, ct
       description: s.description,
       parameters: s.parameters,
       actionType: s.actionType,
+      mutates: s.mutates,
     }));
 
   const { skillSummary: _deprecatedSummary, ...rest } = m;

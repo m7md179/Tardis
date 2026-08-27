@@ -40,6 +40,7 @@ export {
   ProactiveTriggerSchema,
   PluginManifestSchema,
   PluginManifestInputSchema,
+  resolveMutates,
 } from './schemas/plugin.js';
 export { AgentStepSchema, ThoughtTraceSchema, AgentConfigSchema } from './schemas/agent.js';
 export { MemoryTypeSchema, MemoryEntrySchema } from './schemas/memory.js';

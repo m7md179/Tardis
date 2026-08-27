@@ -121,3 +121,55 @@ describe('resolvePermission', () => {
     ).toBe('allow');
   });
 });
+
+// ─── Read-only mode ──────────────────────────────────────────────────────────
+//
+// The second axis. `direct` covers both `budget.this-month` and
+// `budget.add-entry`, so nothing above this point can express "let me look but
+// not touch" — which is exactly what the old roadmap called a cheap preset.
+
+describe('read-only mode', () => {
+  it('lets a declared read through untouched', () => {
+    expect(
+      resolvePermission('budget.this-month', 'direct', {}, { mutates: false, readOnly: true })
+    ).toBe('allow');
+  });
+
+  it('denies a direct skill that declares it writes', () => {
+    expect(
+      resolvePermission('budget.add-entry', 'direct', {}, { mutates: true, readOnly: true })
+    ).toBe('deny');
+  });
+
+  it('denies an unclassified tool, because the cost of guessing runs one way', () => {
+    expect(resolvePermission('unknown.thing', 'direct', {}, { readOnly: true })).toBe('deny');
+  });
+
+  it('cannot be cancelled by a per-tool allow rule', () => {
+    // A safety switch some other line of config can quietly void is not a
+    // safety switch. This is the same one-way principle as the baseline.
+    expect(
+      resolvePermission(
+        'budget.add-entry',
+        'direct',
+        { 'budget.add-entry': 'allow', '*': 'allow' },
+        { mutates: true, readOnly: true }
+      )
+    ).toBe('deny');
+  });
+
+  it('changes nothing when it is off', () => {
+    expect(
+      resolvePermission('budget.add-entry', 'direct', {}, { mutates: true, readOnly: false })
+    ).toBe('allow');
+    expect(resolvePermission('budget.add-entry', 'direct', {}, { mutates: true })).toBe('allow');
+  });
+
+  it('still asks for a workflow read rather than allowing it outright', () => {
+    // Contrived but worth pinning: read-only lowers nothing. A skill that
+    // declared it needs approval keeps needing approval.
+    expect(
+      resolvePermission('notes.preview-export', 'workflow', {}, { mutates: false, readOnly: true })
+    ).toBe('ask');
+  });
+});

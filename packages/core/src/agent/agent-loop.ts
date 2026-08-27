@@ -407,17 +407,29 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       // Calling *a* tool is not evidence: "Delete my most recent budget entry."
       // made the model run budget.this-month, delete nothing, and answer "I have
       // deleted the most recent budget entry" — 1 live run in 3. What counts is
-      // whether anything reported doing something. Plugins follow the Result
-      // pattern this project mandates, so mutating skills return `success` and
-      // queries return plain data; that holds for every skill across all eight
-      // plugins, which makes it a contract rather than a guess.
-      const recordedSomething = steps.some(
-        (s) =>
-          s.type === 'tool_result' &&
+      // whether anything reported doing something.
+      //
+      // Two signals, and both must agree:
+      //
+      //  - A skill that *declares* `mutates: false` can never validate a
+      //    completion claim, however cheerful its return value. That is the
+      //    declaration doing work the runtime check could not: it rules out
+      //    `budget.this-month` before the call, rather than hoping its result
+      //    happens to omit a `success` field.
+      //  - The result must still report success, because a delete that threw is
+      //    not a delete that happened. Plugins follow the Result pattern this
+      //    project mandates, so mutating skills return `success` — the runtime
+      //    half stays as the fallback for anything unclassified.
+      const recordedSomething = steps.some((s) => {
+        if (s.type !== 'tool_result') return false;
+        const declared = input.availableTools.find((t) => t.name === s.toolName);
+        if (declared?.mutates === false) return false;
+        return (
           typeof s.toolResult === 'object' &&
           s.toolResult !== null &&
           (s.toolResult as Record<string, unknown>)['success'] === true
-      );
+        );
+      });
       if (
         tools !== undefined &&
         !recordedSomething &&
@@ -499,7 +511,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       const permission = resolvePermission(
         toolName,
         tool?.actionType ?? 'direct',
-        input.config.actionOverrides
+        input.config.actionOverrides,
+        { mutates: tool?.mutates, readOnly: input.config.readOnly }
       );
 
       steps.push({

@@ -30,6 +30,7 @@ export const MEMORY_TOOLS: ToolDefinition[] = [
       required: ['key', 'value'],
     },
     actionType: 'direct',
+    mutates: true,
   },
   {
     name: 'memory.recall',
@@ -46,6 +47,7 @@ export const MEMORY_TOOLS: ToolDefinition[] = [
       required: ['query'],
     },
     actionType: 'direct',
+    mutates: false,
   },
   {
     name: 'memory.forget',
@@ -61,6 +63,7 @@ export const MEMORY_TOOLS: ToolDefinition[] = [
       required: ['key'],
     },
     actionType: 'direct',
+    mutates: true,
   },
 ];
 

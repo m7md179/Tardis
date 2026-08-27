@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import { ToolRouter } from './tool-router.js';
 import type { PluginManager } from '../plugins/plugin-manager.js';
 import { PluginManifestSchema } from '@tardis/shared';
-import type { PluginManifest } from '@tardis/shared';
+import type { PluginManifestInput, PluginManifest } from '@tardis/shared';
 
 // ─── Mock PluginManager ───────────────────────────────────────────────────────
 
@@ -36,7 +36,12 @@ function makeMockManager(plugins: MockPlugin[]): PluginManager {
   } as unknown as PluginManager;
 }
 
-function makeManifest(pluginName: string, tools: PluginManifest['tools']): PluginManifest {
+// Fixtures are *authored* manifests, so they take the input shape — the parsed
+// output resolves `mutates` and is therefore not what a caller writes by hand.
+function makeManifest(
+  pluginName: string,
+  tools: NonNullable<PluginManifestInput['tools']>
+): PluginManifest {
   return PluginManifestSchema.parse({
     name: pluginName,
     version: '1.0.0',

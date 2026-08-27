@@ -42,4 +42,12 @@ export const AgentConfigSchema = z.object({
    * config keeps working: they read as `allow` and `ask`.
    */
   actionOverrides: z.record(z.union([PermissionSchema, ActionTypeSchema])).default({}),
+  /**
+   * Nothing that changes state may run. Applied after the rules above, so no
+   * per-tool `allow` can cancel it.
+   *
+   * This needs the `mutates` axis on skills to mean anything — grading ceremony
+   * cannot distinguish `budget.this-month` from `budget.add-entry`.
+   */
+  readOnly: z.boolean().default(false),
 });

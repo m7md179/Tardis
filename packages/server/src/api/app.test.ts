@@ -23,6 +23,7 @@ const BASE_CONFIG: SystemConfig = {
     memoryTokenBudget: 2000,
     enableFallbackIntent: false,
     actionOverrides: {},
+    readOnly: false,
   },
   proactive: { enabled: false },
   rateLimit: { enabled: false, windowMs: 60000, maxRequests: 120, maxLoginAttempts: 5 },
@@ -840,6 +841,95 @@ describe('POST /api/skills/:id/invoke', () => {
       expect(res.status).toBe(409);
       expect((await res.json()) as { code: string }).toMatchObject({ code: 'APPROVAL_REQUIRED' });
       expect(called).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ─── Read-only mode ─────────────────────────────────────────────────────
+  //
+  // Read-only is a property of the installation, not of the agent loop. A
+  // skill reached over HTTP is the same skill; a switch the UI can step
+  // around is not a switch.
+
+  const READ_ONLY_CONFIG: SystemConfig = {
+    ...BASE_CONFIG,
+    agent: { ...BASE_CONFIG.agent, readOnly: true },
+  };
+
+  function budgetManifest(): PluginManifest {
+    return PluginManifestSchema.parse({
+      name: 'budget',
+      version: '1.0.0',
+      displayName: 'budget',
+      description: 'budget plugin',
+      tier: 1,
+      main: 'index.ts',
+      summary: 'budget skills',
+      permissions: [],
+      skills: [
+        {
+          id: 'budget.this-month',
+          description: "List this month's spending",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          id: 'budget.add-entry',
+          description: 'Record a spend',
+          mutates: true,
+          parameters: { type: 'object', properties: {} },
+        },
+      ],
+    });
+  }
+
+  async function readOnlyApp(onExecute: () => void) {
+    return makeApp({
+      config: READ_ONLY_CONFIG,
+      pluginManager: makeMockPluginManager([budgetManifest()]),
+      toolRouter: {
+        execute: async () => {
+          onExecute();
+          return { success: true as const, data: { ok: true } };
+        },
+      } as unknown as AppDeps['toolRouter'],
+    });
+  }
+
+  it('refuses a skill that changes state', async () => {
+    let called = false;
+    const { app, cleanup } = await readOnlyApp(() => {
+      called = true;
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/budget.add-entry/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: {} }),
+      });
+      expect(res.status).toBe(403);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'READ_ONLY' });
+      expect(called).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('still runs a skill that only reads — the whole point of the second axis', async () => {
+    let called = false;
+    const { app, cleanup } = await readOnlyApp(() => {
+      called = true;
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/budget.this-month/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: {} }),
+      });
+      expect(res.status).toBe(200);
+      expect(called).toBe(true);
     } finally {
       cleanup();
     }

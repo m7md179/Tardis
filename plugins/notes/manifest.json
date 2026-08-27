@@ -16,6 +16,7 @@
       "description": "Save a new note or overwrite an existing one with the same title. Use when the user wants to remember something.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {

@@ -4,6 +4,7 @@ import type { AgentLoopInput } from './agent-loop.js';
 import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 import { contentToText } from '../llm/provider.js';
 import type { AgentConfig, ToolDefinition } from '@tardis/shared';
+import { CLARIFY_TOOL } from './clarify.js';
 
 // ─── Shared test fixtures ─────────────────────────────────────────────────────
 
@@ -13,6 +14,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   memoryTokenBudget: 2000,
   enableFallbackIntent: false,
   actionOverrides: {},
+  readOnly: false,
 };
 
 const DIRECT_TOOL: ToolDefinition = {
@@ -899,6 +901,97 @@ describe('runAgentLoop: claim-vs-reality guard', () => {
     expect(calls).toBe(2);
     expect(result.response).toBe('Reminder set.');
     expect(result.trace.steps.some((s) => s.type === 'error')).toBe(false);
+  });
+
+  // ─── The declared axis ──────────────────────────────────────────────────
+  //
+  // Before `mutates` existed the guard had one signal: did any result report
+  // success. That let a *read* vouch for a *write* — the live 1-in-3 failure
+  // where "Delete my most recent budget entry." ran budget.this-month, deleted
+  // nothing, and answered "I have deleted the most recent budget entry."
+
+  it('does not let a declared read vouch for a claimed write', async () => {
+    const READ_TOOL: ToolDefinition = {
+      name: 'budget.this-month',
+      description: 'List this month\'s spending',
+      parameters: { type: 'object', properties: {} },
+      actionType: 'direct',
+      mutates: false,
+    };
+
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.this-month', {}),
+      textResponse('I have deleted the most recent budget entry.'),
+      textResponse('I could not delete anything — nothing here does that.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [READ_TOOL],
+        userMessage: 'Delete my most recent budget entry.',
+        // A cheerful result from a skill that changes nothing. Under the old
+        // guard this `success: true` was enough to wave the claim through.
+        executeTool: async () => ({ success: true, entries: [], total: 0 }),
+      })
+    );
+
+    const errStep = result.trace.steps.find((s) => s.type === 'error');
+    expect(errStep?.content).toContain('no tool reported carrying it out');
+    expect(result.response).toBe('I could not delete anything — nothing here does that.');
+  });
+
+  it('accepts a declared write that reported success', async () => {
+    const WRITE_TOOL: ToolDefinition = {
+      name: 'budget.add-entry',
+      description: 'Record a spend',
+      parameters: { type: 'object', properties: { amount: { type: 'number' } } },
+      actionType: 'direct',
+      mutates: true,
+    };
+
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.add-entry', { amount: 3 }),
+      textResponse('Done.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WRITE_TOOL],
+        executeTool: async () => ({ success: true, message: 'Recorded 3 JOD.' }),
+      })
+    );
+
+    expect(result.response).toBe('Done.');
+    expect(result.trace.steps.some((s) => s.type === 'error')).toBe(false);
+  });
+
+  it('still requires success from a declared write, so a failed delete stays a failed delete', async () => {
+    const WRITE_TOOL: ToolDefinition = {
+      name: 'budget.delete-entry',
+      description: 'Delete a spend',
+      parameters: { type: 'object', properties: {} },
+      actionType: 'direct',
+      mutates: true,
+    };
+
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.delete-entry', {}),
+      textResponse('I have deleted that entry.'),
+      textResponse('That entry does not exist, so nothing was deleted.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WRITE_TOOL],
+        executeTool: async () => ({ success: false, message: 'No such entry.' }),
+      })
+    );
+
+    expect(result.trace.steps.some((s) => s.type === 'error')).toBe(true);
+    expect(result.response).toBe('That entry does not exist, so nothing was deleted.');
   });
 
   it('does not retry when no tools are available at all', async () => {
@@ -1995,5 +2088,123 @@ describe('runAgentLoop: permissions', () => {
 
     expect(executed).toEqual(['budget.this-month']);
     expect(result.response).toBe('Done.');
+  });
+});
+
+// ─── Read-only mode ───────────────────────────────────────────────────────────
+//
+// The payoff of the `mutates` axis. The obvious preset over permissions —
+// `{ '*': 'deny' }` — silences reading too, because `direct` covers both
+// `budget.this-month` and `budget.add-entry`.
+
+describe('runAgentLoop: read-only mode', () => {
+  const READ_TOOL: ToolDefinition = {
+    name: 'budget.this-month',
+    description: "List this month's spending",
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+    mutates: false,
+  };
+
+  const WRITE_TOOL: ToolDefinition = {
+    name: 'budget.add-entry',
+    description: 'Record a spend',
+    parameters: { type: 'object', properties: { amount: { type: 'number' } } },
+    actionType: 'direct',
+    mutates: true,
+  };
+
+  const readOnly: AgentConfig = { ...DEFAULT_CONFIG, readOnly: true };
+
+  it('runs a read without asking', async () => {
+    let executed = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.this-month', {}),
+      textResponse('You have spent 12 JOD this month.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [READ_TOOL],
+        config: readOnly,
+        executeTool: async () => {
+          executed++;
+          return { entries: [], total: 12 };
+        },
+      })
+    );
+
+    expect(executed).toBe(1);
+    expect(result.response).toBe('You have spent 12 JOD this month.');
+  });
+
+  it('refuses a write, and lets the model say so rather than throwing', async () => {
+    let executed = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.add-entry', { amount: 3 }),
+      textResponse('I am in read-only mode, so I cannot record that.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WRITE_TOOL],
+        config: readOnly,
+        executeTool: async () => {
+          executed++;
+          return { success: true };
+        },
+      })
+    );
+
+    expect(executed).toBe(0);
+    const refusal = result.trace.steps.find((s) => s.type === 'tool_result');
+    expect((refusal?.toolResult as Record<string, unknown>)['denied']).toBe(true);
+    expect(result.response).toBe('I am in read-only mode, so I cannot record that.');
+  });
+
+  it('refuses an unclassified tool, because the cost of guessing runs one way', async () => {
+    const UNCLASSIFIED: ToolDefinition = {
+      name: 'legacy.do-thing',
+      description: 'Does something, nobody said what',
+      parameters: { type: 'object', properties: {} },
+      actionType: 'direct',
+    };
+    let executed = 0;
+    const llm = makeScriptedLLM([
+      toolCallResponse('legacy.do-thing', {}),
+      textResponse('Not permitted right now.'),
+    ]);
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [UNCLASSIFIED],
+        config: readOnly,
+        executeTool: async () => {
+          executed++;
+          return { success: true };
+        },
+      })
+    );
+
+    expect(executed).toBe(0);
+  });
+
+  it('keeps clarify available — the alternative to asking is guessing', async () => {
+    const llm = makeScriptedLLM([
+      toolCallResponse(CLARIFY_TOOL.name, { question: 'Which month did you mean?' }),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [READ_TOOL, CLARIFY_TOOL],
+        config: readOnly,
+      })
+    );
+
+    expect(result.response).toBe('Which month did you mean?');
   });
 });

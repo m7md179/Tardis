@@ -379,6 +379,7 @@ export function createApp(deps: AppDeps): Hono {
         description: s.description,
         aiInvocable: s.aiInvocable,
         actionType: s.actionType,
+        mutates: s.mutates,
         parameters: s.parameters,
         ui: s.ui ?? null,
       })),
@@ -404,6 +405,20 @@ export function createApp(deps: AppDeps): Hono {
       args = body.args ?? {};
     } catch {
       // No body is fine for zero-argument skills.
+    }
+
+    // Read-only mode is a property of the installation, not of the agent loop.
+    // A skill reached over HTTP is the same skill; a switch the UI can step
+    // around is not a switch.
+    if (deps.config.agent.readOnly && skill.mutates !== false) {
+      return c.json(
+        {
+          success: false,
+          code: 'READ_ONLY',
+          error: `Skill "${id}" changes state, and TARDIS is in read-only mode`,
+        },
+        403
+      );
     }
 
     // A workflow skill must not execute just because it was reached over HTTP

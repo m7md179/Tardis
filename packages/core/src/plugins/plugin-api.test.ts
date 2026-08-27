@@ -31,6 +31,7 @@ const MOCK_CONFIG: SystemConfig = {
     memoryTokenBudget: 2000,
     enableFallbackIntent: true,
     actionOverrides: {},
+    readOnly: false,
   },
   proactive: { enabled: true },
   rateLimit: { enabled: false, windowMs: 60000, maxRequests: 120, maxLoginAttempts: 5 },

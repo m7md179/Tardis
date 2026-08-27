@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { PluginManifestSchema } from './plugin.js';
+import { PluginManifestSchema, resolveMutates } from './plugin.js';
 
 // ─── Manifest normalization (Phase B, see SKILLS.md) ─────────────────────────
 //
@@ -276,5 +276,71 @@ describe('SkillUiDescriptorSchema: the escape hatch', () => {
         uiManifest({ block: 'list', label: 'Meals', custom: { mobile: 'x.tsx' } })
       )
     ).toThrow(/requires an .*item.* descriptor/);
+  });
+});
+
+// ─── The `mutates` axis ──────────────────────────────────────────────────────
+//
+// `actionType` grades how much ceremony an action needs. `mutates` answers a
+// different question — does it change anything — and read-only mode needs the
+// second one, because `direct` covers both `budget.this-month` and
+// `budget.add-entry`.
+
+describe('resolveMutates', () => {
+  it('takes the skill at its word when it declares', () => {
+    expect(resolveMutates({ mutates: true, actionType: 'direct' })).toBe(true);
+    expect(resolveMutates({ mutates: false, actionType: 'workflow' })).toBe(false);
+  });
+
+  it('derives from ceremony when it does not', () => {
+    // Needing approval implies there is something to approve.
+    expect(resolveMutates({ actionType: 'workflow' })).toBe(true);
+    expect(resolveMutates({ actionType: 'direct' })).toBe(false);
+  });
+});
+
+describe('PluginManifestSchema: mutates', () => {
+  const withSkill = (skill: Record<string, unknown>) => ({
+    ...BASE,
+    summary: 'Set timed reminders',
+    skills: [
+      {
+        id: 'reminders.set-reminder',
+        description: 'Set a reminder',
+        parameters: { type: 'object', properties: {} },
+        ...skill,
+      },
+    ],
+  });
+
+  it('resolves to a boolean on every skill, so nothing downstream re-derives it', () => {
+    const derived = PluginManifestSchema.parse(withSkill({}));
+    expect(derived.skills[0]!.mutates).toBe(false);
+
+    const declared = PluginManifestSchema.parse(withSkill({ mutates: true }));
+    expect(declared.skills[0]!.mutates).toBe(true);
+  });
+
+  it('carries the resolved value onto the derived tools array', () => {
+    // The agent loop reads `tools`, not `skills`. If the flag stopped here the
+    // claim guard and read-only mode would both silently see undefined.
+    const m = PluginManifestSchema.parse(withSkill({ mutates: true }));
+    expect(m.tools[0]!.mutates).toBe(true);
+  });
+
+  it('lets a direct skill declare that it writes — the case that motivated this', () => {
+    const m = PluginManifestSchema.parse(withSkill({ actionType: 'direct', mutates: true }));
+    expect(m.skills[0]!.actionType).toBe('direct');
+    expect(m.skills[0]!.mutates).toBe(true);
+  });
+
+  it('leaves an existing manifest that says nothing entirely valid', () => {
+    const m = PluginManifestSchema.parse({
+      ...BASE,
+      skillSummary: 'Set timed reminders',
+      tools: [LEGACY_TOOL],
+    });
+    expect(m.skills[0]!.mutates).toBe(false);
+    expect(m.tools[0]!.mutates).toBe(false);
   });
 });

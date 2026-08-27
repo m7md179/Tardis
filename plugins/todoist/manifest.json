@@ -63,6 +63,7 @@
       "description": "Create a new task in Todoist.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -141,6 +142,7 @@
       "description": "Mark a task as complete using fuzzy name matching.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -159,6 +161,7 @@
       "description": "Update an existing task's content, description, due date, or priority.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {

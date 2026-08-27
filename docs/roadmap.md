@@ -20,8 +20,8 @@ just as hard to conversation state, permissions and scheduling.
 | # | Change | State |
 |---|---|---|
 | 0 | Graded permissions — allow/ask/deny | **done** — 802 tests, verified live |
-| 1 | Conversation history survives a refresh | next |
-| 2 | `mutates` on skills → read-only mode | queued |
+| 1 | Conversation history survives a refresh | **done** — 816 tests, verified live |
+| 2 | `mutates` on skills → read-only mode | **done** — 837 tests, 3/3 live on three cases |
 | 3 | Hybrid vector memory | queued |
 | 4 | Turn filters | queued |
 | 5 | rrule scheduling | queued |
@@ -177,7 +177,38 @@ Keep the runtime check as a fallback for plugins that do not declare.
 ### Files
 
 `packages/shared/src/schemas/plugin.ts`, `permissions.ts`, `agent-loop.ts`,
-all eight `plugins/*/manifest.json`.
+all nine `plugins/*/manifest.json`.
+
+### What was built
+
+`mutates` is optional on the manifest and **resolved once**, in the schema
+transform, so `PluginManifest.skills[].mutates` and the derived `tools[].mutates`
+are always a boolean and nothing downstream re-derives the rule. 25 direct
+skills across seven plugins now declare that they write; the other 30 keep the
+derived default.
+
+Read-only lives in `AgentConfig.readOnly` and is applied **after** grading, as a
+floor rather than a rule — a `{"budget.add-entry": "allow"}` line cannot cancel
+it. An unclassified tool is treated as mutating: refusing a harmless read is an
+inconvenience, running an unclassified write in read-only mode is the bug
+read-only exists to prevent.
+
+It is enforced in two places, because a switch the UI can step around is not a
+switch: the agent loop, and `POST /api/skills/:id/invoke`, which returns
+`403 READ_ONLY`. `clarify` declares `mutates: false` and stays available — the
+alternative to asking is guessing.
+
+The claim guard now takes two signals that must agree: a skill declaring
+`mutates: false` can never validate a completion claim however cheerful its
+return value, and the result must still report success. That kills the exact
+live failure — "Delete my most recent budget entry." ran `budget.this-month`,
+deleted nothing, and answered "I have deleted the most recent budget entry" —
+by declaration rather than by luck about whether a read happens to omit a
+`success` field.
+
+Verified against the live Gemma, three runs each: a write refused under
+read-only 3/3, a read still running 3/3, and the false-delete claim answered
+truthfully 3/3.
 
 ---
 
