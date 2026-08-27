@@ -667,3 +667,46 @@ multi-intent, query and plain chat.
   sessions. There is no real spending or food history yet — a clean slate is one wipe away.
 - The photo-estimation path and the Todoist / Google Calendar credentials remain unverified,
   as before.
+
+---
+
+## 2026-08-27 — docs/roadmap.md, all seven items
+
+**Verified true before starting:** main at `1821174`, 816 tests green, `bun run
+build` failing on `@tardis/cli` (two stale identifiers, reproduced on clean
+main). Roadmap items 2–7 outstanding.
+
+**Built** on `phase-7/mutates-and-read-only`, one commit each:
+
+| # | Change |
+|---|---|
+| 2 | `mutates` on skills → read-only mode is expressible; claim guard stops guessing |
+| 3 | Hybrid memory: keyword + vectors, margin-gated |
+| 4 | Turn filters — `onTurnStart`/`onTurnEnd` from plugin module exports |
+| 5 | rrule schedules alongside cron, and a stored `next_run_at` |
+| 6 | Described plugin settings: defaults that work, validation, a form contract |
+| 7 | OpenAPI 3.1 at `/doc`, kept honest against Hono's route table |
+
+**Evidence.** 1008 tests (from 816), clean build, **0 lint errors** across the
+monorepo for the first time. Live against the Gemma in CT 106: read-only refuses
+a write and allows a read 3/3; the false-delete claim is caught 3/3. Live
+against `nomic-embed-text`: 8/8 paraphrases retrieved, 10/10 unanswerable
+questions stayed quiet. Redocly: *"Your API description is valid"*;
+`openapi-typescript` generated 1,963 lines of client types that compile under
+`--strict`.
+
+**Two plans changed on measurement**, both written up in `docs/roadmap.md`:
+sqlite-vec cannot load under Bun and an absolute similarity floor cannot
+separate signal from noise (a margin can); and rrule's TZID is silently wrong
+without luxon.
+
+**What the end-to-end run caught that the tests did not.** Booting the assembled
+server and driving it through its own API found the claim guard letting *"I have
+recorded a spend of 3 JOD"* through after read-only had denied the write — its
+verb list had `logged` but not `recorded`. Fixed, pinned, and re-measured 5/5
+truthful on a clean database. The rule from earlier phases, earned again: a
+green suite is not evidence about a model.
+
+**Next:** merge to main and deploy. Still open from before: the test-data wipe
+(`/root/reset-test-data.js`), `/opt/tardis-app` not being a git repo, the mobile
+chat screen, and confirming an approval from anywhere but Telegram.
