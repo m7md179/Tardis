@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { jwt, sign } from 'hono/jwt';
 import { randomUUID } from 'crypto';
 import { eq, desc, like, or, memories, thoughtTraces } from '@tardis/db';
+import { buildOpenApiDocument } from './openapi.js';
 import {
   ThoughtTracer,
   OllamaAdapter,
@@ -53,7 +54,12 @@ export interface AppDeps {
   memoryStore?: import('@tardis/core').MemoryStore;
   /** Persists one plugin setting. Without it, settings are read-only. */
   persistConfig?: (pluginName: string, key: string, value: unknown) => Promise<void>;
+  /** Base URL to advertise in the published OpenAPI document, if TARDIS knows one. */
+  publicUrl?: string;
 }
+
+/** Version reported by GET /doc. Tracks the server package. */
+const API_VERSION = '2.0.0';
 
 interface OllamaTagsResponse {
   models?: Array<{ name?: string }>;
@@ -176,6 +182,20 @@ export function createApp(deps: AppDeps): Hono {
   // ─── Public routes ────────────────────────────────────────────────────────
 
   app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
+
+  // ─── Published API description (public) ───────────────────────────────────
+  //
+  // Outside /api, so it sits outside the JWT middleware: a generated client
+  // needs the schema before it has a token. It describes the surface, it does
+  // not expose it — every endpoint in it still requires auth.
+  app.get('/doc', (c) =>
+    c.json(
+      buildOpenApiDocument({
+        version: API_VERSION,
+        ...(deps.publicUrl ? { serverUrl: deps.publicUrl } : {}),
+      })
+    )
+  );
 
   // ─── Auth login (public) ────────────────────────────────────────────────
 

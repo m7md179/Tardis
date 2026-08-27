@@ -223,6 +223,11 @@ async function main(): Promise<void> {
     pluginManager,
     saveConfig,
     persistConfig,
+    // Advertised in the published OpenAPI document so a generated client has a
+    // base URL. Absent is fine — a generator then asks for one.
+    ...(process.env['TARDIS_PUBLIC_URL']
+      ? { publicUrl: process.env['TARDIS_PUBLIC_URL'] }
+      : {}),
     scheduler,
     memoryStore,
     ...(memoryIndexer ? { memoryIndexer } : {}),

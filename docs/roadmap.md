@@ -26,7 +26,7 @@ just as hard to conversation state, permissions and scheduling.
 | 4 | Turn filters | **done** — 919 tests |
 | 5 | rrule scheduling | **done** — 950 tests |
 | 6 | Typed plugin config | **done** — 993 tests |
-| 7 | Published OpenAPI schema | queued |
+| 7 | Published OpenAPI schema | **done** — 1005 tests, client generated |
 
 ---
 
@@ -502,7 +502,57 @@ route definitions; opencode publishes 3.1 at `/doc`.
 Lowest urgency, but it is what makes the mobile app's client generatable rather than
 hand-written.
 
+### What was built, and the tradeoff taken
+
+`GET /doc` serves OpenAPI 3.1 for all 28 endpoints. It sits outside `/api`, so
+it is outside the JWT middleware — a generator needs the schema before it has a
+token. It describes the surface without exposing it; a test checks that
+`/api/plugins` still 401s.
+
+**It is hand-written, not generated from the routes.** `@hono/zod-openapi`
+derives the document and so cannot drift, but adopting it means rewriting all 28
+routes through `createRoute()` — including the SSE stream and the auth
+middleware — a large, risky diff in working code for a documentation feature.
+
+The reason a generated document is better is that a hand-written one rots, so
+**that specific problem is solved directly**: Hono exposes its route table as
+`app.routes`, and the test compares it against the document in both directions.
+An undocumented route fails by name; so does a stale entry left by a rename.
+That check was verified to have teeth by adding a route and watching the suite
+fail. The part still on trust is the *shape* of each request and response, which
+the endpoint tests already cover.
+
+**Validated with Redocly**, not just with my own tests: *"Your API description
+is valid"* with one warning, on `/api/health` having no 4xx — which is correct,
+since it takes no input and needs no auth. The first run had 51 warnings, and
+two of them mattered:
+
+- **No `operationId` on any operation.** A generator names its methods from
+  these, so publishing without them defeats the entire point. All 28 now have
+  readable ids — `invokeSkill`, `sendMessage`, `getHistory` — rather than the
+  mangled paths a generator falls back to.
+- **Schemas inlined rather than `$ref`d.** A generated client then emits a fresh
+  anonymous shape per endpoint instead of a shared `AgentStep`. Now referenced.
+
+Also added a documented `401` to all 26 authed operations: a client with no 401
+case reports an expired token as an unexplained failure.
+
+**Proof it does the job.** `openapi-typescript` turned `/doc` into 1,963 lines
+of client types that compile under `--strict`, with `AgentStep` shared across
+endpoints and methods named the way a person would call them:
+
+```
+checkHealth  login  sendMessage  streamMessage  getHistory  clearHistory  listSkills …
+```
+
 ---
+
+## Where this leaves things
+
+All seven are done. Two changed shape once measurement contradicted the plan —
+vector memory dropped sqlite-vec and replaced a similarity floor with a margin
+test, and rrule dropped TZID after watching it be silently wrong — and both are
+written up above with the numbers that decided them.
 
 ## Not doing
 
