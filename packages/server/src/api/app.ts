@@ -315,6 +315,48 @@ export function createApp(deps: AppDeps): Hono {
     });
   });
 
+  // ─── Conversation history ─────────────────────────────────────────────────
+  //
+  // The server has always stored every message and tool call; nothing exposed
+  // them, so refreshing the web app lost the whole conversation. Turns are
+  // grouped server-side because three clients render them and two would
+  // reassemble tool calls slightly differently.
+
+  app.get('/api/chat/history', async (c) => {
+    const store = deps.conversation?.conversationStore;
+    if (!store) {
+      return c.json({ error: 'History is not configured', code: 'NOT_CONFIGURED' }, 503);
+    }
+
+    const chatId = c.req.query('chatId') ?? 'app';
+    const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '20', 10) || 20, 1), 100);
+    const beforeRaw = c.req.query('before');
+    const before = beforeRaw ? Number(beforeRaw) : undefined;
+
+    const turns = await store.getTurns(
+      chatId,
+      limit,
+      before !== undefined && Number.isFinite(before) ? before : undefined
+    );
+
+    // One extra turn is fetched to answer "is there more" without a count query.
+    const oldest = turns[0]?.at;
+    const hasMore =
+      oldest !== undefined && (await store.getTurns(chatId, 1, oldest)).length > 0;
+
+    return c.json({ chatId, turns, hasMore });
+  });
+
+  app.delete('/api/chat/history', async (c) => {
+    const store = deps.conversation?.conversationStore;
+    if (!store) {
+      return c.json({ error: 'History is not configured', code: 'NOT_CONFIGURED' }, 503);
+    }
+    const chatId = c.req.query('chatId') ?? 'app';
+    await store.clearHistory(chatId);
+    return c.json({ success: true, chatId });
+  });
+
   // ─── Skills ───────────────────────────────────────────────────────────────
   //
   // The generic contract every client renders from. Clients never hardcode

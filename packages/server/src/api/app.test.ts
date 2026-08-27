@@ -1003,3 +1003,123 @@ describe('POST /api/chat/stream: keep-alive', () => {
     expect(dataLines).toHaveLength(0);
   });
 });
+
+// ─── Conversation history ────────────────────────────────────────────────────
+//
+// Refreshing the web app lost everything. The rows were always there — nothing
+// served them.
+
+describe('GET /api/chat/history', () => {
+  function storeWith(turns: unknown[]) {
+    return {
+      conversation: {
+        conversationStore: {
+          getTurns: async (_chatId: string, limit: number, before?: number) => {
+            const all = turns as { at: number }[];
+            const window = before === undefined ? all : all.filter((t) => t.at < before);
+            return window.slice(-limit);
+          },
+          clearHistory: async () => {},
+        },
+      },
+    } as unknown as Partial<AppDeps>;
+  }
+
+  it('returns grouped turns for a chat', async () => {
+    const { app, cleanup } = await makeApp(
+      storeWith([{ id: 't1', at: 100, question: 'hi', steps: [], answer: 'hello' }])
+    );
+    const token = await makeToken();
+
+    const res = await app.request('/api/chat/history?chatId=app', { headers: authHeaders(token) });
+    const body = (await res.json()) as { chatId: string; turns: unknown[]; hasMore: boolean };
+
+    expect(res.status).toBe(200);
+    expect(body.chatId).toBe('app');
+    expect(body.turns).toHaveLength(1);
+    expect(body.hasMore).toBe(false);
+    cleanup();
+  });
+
+  it('reports more when older turns exist', async () => {
+    const { app, cleanup } = await makeApp(
+      storeWith([
+        { id: 't1', at: 100, question: 'old', steps: [], answer: 'a' },
+        { id: 't2', at: 200, question: 'new', steps: [], answer: 'b' },
+      ])
+    );
+    const token = await makeToken();
+
+    const res = await app.request('/api/chat/history?chatId=app&limit=1', {
+      headers: authHeaders(token),
+    });
+    const body = (await res.json()) as { turns: { question: string }[]; hasMore: boolean };
+
+    expect(body.turns.map((t) => t.question)).toEqual(['new']);
+    expect(body.hasMore).toBe(true);
+    cleanup();
+  });
+
+  it('caps limit so one request cannot ask for everything', async () => {
+    const seen: number[] = [];
+    const deps = {
+      conversation: {
+        conversationStore: {
+          getTurns: async (_c: string, limit: number) => {
+            seen.push(limit);
+            return [];
+          },
+          clearHistory: async () => {},
+        },
+      },
+    } as unknown as Partial<AppDeps>;
+    const { app, cleanup } = await makeApp(deps);
+    const token = await makeToken();
+
+    await app.request('/api/chat/history?limit=99999', { headers: authHeaders(token) });
+    expect(seen[0]).toBeLessThanOrEqual(100);
+    cleanup();
+  });
+
+  it('503s rather than pretending when no store is configured', async () => {
+    const { app, cleanup } = await makeApp({});
+    const token = await makeToken();
+    const res = await app.request('/api/chat/history', { headers: authHeaders(token) });
+    expect(res.status).toBe(503);
+    cleanup();
+  });
+
+  it('requires auth — history is the whole conversation', async () => {
+    const { app, cleanup } = await makeApp(storeWith([]));
+    const res = await app.request('/api/chat/history');
+    expect(res.status).toBe(401);
+    cleanup();
+  });
+});
+
+describe('DELETE /api/chat/history', () => {
+  it('clears only the named chat', async () => {
+    const cleared: string[] = [];
+    const deps = {
+      conversation: {
+        conversationStore: {
+          getTurns: async () => [],
+          clearHistory: async (chatId: string) => {
+            cleared.push(chatId);
+          },
+        },
+      },
+    } as unknown as Partial<AppDeps>;
+    const { app, cleanup } = await makeApp(deps);
+    const token = await makeToken();
+
+    const res = await app.request('/api/chat/history?chatId=app', {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    });
+
+    expect(res.status).toBe(200);
+    expect(cleared).toEqual(['app']);
+    cleanup();
+  });
+});
