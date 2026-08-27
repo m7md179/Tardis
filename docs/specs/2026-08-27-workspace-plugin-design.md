@@ -171,7 +171,24 @@ directory resolve normally.
 
 ## 5. Authentication
 
-### Why this works
+### Every request needs an API key
+
+`APIKeyGuard` is registered as a global `APP_GUARD` in the IO server's
+`app.module.ts`. Every route rejects a request without an `x-api-key` header
+matching the server's `API_KEY` — **including `POST /account/login`**, which
+otherwise looks public. Only routes whose path contains `heartbeat` are exempt.
+
+Verified against a local server: `/account/login` returns `403 Forbidden resource`
+without the header and `400 invalid credentials` with it.
+
+This is easy to miss and fails misleadingly: without the key every call returns
+the same `403`, and a `403` on login reads as a wrong password rather than a
+missing header. The client therefore refuses to construct without one, so the
+failure surfaces once at activation instead of on every call.
+
+`apiKey` joins `baseUrl`, `email` and `password` as a required config key.
+
+### Why login works
 
 `POST /account/login` takes `{ email, password }` and returns an access/refresh token
 pair directly. There is no OTP on the login path — OTP is only used for account
@@ -193,6 +210,7 @@ Credentials are user-set and stable; tokens are runtime and rotating. This mirro
 | `config` | `baseUrl` | e.g. `http://localhost:3000` or `https://www.tajalsafainternal.services` |
 | `config` | `email` | |
 | `config` | `password` | plaintext at rest — see below |
+| `config` | `apiKey` | required on every request; also a secret at rest |
 | `config` | `defaultWorkspaceKey` | optional |
 | `storage` | `accessToken` | the refresh token is discarded — see Lifecycle |
 | `storage` | `accountId` | needed to answer "is this item mine?" |
@@ -270,6 +288,8 @@ Your words, mapped to the API. Every field you listed has a home; none needed in
 writes only `assignee_account_ids`; the server keeps the singular in sync.
 
 ### Endpoints used
+
+Every call below additionally carries `x-api-key`.
 
 | Purpose | Call |
 |---|---|
