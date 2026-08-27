@@ -4,7 +4,7 @@ import {
   OpenAIAdapter,
   PluginManager,
   ToolRouter,
-  selectPluginSkills,
+  selectPlugins,
   runAgentLoop,
   createPluginApi,
 } from '@tardis/core';
@@ -38,7 +38,7 @@ export async function runAsk(userMessage: string, dataDir: string): Promise<void
 
   // ─── Skill router → agent loop ──────────────────────────────────────────
   const allManifests = pluginManager.getAllManifests();
-  const { tools, selectedPlugins } = await selectPluginSkills(userMessage, allManifests, llm);
+  const { tools, selectedPlugins } = await selectPlugins(userMessage, allManifests, llm);
 
   const result = await runAgentLoop({
     userMessage,

@@ -30,7 +30,7 @@ export async function runPlugins(dataDir: string): Promise<void> {
   for (const m of manifests) {
     const tierLabel = `Tier ${m.tier}`;
     console.log(`  ${m.displayName} (${m.name})  [${tierLabel}]`);
-    console.log(`    ${m.skillSummary}`);
+    console.log(`    ${m.summary}`);
     console.log(`    Tools: ${m.tools.map((t) => t.name).join(', ') || '(none)'}`);
     console.log();
   }
