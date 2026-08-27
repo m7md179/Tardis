@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { runAgentLoop, buildSystemPrompt } from './agent-loop.js';
+import { runAgentLoop, buildSystemPrompt, recoverTextualToolCall } from './agent-loop.js';
 import type { AgentLoopInput } from './agent-loop.js';
 import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 import { contentToText } from '../llm/provider.js';
@@ -1786,5 +1786,112 @@ describe('runAgentLoop: completion nudge stays internal', () => {
     expect(nudge).toContain('answer my original message normally');
     // The clause that produced the leak must be gone.
     expect(nudge).not.toContain('list everything you did record');
+  });
+});
+
+// ─── A tool call printed as prose ────────────────────────────────────────────
+//
+// Live, 2 runs in 3 on "Remember that I am allergic to peanuts", the model
+// answered with the literal text:
+//
+//   memory.save{key:<|"|>peanut_allergy<|"|>,type:<|"|>user_fact<|"|>,…}
+//
+// `<|"|>` is the chat template's quoting breaking. The tool never ran, the fact
+// was silently lost, and the raw line was handed to the user as the answer. No
+// existing guard caught it: nothing was claimed, so there was no "Done." to
+// match on.
+
+describe('recoverTextualToolCall', () => {
+  const MEMORY: ToolDefinition = {
+    name: 'memory.save',
+    description: 'Save a fact',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+  const TOOLS = [MEMORY];
+
+  it('recovers the exact output seen in production', () => {
+    const text =
+      'memory.save{key:<|"|>peanut_allergy<|"|>,type:<|"|>user_fact<|"|>,value:<|"|>Allergic to peanuts<|"|>}';
+    expect(recoverTextualToolCall(text, TOOLS)).toEqual({
+      toolName: 'memory.save',
+      toolArgs: { key: 'peanut_allergy', type: 'user_fact', value: 'Allergic to peanuts' },
+    });
+  });
+
+  it('recovers well-formed JSON printed as text', () => {
+    const text = 'memory.save{"key": "x", "value": "y"}';
+    expect(recoverTextualToolCall(text, TOOLS)?.toolArgs).toEqual({ key: 'x', value: 'y' });
+  });
+
+  it('handles values containing a colon', () => {
+    const text = 'memory.save{key:<|"|>site<|"|>,value:<|"|>https://example.com<|"|>}';
+    expect(recoverTextualToolCall(text, TOOLS)?.toolArgs).toEqual({
+      key: 'site',
+      value: 'https://example.com',
+    });
+  });
+
+  // ─── The false positives that matter ───────────────────────────────────────
+
+  it('ignores prose that merely mentions a tool name', () => {
+    expect(
+      recoverTextualToolCall('I used memory.save to store that for you.', TOOLS)
+    ).toBeNull();
+  });
+
+  it('ignores a call to a tool that was not offered this turn', () => {
+    // Otherwise a model could name any tool it liked and have it executed.
+    const text = 'budget.delete-entry{id:<|"|>abc<|"|>}';
+    expect(recoverTextualToolCall(text, TOOLS)).toBeNull();
+  });
+
+  it('requires the whole message to be the call', () => {
+    const text = 'Sure! memory.save{key:<|"|>x<|"|>} — let me know if that helps.';
+    expect(recoverTextualToolCall(text, TOOLS)).toBeNull();
+  });
+
+  it('returns null when the arguments cannot be parsed', () => {
+    expect(recoverTextualToolCall('memory.save{this is not arguments}', TOOLS)).toBeNull();
+  });
+
+  it('ignores an ordinary answer', () => {
+    expect(recoverTextualToolCall('You spent 12 JOD this month.', TOOLS)).toBeNull();
+  });
+});
+
+describe('runAgentLoop: recovers a printed tool call', () => {
+  const MEMORY: ToolDefinition = {
+    name: 'memory.save',
+    description: 'Save a fact',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+  };
+
+  it('executes it and answers, instead of showing the user raw text', async () => {
+    const executed: { name: string; args: Record<string, unknown> }[] = [];
+    const llm = makeScriptedLLM([
+      textResponse('memory.save{key:<|"|>peanut_allergy<|"|>,value:<|"|>Allergic to peanuts<|"|>}'),
+      textResponse('Noted.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        userMessage: 'Remember that I am allergic to peanuts',
+        availableTools: [MEMORY],
+        executeTool: async (name, args) => {
+          executed.push({ name, args });
+          return { success: true, message: 'Saved.' };
+        },
+      })
+    );
+
+    expect(executed).toHaveLength(1);
+    expect(executed[0]?.name).toBe('memory.save');
+    expect(executed[0]?.args).toEqual({ key: 'peanut_allergy', value: 'Allergic to peanuts' });
+    expect(result.response).toBe('Noted.');
+    // and the trace records it as a real call, not as reasoning
+    expect(result.trace.steps.some((s) => s.type === 'tool_call')).toBe(true);
   });
 });

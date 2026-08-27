@@ -70,6 +70,59 @@ export interface AgentLoopOutput {
   pendingApproval?: PendingApproval;
 }
 
+/**
+ * A tool call the model printed as prose instead of emitting properly.
+ *
+ * Observed live, 2 runs in 3 on "Remember that I am allergic to peanuts":
+ *
+ *   memory.save{key:<|"|>peanut_allergy<|"|>,type:<|"|>user_fact<|"|>,…}
+ *
+ * `<|"|>` is the chat template's quoting breaking down. Two failures compound:
+ * the tool never runs, so the fact is silently lost, and the raw text is handed
+ * to the user as the answer. The claim guard cannot catch it because nothing was
+ * claimed — there is no "Done." to match on.
+ *
+ * Recovery is deliberate about false positives. The whole message must be the
+ * call and nothing else, and the name must match a tool that was actually
+ * offered this turn — so ordinary prose mentioning a tool name never qualifies.
+ * With those two conditions the model's intent is unambiguous and the arguments
+ * are right there, which makes executing it strictly better than asking a model
+ * that just failed to format a call to try formatting it again.
+ */
+export function recoverTextualToolCall(
+  text: string,
+  availableTools: ToolDefinition[]
+): { toolName: string; toolArgs: Record<string, unknown> } | null {
+  const match = text
+    .trim()
+    .match(/^([a-zA-Z][\w-]*\.[\w-]+)\s*(\{[\s\S]*\})$/);
+  if (!match) return null;
+
+  const toolName = match[1]!;
+  if (!availableTools.some((t) => t.name === toolName)) return null;
+
+  // `<|"|>` first — it is the observed corruption and stands in for a quote.
+  const body = (match[2] ?? '').replace(/<\|"\|>/g, '"');
+
+  const attempts = [
+    body,
+    // Bare keys: {key:"x"} is not JSON, and the model emits it often.
+    body.replace(/([{,]\s*)([A-Za-z_][\w-]*)\s*:/g, '$1"$2":'),
+  ];
+
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { toolName, toolArgs: parsed as Record<string, unknown> };
+      }
+    } catch {
+      // try the next shape
+    }
+  }
+  return null;
+}
+
 // ─── Loop guards ──────────────────────────────────────────────────────────────
 
 /**
@@ -319,10 +372,26 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
     const stepStart = Date.now();
 
     // ─── REASON: Send to LLM ─────────────────────────────────────────────────
-    const llmResponse = await input.llmProvider.chat(tools ? { messages, tools } : { messages });
+    let llmResponse = await input.llmProvider.chat(tools ? { messages, tools } : { messages });
 
     if (llmResponse.usage) {
       totalTokens += llmResponse.usage.promptTokens + llmResponse.usage.completionTokens;
+    }
+
+    // A call the model printed instead of emitting becomes a real call here,
+    // before anything else looks at it — so every guard downstream sees the turn
+    // as it was meant to happen rather than as a stray line of prose.
+    if (llmResponse.type === 'text' && tools !== undefined) {
+      const recovered = recoverTextualToolCall(llmResponse.text ?? '', input.availableTools);
+      if (recovered) {
+        llmResponse = {
+          type: 'tool_call',
+          toolName: recovered.toolName,
+          toolArgs: recovered.toolArgs,
+          toolCallId: recovered.toolName,
+          ...(llmResponse.usage ? { usage: llmResponse.usage } : {}),
+        };
+      }
     }
 
     // ─── Case 1: Text response — agent is done ────────────────────────────────
