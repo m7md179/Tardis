@@ -268,7 +268,22 @@ Widen that value to `allow | ask | deny`, accept `budget.*` glob keys, and resol
 last-match-wins. `deny` is the genuinely new capability: today there is no way to say
 *"never let it delete a goal, not even with my approval."*
 
-**Files:** `packages/shared/src/schemas/config.ts`, `agent-loop.ts`.
+The two pieces to change are small and already isolated:
+
+```ts
+// packages/shared/src/schemas/plugin.ts
+export const ActionTypeSchema = z.enum(['direct', 'workflow']);
+
+// packages/shared/src/schemas/agent.ts
+actionOverrides: z.record(ActionTypeSchema).default({}),
+```
+
+`z.record` already accepts arbitrary string keys, so glob keys need no schema change —
+only a resolver that walks the entries and takes the last match.
+
+**Files:** `packages/shared/src/schemas/plugin.ts` (the enum),
+`packages/shared/src/schemas/agent.ts` (the override map),
+`packages/core/src/agent/agent-loop.ts:498` (resolution).
 **Note:** the existing rule that a user may promote direct → workflow but never demote
 must survive; `deny` sits above `ask`, it does not replace it.
 
