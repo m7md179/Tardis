@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { blob, sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 
 // ─── Conversation History ───
 export const conversations = sqliteTable('conversations', {
@@ -21,6 +21,9 @@ export const memories = sqliteTable('memories', {
   value: text('value').notNull(), // the actual memory content
   source: text('source'), // 'user' | 'agent' | plugin name
   pluginName: text('plugin_name'), // if type === 'plugin'
+  path: text('path'), // optional hierarchy, e.g. "finance/goals"
+  embedding: blob('embedding', { mode: 'buffer' }), // Float32 vector of `value`
+  embeddingModel: text('embedding_model'), // which model produced it
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
   accessedAt: integer('accessed_at'), // last time agent retrieved this

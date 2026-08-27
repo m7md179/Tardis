@@ -28,6 +28,11 @@ export type {
 export { MemoryStore } from './memory/memory-store.js';
 export type { CreateMemoryParams } from './memory/memory-store.js';
 export { MemoryRetriever } from './memory/memory-retriever.js';
+export { MemoryIndexer } from './memory/memory-indexer.js';
+export type { ReindexResult } from './memory/memory-indexer.js';
+export { OllamaEmbedder, cosine, embeddableText, vectorToBlob, blobToVector } from './memory/embeddings.js';
+export type { Embedder } from './memory/embeddings.js';
+export { leadingCluster, VECTOR_MARGIN, MAX_VECTOR_CANDIDATES } from './memory/vector-search.js';
 export { MEMORY_TOOLS, createMemoryExecutor } from './memory/memory-tools.js';
 export type { MemoryExecutor } from './memory/memory-tools.js';
 export { ConversationStore } from './memory/conversation-store.js';

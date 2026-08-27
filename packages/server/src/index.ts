@@ -12,6 +12,8 @@ import {
   ToolRouter,
   MemoryStore,
   MemoryRetriever,
+  MemoryIndexer,
+  OllamaEmbedder,
   MEMORY_TOOLS,
   createMemoryExecutor,
   ProactiveScheduler,
@@ -83,8 +85,20 @@ async function main(): Promise<void> {
     },
   };
 
-  // 3b. Initialize memory store
+  // 3b. Initialize memory store, and the vector index if one is configured.
+  //
+  // Optional by design: with no embedder, memory search is keyword-only —
+  // exactly the behaviour that shipped before vectors existed. An embedding
+  // service that is down or was never set up must degrade TARDIS, not break it.
   const memoryStore = new MemoryStore(db);
+  const memoryIndexer = config.memory.embedder
+    ? new MemoryIndexer(memoryStore, new OllamaEmbedder(config.memory.embedder))
+    : undefined;
+  console.log(
+    memoryIndexer
+      ? `[tardis] Memory search: hybrid (keyword + ${memoryIndexer.model})`
+      : '[tardis] Memory search: keyword only (no embedder configured)'
+  );
 
   // The LLM provider must exist BEFORE plugins load: the PluginAPI factory below
   // closes over it, and loadAll() runs it. Declaring it later put it in the
@@ -101,6 +115,7 @@ async function main(): Promise<void> {
       llmProvider,
       notificationSender: (msg) => notificationSenderRef.send(msg),
       memoryStore,
+      memoryIndexer,
     })
   );
   await pluginManager.loadAll();
@@ -113,8 +128,12 @@ async function main(): Promise<void> {
 
   // 4. Build AI engine
   const toolRouter = new ToolRouter(pluginManager);
-  const memoryRetriever = new MemoryRetriever(memoryStore, config.agent.memoryTokenBudget);
-  const memoryExecutor = createMemoryExecutor(memoryStore);
+  const memoryRetriever = new MemoryRetriever(
+    memoryStore,
+    config.agent.memoryTokenBudget,
+    memoryIndexer
+  );
+  const memoryExecutor = createMemoryExecutor(memoryStore, memoryIndexer);
   const conversationStore = new ConversationStore(db);
   const thoughtTracer = new ThoughtTracer(db);
 
@@ -154,6 +173,8 @@ async function main(): Promise<void> {
     pluginManager,
     saveConfig: makeSaveConfig(dataDir),
     scheduler,
+    memoryStore,
+    ...(memoryIndexer ? { memoryIndexer } : {}),
     ...(config.auth.adminPassword !== undefined ? { adminPassword: config.auth.adminPassword } : {}),
   });
 

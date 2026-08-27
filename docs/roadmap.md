@@ -22,7 +22,7 @@ just as hard to conversation state, permissions and scheduling.
 | 0 | Graded permissions — allow/ask/deny | **done** — 802 tests, verified live |
 | 1 | Conversation history survives a refresh | **done** — 816 tests, verified live |
 | 2 | `mutates` on skills → read-only mode | **done** — 837 tests, 3/3 live on three cases |
-| 3 | Hybrid vector memory | queued |
+| 3 | Hybrid vector memory | **done** — 892 tests, 8/8 paraphrase / 10/10 quiet live |
 | 4 | Turn filters | queued |
 | 5 | rrule scheduling | queued |
 | 6 | Typed plugin config | queued |
@@ -241,6 +241,75 @@ losing them costs time, not data.
 The embedding model is a new runtime dependency on a box already running llama.cpp on a
 4 GB card. It must run on **CPU** and be loaded once, not per call. If that proves
 awkward, FTS5 alone is a smaller step that still fixes exact-ish search.
+
+### What was built, and where it departs from the plan above
+
+Three things measured differently than the plan assumed. Each is recorded here
+with the number that decided it.
+
+**No sqlite-vec.** It does not load: `bun:sqlite` is compiled without extension
+support (*"This build of sqlite3 does not support dynamic extension loading"*),
+and pointing Bun at a custom SQLite would have to be done on macOS and Linux
+both, plus shipped in the binary build. It also buys nothing at this scale — a
+plain JS scan measures **0.26 ms for 500 memories** and **19 ms for 50,000**,
+against a turn that already costs seconds of inference. So the vector is a
+`BLOB` on the memory row itself, which makes *row-as-truth* literal: there is no
+separate index to drift.
+
+**No new service.** Ollama was already running on CT 106 on `127.0.0.1:11434`.
+`nomic-embed-text` (274 MB, 768-dim, CPU) is a `pull`, not a deployment.
+Measured **~20 ms per query embed** warm, **63 ms per memory** when reindexing.
+Cold-start after Ollama's five-minute idle unload costs ~1.1 s, which is why
+`keepAlive` is a config option.
+
+**A similarity floor does not work, and a margin does.** This was the plan's
+real gap. Over 20 memories, 15 answerable questions and 12 unanswerable ones:
+
+```
+"what am I coding"            → correct memory at 0.526
+"what is the capital of Peru" → nearest irrelevant memory at 0.526
+```
+
+The distributions overlap exactly, so any floor admitting the true hit admits
+the junk. The **gap to the runner-up** separates them cleanly — relevant
+queries 0.021–0.316, unanswerable ones 0.000–0.123 — so the gate is whether one
+memory stands apart from the field, not how high it scored:
+
+| margin | surfaces | admits noise |
+|---|---|---|
+| 0.03 | 14/15 | 5/12 |
+| **0.05** | **12/15** | **1/12** |
+| 0.08 | 11/15 | 1/12 |
+
+At `MAX_VECTOR_CANDIDATES = 3` the same data surfaces 13/15 but admits three
+times the noise, so the vector half contributes **at most one memory per turn**.
+Keyword search already covers literal matches; the vector half exists to catch
+paraphrase and should be the conservative one.
+
+**Everything is optional.** With no embedder configured, `MemoryRetriever`
+behaves exactly as it did before vectors existed. That is what makes the
+embedding service a nice-to-have rather than a dependency, and it is pinned by a
+test.
+
+**Endpoint** is `POST /api/memory/reindex` rather than `/api/memories/reindex` —
+the existing routes are all `/api/memory`, and consistency with the live surface
+beat consistency with this document. `?full=true` drops existing vectors first;
+without it the call only fills gaps, which makes it the right thing to run after
+an embedder outage.
+
+**Live verification** — real `OllamaEmbedder`, real `cosine`, real
+`leadingCluster`, real `nomic-embed-text`, over a 10-memory store:
+
+```
+== paraphrases the keyword scorer cannot reach ==
+  HIT "what did I say about the car"        -> [car-savings]
+  HIT "am I putting money aside for an automobile" -> [car-savings]
+  HIT "can I take antibiotics"              -> [allergy]
+  ... 8/8
+
+== questions no memory answers ==
+  stayed quiet on 10/10
+```
 
 ---
 

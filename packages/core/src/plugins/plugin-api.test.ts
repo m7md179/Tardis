@@ -34,6 +34,7 @@ const MOCK_CONFIG: SystemConfig = {
     readOnly: false,
   },
   proactive: { enabled: true },
+  memory: {},
   rateLimit: { enabled: false, windowMs: 60000, maxRequests: 120, maxLoginAttempts: 5 },
 };
 

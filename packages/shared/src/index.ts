@@ -23,6 +23,8 @@ export type {
   RateLimitConfig,
   ServerConfig,
   AuthConfig,
+  EmbedderConfig,
+  MemoryConfig,
   SystemConfig,
 } from './types/config.js';
 
@@ -52,6 +54,8 @@ export {
   RateLimitConfigSchema,
   ServerConfigSchema,
   AuthConfigSchema,
+  EmbedderConfigSchema,
+  MemoryConfigSchema,
   SystemConfigSchema,
 } from './schemas/config.js';
 

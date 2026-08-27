@@ -5,6 +5,7 @@ import type { TardisDB } from '@tardis/db';
 import type { Session, SystemConfig, MemoryEntry, MemoryType } from '@tardis/shared';
 import { PermissionGuard } from './permission-guard.js';
 import type { MemoryStore } from '../memory/memory-store.js';
+import type { MemoryIndexer } from '../memory/memory-indexer.js';
 import type { LLMMessage, LLMProvider } from '../llm/provider.js';
 
 // ─── Types ───
@@ -129,6 +130,8 @@ export function createPluginApi(params: {
   notificationSender?: (message: string, options?: { urgent?: boolean }) => Promise<void>;
   /** Shared MemoryStore instance for plugin memory access. */
   memoryStore?: MemoryStore;
+  /** Optional vector index. Absent means keyword-only memory search. */
+  memoryIndexer?: MemoryIndexer | undefined;
   /** Shared LLM provider, exposed to plugins holding the "llm:use" permission. */
   llmProvider?: LLMProvider;
 }): PluginAPI {
@@ -369,18 +372,29 @@ export function createPluginApi(params: {
     async set(key: string, value: string, type?: MemoryType): Promise<void> {
       guard.assert('memory:write');
       if (!params.memoryStore) throw new Error('MemoryStore not configured');
-      await params.memoryStore.upsertByKey({
+      const saved = await params.memoryStore.upsertByKey({
         type: type ?? 'plugin',
         key,
         value,
         source: pluginName,
         pluginName,
       });
+      // A plugin's memories are searched by the same retriever as everyone
+      // else's, so they need the same index. indexOne never throws.
+      await params.memoryIndexer?.indexOne(saved);
     },
     async search(query: string, limit?: number): Promise<MemoryEntry[]> {
       guard.assert('memory:read');
       if (!params.memoryStore) throw new Error('MemoryStore not configured');
-      return params.memoryStore.search(query, limit);
+      const results = await params.memoryStore.search(query, limit);
+      const seen = new Set(results.map((m) => m.id));
+      for (const m of (await params.memoryIndexer?.similar(query)) ?? []) {
+        if (!seen.has(m.id)) {
+          results.push(m);
+          seen.add(m.id);
+        }
+      }
+      return results;
     },
     async delete(key: string): Promise<boolean> {
       guard.assert('memory:write');
