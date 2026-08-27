@@ -36,6 +36,8 @@ export interface IoClientDeps {
   baseUrl: string;
   email: string;
   password: string;
+  /** Sent as x-api-key. The IO server's APIKeyGuard is global — see the constructor. */
+  apiKey: string;
   storage: StorageLike;
   logger: LoggerLike;
   fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
@@ -51,7 +53,22 @@ export class IoClient {
   private readonly deps: IoClientDeps;
 
   constructor(deps: IoClientDeps) {
+    // APIKeyGuard is registered as an APP_GUARD in the IO server's app.module,
+    // so every route — including the public-looking /account/login — 403s
+    // without this header. Starting without it means every call fails
+    // identically, and a 403 on login reads as "wrong password". Refusing here
+    // turns that into one clear message at activation instead.
+    if (deps.apiKey.trim() === '') {
+      throw new Error(
+        'Workspace: apiKey is required — the internal-operation API rejects every request without it. Set it in the plugin config.'
+      );
+    }
     this.deps = deps;
+  }
+
+  /** Headers every request carries, authenticated or not. */
+  private baseHeaders(): Record<string, string> {
+    return { 'x-api-key': this.deps.apiKey };
   }
 
   private url(path: string): string {
@@ -87,7 +104,7 @@ export class IoClient {
   async login(): Promise<number> {
     const res = await this.send(this.url('/account/login'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...this.baseHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: this.deps.email, password: this.deps.password }),
     });
 
@@ -120,6 +137,7 @@ export class IoClient {
       this.send(this.url(path), {
         method,
         headers: {
+          ...this.baseHeaders(),
           Authorization: `Bearer ${token}`,
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },

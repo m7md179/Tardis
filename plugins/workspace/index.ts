@@ -52,10 +52,13 @@ export const onActivate = async (pluginApi: PluginAPI): Promise<void> => {
   const baseUrl = (await api.config.get<string>('baseUrl')) ?? '';
   const email = (await api.config.get<string>('email')) ?? '';
   const password = (await api.config.get<string>('password')) ?? '';
+  // Required: APIKeyGuard is a global APP_GUARD on the IO server, so every
+  // route 403s without it — including /account/login.
+  const apiKey = (await api.config.get<string>('apiKey')) ?? '';
 
-  if (baseUrl === '' || email === '' || password === '') {
+  if (baseUrl === '' || email === '' || password === '' || apiKey === '') {
     api.logger.warn(
-      'Workspace plugin activated without credentials — set baseUrl, email, password'
+      'Workspace plugin activated without credentials — set baseUrl, email, password, apiKey'
     );
     return;
   }
@@ -64,6 +67,7 @@ export const onActivate = async (pluginApi: PluginAPI): Promise<void> => {
     baseUrl,
     email,
     password,
+    apiKey,
     storage: api.storage,
     logger: api.logger,
     fetchImpl: httpAdapter,
@@ -82,7 +86,7 @@ export const onDeactivate = async (): Promise<void> => {
 function assertConfigured(): IoClient {
   if (client === null) {
     throw new Error(
-      'Workspace plugin is not configured. Set baseUrl, email and password in its config.'
+      'Workspace plugin is not configured. Set baseUrl, email, password and apiKey in its config.'
     );
   }
   return client;

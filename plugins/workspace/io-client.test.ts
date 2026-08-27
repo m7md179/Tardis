@@ -52,6 +52,7 @@ function makeClient(handler: (call: Call, n: number) => Response): {
     baseUrl: 'http://io.test',
     email: 'm@x.com',
     password: 'pw',
+    apiKey: 'k-123',
     storage,
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     fetchImpl: async (url: string, init?: RequestInit) => {
@@ -64,6 +65,47 @@ function makeClient(handler: (call: Call, n: number) => Response): {
 }
 
 // ─── Login ───
+
+// ─── The global API key guard ───
+//
+// APIKeyGuard is registered as an APP_GUARD in the IO server's app.module, so
+// EVERY route — including the public-looking /account/login — 403s without an
+// x-api-key header. Only `heartbeat` routes are exempt. Omitting it fails
+// everything, uniformly, in a way that looks like bad credentials.
+
+describe('x-api-key', () => {
+  it('sends the key on login, which is not exempt from the global guard', async () => {
+    const { client, calls } = makeClient(() => jsonResponse(LOGIN_OK));
+    await client.login();
+    const headers = calls[0]!.init?.headers as Record<string, string>;
+    expect(headers['x-api-key']).toBe('k-123');
+  });
+
+  it('sends the key on every authenticated request too', async () => {
+    const { client, calls } = makeClient((_c, n) =>
+      n === 1 ? jsonResponse(LOGIN_OK) : jsonResponse({ data: [], status: 200, message: 'ok' })
+    );
+    await client.request('GET', '/workspaces');
+    const headers = calls[1]!.init?.headers as Record<string, string>;
+    expect(headers['x-api-key']).toBe('k-123');
+    expect(headers['Authorization']).toBe('Bearer access-1');
+  });
+
+  it('refuses to start without a key rather than 403ing on every call', () => {
+    expect(
+      () =>
+        new IoClient({
+          baseUrl: 'http://io.test',
+          email: 'm@x.com',
+          password: 'pw',
+          apiKey: '',
+          storage: memStorage(),
+          logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+          fetchImpl: async () => jsonResponse({}),
+        })
+    ).toThrow(/apiKey/);
+  });
+});
 
 describe('login', () => {
   it('posts credentials and stores the access token and account id', async () => {
