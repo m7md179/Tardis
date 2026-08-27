@@ -196,3 +196,113 @@ PASS  recovered from a bad token -> 1 workspaces
 The 401 recovery is worth re-running deliberately: access tokens live 24 h, so in
 normal use that path fires roughly once a day and a regression in it would go
 unnoticed until the next morning.
+
+---
+
+## 6. Wiring TARDIS and the TUI to it
+
+Done and verified 2026-08-27. The whole chain runs:
+
+```
+TUI  →  TARDIS /api/skills/:id/invoke  →  ToolRouter  →  workspace plugin
+     →  PluginAPI.http  →  internal-operation server  →  back
+```
+
+### There is more than one IO server running locally
+
+This bit costs an hour if you do not know it. Two backend processes, **two
+different databases**:
+
+| Port | Protocol | Database | Notes |
+|---|---|---|---|
+| 3080 | HTTP | `internal-operation` | main checkout; `super-admin` is account **2** |
+| 3000 | HTTPS | `internal-operation` | same process as 3080 |
+| 3010 | HTTPS | `internal-operation-local` | `wt-analytics-server` worktree; `super-admin` is account **1** |
+
+Accounts do **not** exist across both. An account that logs in on 3010 gets
+`invalid credentials` on 3080, which looks like a wrong password and is not.
+
+`wt-analytics-server` reads `HTTP_PORT` (default 3080) and `HTTPS_PORT`
+(default 3000). Both defaults were already taken by the other instance, so its
+plain-HTTP listener never bound and it is reachable only over HTTPS on 3010 —
+with the expired cert from §1. To give it a usable HTTP port, restart it with
+`HTTP_PORT=3011`; no file changes are needed, the code already reads it.
+
+The plugin currently points at **3080**.
+
+### The data directory
+
+`packages/server/src/index.ts:73` loads plugins from `<dataDir>/plugins`, **not**
+from the repo's `plugins/`. `scripts/deploy.sh:74` symlinks each repo plugin into
+place; on Windows a directory junction does the same job without needing admin:
+
+```powershell
+cmd /c mklink /J "C:\Users\<you>\.tardis\plugins\workspace" `
+                 "C:\Users\<you>\tardis\repo\plugins\workspace"
+```
+
+The junction matters for module resolution: the plugin imports `@tardis/core`,
+which only resolves because the real path is inside the repo's workspace.
+
+### config.json
+
+At `<dataDir>/config.json`. Required blocks and the traps in them:
+
+| Key | Note |
+|---|---|
+| `llm.provider`, `llm.model` | required — `loadConfig` rejects a config without them |
+| `auth.jwtSecret` | required, minimum 32 characters |
+| `auth.adminPassword` | **nested under `auth`**, not top level. At the top level it is silently ignored and every API login returns `Invalid password`. |
+| `server.port` | default 3000 collides with the IO server's HTTPS listener — set something free, e.g. 3020 |
+| `plugins.workspace` | `baseUrl`, `email`, `password`, `apiKey`, `defaultWorkspaceKey` |
+
+`chmod 600` it — it holds an IO password and the API key.
+
+### Running it
+
+```bash
+# server
+cd <repo>
+TARDIS_DATA_DIR="C:/Users/<you>/.tardis" bun run packages/server/src/index.ts
+
+# TUI, from tardis-app
+cd apps/tui
+TARDIS_URL=http://127.0.0.1:3020 TARDIS_PASSWORD=<auth.adminPassword> bun run src/index.ts
+```
+
+Startup should say `Loaded 1 plugin(s): [ "workspace" ]`. Only junctioned plugins
+load, so the repo's other seven are absent until they are junctioned too.
+
+### What was verified
+
+`GET /api/skills` serves all nine skills with their descriptors. Invoking
+`workspace.list-workspaces` through `POST /api/skills/:id/invoke` returns the
+TARDIS workspace, which means the method-dispatching `httpAdapter` works — the
+login POST would have been silently downgraded to a GET by a bare
+`api.http.get`.
+
+In the TUI, `/skills` → `3` renders:
+
+```
+Board
+  Authentication hardening
+    MEDIUM · BACKLOG
+  Protect the login endpoint
+    MEDIUM · BACKLOG
+  Rate-limit the login endpoint
+    HIGH · TODO · 3 pts · 4h · due 2026-09-04 · TMS User 3 Seed
+```
+
+Nothing in the TUI knows what a work item is. That came entirely from the skill's
+`ui` descriptor, which is the contract behaving as designed.
+
+### Two limits of this setup
+
+**No LLM is running.** Ollama is not listening on 11434, so the chat path cannot
+work — only `/skills`, the direct no-AI path, does. That path is the whole of
+Plan 1; the AI path needs a provider configured before it is worth testing.
+
+**The configured account is an admin.** Admins cannot be assignees or workspace
+members, so `workspace.my-items` is permanently empty and `my_settings` is always
+`null`. Fine for reads; Plan 2's draft flow needs an ordinary user account on
+whichever database the plugin points at.
