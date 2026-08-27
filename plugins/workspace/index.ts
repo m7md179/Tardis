@@ -2,6 +2,7 @@ import type { PluginAPI } from '@tardis/core';
 import { IoClient } from './io-client.js';
 import { resolvePermissions } from './permissions.js';
 import { formatWorkspaceSummary } from './format.js';
+import { resolveWorkspaceId } from './current.js';
 
 let api: PluginAPI;
 let client: IoClient | null = null;
@@ -89,7 +90,7 @@ function assertConfigured(): IoClient {
 
 export const executeTool = async (
   toolName: string,
-  _args: Record<string, unknown>
+  args: Record<string, unknown>
 ): Promise<unknown> => {
   switch (toolName) {
     case 'workspace.list-workspaces': {
@@ -109,6 +110,20 @@ export const executeTool = async (
             summary: formatWorkspaceSummary(w),
           };
         }),
+      };
+    }
+
+    case 'workspace.use': {
+      const io = assertConfigured();
+      const key = typeof args['key'] === 'string' ? args['key'] : '';
+      const all = await io.listWorkspaces();
+      const { id } = resolveWorkspaceId({ explicitKey: key, stored: null, defaultKey: '', all });
+      await api.storage.set('currentWorkspaceId', id);
+      const chosen = all.find((w) => w.id === id);
+      return {
+        message: `Now using ${chosen?.key ?? id} — ${chosen?.name ?? ''}.`.trim(),
+        id,
+        key: chosen?.key ?? '',
       };
     }
 

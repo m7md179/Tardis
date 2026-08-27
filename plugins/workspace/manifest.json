@@ -22,6 +22,26 @@
         "emptyText": "You are not a member of any workspace.",
         "item": { "id": "id", "title": "name", "subtitle": "summary" }
       }
+    },
+    {
+      "id": "workspace.use",
+      "description": "Switch the workspace that other workspace skills operate on. Takes the short workspace key, for example PLAT.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string", "description": "The short workspace key, e.g. PLAT" }
+        },
+        "required": ["key"]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Switch workspace",
+        "icon": "folder",
+        "submitLabel": "Use",
+        "fields": [{ "name": "key", "type": "text", "label": "Workspace key", "required": true }]
+      }
     }
   ],
   "config": {
