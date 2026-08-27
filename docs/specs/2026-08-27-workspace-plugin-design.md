@@ -194,21 +194,33 @@ Credentials are user-set and stable; tokens are runtime and rotating. This mirro
 | `config` | `email` | |
 | `config` | `password` | plaintext at rest — see below |
 | `config` | `defaultWorkspaceKey` | optional |
-| `storage` | `accessToken` / `refreshToken` | |
+| `storage` | `accessToken` | the refresh token is discarded — see Lifecycle |
 | `storage` | `accountId` | needed to answer "is this item mine?" |
 | `storage` | `currentWorkspaceId` | the working context |
 | `storage` | `draft:active` | the Draft, §7 |
 
 ### Lifecycle
 
-`ensureAuth()` wraps every request:
+**There is no refresh endpoint.** `TokenService.refreshToken()` exists in the server, but
+no controller exposes it — the only token-related route in the entire API is
+`POST /account/register-push-token`, and the website never calls refresh either. The
+refresh token returned by login is, from an API consumer's point of view, inert.
+
+That makes the lifecycle simpler than a token-pair scheme would suggest:
 
 ```
 no access token          → POST /account/login
-401 on a request         → refresh, retry once
-refresh fails            → re-login once
+401 on a request         → POST /account/login again, retry the request once
 login fails              → clear tokens, throw an actionable message
 ```
+
+Because D2 stores the password, re-login is always available and costs one request. The
+`signedRefreshToken` from the login response is deliberately **not** stored: keeping a
+credential we have no way to redeem is a liability with no benefit.
+
+This also retires the concern raised in §18.2. There is no rarely-exercised refresh path
+to rot — the 401 path runs the same `login()` code that every cold start runs, so it is
+exercised constantly rather than once a day.
 
 The actionable message matters: a bare `401` in a chat surface is useless. It should say
 which config key to fix and whether the server was reachable at all.
@@ -688,7 +700,7 @@ if the generic board proves too thin.
 | Condition | Behaviour |
 |---|---|
 | Login fails | Clear tokens. Message names the config key and whether the host was reachable. |
-| 401 mid-request | Refresh → retry once → re-login once → then surface. |
+| 401 mid-request | Re-login once, retry the request once, then surface. No refresh endpoint exists. |
 | 403 on a write | Report the capability or transition you lack, by name. Never retry. |
 | Hierarchy 400 | Map the three `ErrorsEnum` values to plain sentences and re-open the draft slot. |
 | LLM re-rank fails | Fuzzy top 5, unranked. Never an error. |
@@ -709,7 +721,7 @@ Split so that the parts worth testing need neither a network nor a model.
 |---|---|
 | `draft.ts` | Pure. Slot ordering, `source` precedence, hierarchy gating, EPIC skipping `parent_id`, `nextQuestion` composition, commit-time validation. No HTTP, no LLM. |
 | `ranking.ts` | Fuzzy determinism; LLM stub returning good JSON, bad JSON, unknown ids, and a rejection — each must degrade, never throw. |
-| `io-client.ts` | Injected `fetch` stub. 401→refresh→retry, refresh-fail→re-login, login-fail→clear+throw. Assert exactly one retry. |
+| `io-client.ts` | Injected `fetch` stub. 401→re-login→retry, login-fail→clear+throw, and the `{ data, status, message }` envelope unwrap. Assert exactly one retry, so a persistent 401 cannot loop. |
 | Permissions | `my_settings` fixtures: LEAD (`null`), VIEWER, MEMBER with partial `allowedTransitions`. Assert illegal moves are never offered. |
 | Ownership guard | `edit-item` / `move-item` refuse an item you neither report nor are assigned to, and name `edit-any-item` in the refusal. `draft-commit` never assigns to anyone but you. These are the tests that keep D7 true. |
 | Contract | Schema tests: `remote-select` without `optionsFrom` rejected; `select` with `optionsFrom` rejected; `custom` without `block` still rejected. |
@@ -793,15 +805,19 @@ returns every matching row.
 means the response grows linearly with the workspace, so the `?type=EPIC` filter is not
 an optimisation but the thing keeping the payload sane. Keep it.
 
-### 18.2 Token TTL: access 24 h, refresh 30 days
+### 18.2 Token TTL: access 24 h, refresh 30 days (and refresh is unreachable)
 
 `token.service.ts:128,137` — `expiry_date: dayjs().add(24, 'h')` for access,
 `dayjs().add(30, 'd')` for refresh.
 
-**Consequence, and it is the counter-intuitive one:** the refresh path runs roughly once
-a day and the re-login path essentially never. That makes them the *least* exercised and
-*most* likely to be broken in a way nobody notices for a day. §14's `io-client.ts` tests
-are not optional coverage — they are the only place these paths get exercised at all.
+A follow-up search found **no controller exposing refresh at all** — the only token route
+in the server is `POST /account/register-push-token`. `TokenService.refreshToken()` is
+unreachable over HTTP.
+
+**Consequence:** §5's lifecycle drops to login / 401→re-login / fail. The 30-day refresh
+TTL is irrelevant to us. The 24 h access TTL means the re-login path fires about once a
+day in steady use — but since it is the *same* code path as a cold start, it is
+continuously exercised rather than being a rarely-run branch waiting to rot.
 
 ### 18.3 Members response shape
 
