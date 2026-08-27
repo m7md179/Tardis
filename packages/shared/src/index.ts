@@ -12,6 +12,7 @@ export type {
   PluginManifest,
   PluginManifestInput,
   PluginInstance,
+  PluginConfigField,
 } from './types/plugin.js';
 export type { AgentStep, ThoughtTrace, AgentConfig } from './types/agent.js';
 export type { MemoryType, MemoryEntry } from './types/memory.js';
@@ -42,7 +43,11 @@ export {
   ProactiveTriggerSchema,
   PluginManifestSchema,
   PluginManifestInputSchema,
+  PluginConfigFieldSchema,
+  PluginConfigFieldTypeSchema,
   resolveMutates,
+  normalizeConfigSchema,
+  isConfigFieldDescriptor,
 } from './schemas/plugin.js';
 export { AgentStepSchema, ThoughtTraceSchema, AgentConfigSchema } from './schemas/agent.js';
 export { MemoryTypeSchema, MemoryEntrySchema } from './schemas/memory.js';

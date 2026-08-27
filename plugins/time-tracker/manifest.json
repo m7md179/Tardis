@@ -195,6 +195,13 @@
     }
   ],
   "config": {
-    "longSessionThresholdMinutes": 120
+    "longSessionThresholdMinutes": {
+      "type": "number",
+      "label": "Long session threshold (minutes)",
+      "description": "How long a session runs before the break reminder fires.",
+      "default": 120,
+      "min": 5,
+      "max": 600
+    }
   }
 }

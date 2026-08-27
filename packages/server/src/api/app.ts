@@ -2,7 +2,15 @@ import { Hono } from 'hono';
 import { jwt, sign } from 'hono/jwt';
 import { randomUUID } from 'crypto';
 import { eq, desc, like, or, memories, thoughtTraces } from '@tardis/db';
-import { ThoughtTracer, OllamaAdapter, OpenAIAdapter, isValidSchedule } from '@tardis/core';
+import {
+  ThoughtTracer,
+  OllamaAdapter,
+  OpenAIAdapter,
+  isValidSchedule,
+  resolvePluginConfig,
+  maskSecrets,
+  SECRET_MASK,
+} from '@tardis/core';
 import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
 import type { LLMProviderConfig, SystemConfig } from '@tardis/shared';
@@ -43,6 +51,8 @@ export interface AppDeps {
   memoryIndexer?: import('@tardis/core').MemoryIndexer;
   /** Backs the reindex endpoint and embedding upkeep on memory writes. */
   memoryStore?: import('@tardis/core').MemoryStore;
+  /** Persists one plugin setting. Without it, settings are read-only. */
+  persistConfig?: (pluginName: string, key: string, value: unknown) => Promise<void>;
 }
 
 interface OllamaTagsResponse {
@@ -481,6 +491,87 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ success: false, error: result.error, code: result.code }, status);
     }
     return c.json({ success: true, data: result.data });
+  });
+
+  // ─── Plugin settings ──────────────────────────────────────────────────────
+  //
+  // Descriptor-driven, exactly like skills: the client renders a form from the
+  // schema and never hardcodes per-plugin knowledge.
+
+  app.get('/api/plugins/:name/config', (c) => {
+    const name = c.req.param('name');
+    const manifest = deps.pluginManager.getAllManifests().find((m) => m.name === name);
+    if (!manifest) {
+      return c.json({ error: `Plugin "${name}" not found`, code: 'PLUGIN_NOT_FOUND' }, 404);
+    }
+
+    const { values, issues } = resolvePluginConfig(
+      manifest.configSchema,
+      deps.config.plugins?.[name] ?? {}
+    );
+
+    return c.json({
+      plugin: name,
+      schema: manifest.configSchema,
+      values: maskSecrets(manifest.configSchema, values),
+      issues,
+      writable: deps.persistConfig !== undefined,
+    });
+  });
+
+  app.put('/api/plugins/:name/config', async (c) => {
+    const name = c.req.param('name');
+    const manifest = deps.pluginManager.getAllManifests().find((m) => m.name === name);
+    if (!manifest) {
+      return c.json({ error: `Plugin "${name}" not found`, code: 'PLUGIN_NOT_FOUND' }, 404);
+    }
+    if (!deps.persistConfig) {
+      return c.json(
+        { error: 'This TARDIS instance has no config writer', code: 'NOT_CONFIGURED' },
+        503
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const submitted = (body as { values?: Record<string, unknown> })?.values;
+    if (typeof submitted !== 'object' || submitted === null) {
+      return c.json({ error: 'Body must be { "values": { ... } }' }, 400);
+    }
+
+    // A masked secret means "unchanged", not "set it to bullet characters".
+    // Without this, opening the settings form and saving would overwrite every
+    // secret with the placeholder it was displayed as.
+    const stored = deps.config.plugins?.[name] ?? {};
+    const incoming: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(submitted)) {
+      const unchangedSecret = manifest.configSchema[key]?.secret && value === SECRET_MASK;
+      incoming[key] = unchangedSecret ? stored[key] : value;
+    }
+
+    const merged = { ...stored, ...incoming };
+    const { values, issues } = resolvePluginConfig(manifest.configSchema, merged);
+    if (issues.length > 0) {
+      return c.json({ error: 'Validation failed', code: 'INVALID_CONFIG', issues }, 400);
+    }
+
+    for (const [key, value] of Object.entries(incoming)) {
+      await deps.persistConfig(name, key, value);
+    }
+
+    return c.json({
+      success: true,
+      values: maskSecrets(manifest.configSchema, values),
+      // A plugin reads its settings at activation, so a change generally does
+      // not take effect until TARDIS restarts. Saying so beats letting someone
+      // wonder why the new value made no difference.
+      restartRequired: true,
+    });
   });
 
   // ─── Thought traces ───────────────────────────────────────────────────────

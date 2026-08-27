@@ -53,6 +53,13 @@ export { ThoughtTracer } from './agent/thought-tracer.js';
 export { selectPlugins } from './agent/plugin-router.js';
 export { CLARIFY_TOOL, CLARIFY_TOOL_NAME } from './agent/clarify.js';
 export { resolvePermission, baselineFor, matchesGlob } from './agent/permissions.js';
+export {
+  resolvePluginConfig,
+  coerceConfigValue,
+  maskSecrets,
+  SECRET_MASK,
+} from './plugins/plugin-config.js';
+export type { ConfigIssue, ConfigValidation } from './plugins/plugin-config.js';
 export { applyTurnStart, applyTurnEnd } from './agent/turn-filters.js';
 export type {
   TurnFilter,

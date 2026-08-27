@@ -12,7 +12,12 @@
     "llm:use"
   ],
   "config": {
-    "currency": "JOD"
+    "currency": {
+      "type": "string",
+      "label": "Currency",
+      "description": "Currency code amounts are recorded in.",
+      "default": "JOD"
+    }
   },
   "skills": [
     {

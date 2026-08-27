@@ -206,6 +206,91 @@ export const ProactiveTriggerSchema = z.object({
   handler: z.string().min(1),
 });
 
+// ─── Plugin configuration ────────────────────────────────────────────────────
+
+export const PluginConfigFieldTypeSchema = z.enum(['string', 'number', 'boolean', 'select']);
+
+/**
+ * One configurable setting, described well enough to validate it and to render
+ * a form for it without any per-plugin knowledge.
+ *
+ * The same idea as the skill UI descriptor, applied to settings — and the
+ * reason is the same: three clients render this, and anything they have to
+ * infer, two of them will infer differently.
+ */
+export const PluginConfigFieldSchema = z.object({
+  type: PluginConfigFieldTypeSchema,
+  label: z.string().min(1),
+  description: z.string().optional(),
+  /** Used when the system config says nothing. */
+  default: z.unknown().optional(),
+  /** A required field with no default is a setup error, reported at load. */
+  required: z.boolean().optional(),
+  /**
+   * Masked in responses and in the UI. Note this is presentation, not storage:
+   * the value still lives in config.json in the clear.
+   */
+  secret: z.boolean().optional(),
+  /** number only */
+  min: z.number().optional(),
+  max: z.number().optional(),
+  /** select only */
+  options: z
+    .array(z.object({ value: z.union([z.string(), z.number()]), label: z.string().min(1) }))
+    .optional(),
+});
+
+export type PluginConfigField = z.infer<typeof PluginConfigFieldSchema>;
+
+/**
+ * Whether a manifest `config` entry describes a field or is just a default.
+ *
+ * Manifests shipped with bare values — `"config": { "currency": "JOD" }` — and
+ * those keep working, so a descriptor has to be distinguishable from an
+ * object-valued default. Requiring *both* a known `type` and a `label` makes a
+ * collision essentially impossible while keeping the descriptor form readable.
+ */
+export function isConfigFieldDescriptor(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v['label'] === 'string' &&
+    typeof v['type'] === 'string' &&
+    PluginConfigFieldTypeSchema.safeParse(v['type']).success
+  );
+}
+
+/** "searxngUrl" -> "Searxng url". A label is better than a raw key. */
+function humanizeKey(key: string): string {
+  const spaced = key.replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
+/**
+ * Normalizes a manifest `config` block into a full field description per key.
+ *
+ * A bare value becomes a field whose type is inferred and whose default is that
+ * value, so an old manifest gains validation and a settings form for free.
+ */
+export function normalizeConfigSchema(
+  config: Record<string, unknown> | undefined
+): Record<string, PluginConfigField> {
+  const out: Record<string, PluginConfigField> = {};
+  for (const [key, raw] of Object.entries(config ?? {})) {
+    if (isConfigFieldDescriptor(raw)) {
+      const parsed = PluginConfigFieldSchema.safeParse(raw);
+      if (parsed.success) {
+        out[key] = parsed.data;
+        continue;
+      }
+    }
+    const type =
+      typeof raw === 'number' ? 'number' : typeof raw === 'boolean' ? 'boolean' : 'string';
+    out[key] = { type, label: humanizeKey(key), default: raw };
+  }
+  return out;
+}
+
 /**
  * Does this skill change anything?
  *
@@ -308,6 +393,14 @@ export const PluginManifestSchema = PluginManifestInputSchema.superRefine((m, ct
       mutates: s.mutates,
     }));
 
+  // Two views of the same block: `configSchema` describes each setting,
+  // `config` stays a plain key -> default map so every existing reader is
+  // untouched by the descriptor form.
+  const configSchema = normalizeConfigSchema(m.config);
+  const config = Object.fromEntries(
+    Object.entries(configSchema).map(([key, field]) => [key, field.default])
+  );
+
   const { skillSummary: _deprecatedSummary, ...rest } = m;
-  return { ...rest, summary, skills, tools };
+  return { ...rest, summary, skills, tools, config, configSchema };
 });

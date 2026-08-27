@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { PluginManifestSchema, resolveMutates } from './plugin.js';
+import { PluginManifestSchema, resolveMutates, normalizeConfigSchema } from './plugin.js';
 
 // ─── Manifest normalization (Phase B, see SKILLS.md) ─────────────────────────
 //
@@ -342,5 +342,87 @@ describe('PluginManifestSchema: mutates', () => {
     });
     expect(m.skills[0]!.mutates).toBe(false);
     expect(m.tools[0]!.mutates).toBe(false);
+  });
+});
+
+// ─── Typed plugin config ─────────────────────────────────────────────────────
+//
+// Manifests shipped with bare values — `"config": { "currency": "JOD" }` — so a
+// described field has to be distinguishable from an object-valued default
+// without breaking any of them.
+
+describe('normalizeConfigSchema', () => {
+  it('describes a bare value, inferring its type', () => {
+    const out = normalizeConfigSchema({ currency: 'JOD', maxResults: 5, enabled: true });
+    expect(out['currency']).toMatchObject({ type: 'string', default: 'JOD' });
+    expect(out['maxResults']).toMatchObject({ type: 'number', default: 5 });
+    expect(out['enabled']).toMatchObject({ type: 'boolean', default: true });
+  });
+
+  it('gives a bare value a readable label instead of the raw key', () => {
+    expect(normalizeConfigSchema({ searxngUrl: 'x' })['searxngUrl']!.label).toBe('Searxng url');
+    expect(normalizeConfigSchema({ api_token: 'x' })['api_token']!.label).toBe('Api token');
+  });
+
+  it('keeps a full descriptor as written', () => {
+    const out = normalizeConfigSchema({
+      maxResults: { type: 'number', label: 'Results', default: 5, min: 1, max: 20 },
+    });
+    expect(out['maxResults']).toMatchObject({ label: 'Results', min: 1, max: 20 });
+  });
+
+  it('treats an object without a type and label as a plain default', () => {
+    // The ambiguity that had to be resolved: a plugin could legitimately want an
+    // object-valued setting. Requiring *both* keys makes a collision essentially
+    // impossible.
+    const out = normalizeConfigSchema({ mapping: { a: 1 } });
+    expect(out['mapping']!.type).toBe('string');
+    expect(out['mapping']!.default).toEqual({ a: 1 });
+  });
+
+  it('handles a plugin with no config block', () => {
+    expect(normalizeConfigSchema(undefined)).toEqual({});
+  });
+});
+
+describe('PluginManifestSchema: config', () => {
+  const withConfig = (config: Record<string, unknown>) => ({
+    ...BASE,
+    summary: 'Set timed reminders',
+    config,
+    skills: [
+      {
+        id: 'reminders.set-reminder',
+        description: 'Set a reminder',
+        parameters: { type: 'object', properties: {} },
+      },
+    ],
+  });
+
+  it('keeps `config` a plain key -> default map, so existing readers are untouched', () => {
+    const m = PluginManifestSchema.parse(
+      withConfig({
+        currency: { type: 'string', label: 'Currency', default: 'JOD' },
+        maxResults: 5,
+      })
+    );
+    expect(m.config).toEqual({ currency: 'JOD', maxResults: 5 });
+  });
+
+  it('exposes the described form alongside it', () => {
+    const m = PluginManifestSchema.parse(
+      withConfig({ apiToken: { type: 'string', label: 'API token', default: '', secret: true } })
+    );
+    expect(m.configSchema['apiToken']).toMatchObject({ label: 'API token', secret: true });
+  });
+
+  it('leaves a manifest with no config block valid', () => {
+    const m = PluginManifestSchema.parse({
+      ...BASE,
+      summary: 'Set timed reminders',
+      tools: [LEGACY_TOOL],
+    });
+    expect(m.config).toEqual({});
+    expect(m.configSchema).toEqual({});
   });
 });

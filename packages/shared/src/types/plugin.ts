@@ -9,6 +9,7 @@ import type {
   SkillUiFieldSchema,
   SkillUiActionSchema,
   ProactiveTriggerSchema,
+  PluginConfigFieldSchema,
   PluginManifestSchema,
   PluginManifestInputSchema,
 } from '../schemas/plugin.js';
@@ -31,6 +32,8 @@ export type SkillUiDescriptor = z.infer<typeof SkillUiDescriptorSchema>;
 export type SkillUiField = z.infer<typeof SkillUiFieldSchema>;
 export type SkillUiAction = z.infer<typeof SkillUiActionSchema>;
 export type ProactiveTrigger = z.infer<typeof ProactiveTriggerSchema>;
+/** One configurable plugin setting, described well enough to render a form. */
+export type PluginConfigField = z.infer<typeof PluginConfigFieldSchema>;
 /** Canonical manifest — `summary`, `skills` and `tools` are always present. */
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 /** Manifest as authored on disk, before normalization. */

@@ -4,6 +4,8 @@ import { pluginStorage, sessions as sessionsTable } from '@tardis/db';
 import type { TardisDB } from '@tardis/db';
 import type { Session, SystemConfig, MemoryEntry, MemoryType } from '@tardis/shared';
 import { PermissionGuard } from './permission-guard.js';
+import type { PluginConfigField } from '@tardis/shared';
+import { coerceConfigValue, resolvePluginConfig } from './plugin-config.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { MemoryIndexer } from '../memory/memory-indexer.js';
 import type { LLMMessage, LLMProvider } from '../llm/provider.js';
@@ -134,6 +136,20 @@ export function createPluginApi(params: {
   memoryIndexer?: MemoryIndexer | undefined;
   /** Shared LLM provider, exposed to plugins holding the "llm:use" permission. */
   llmProvider?: LLMProvider;
+  /**
+   * The plugin's declared settings. Supplies defaults and validates writes.
+   * Absent means the old behaviour: system config only, no defaults, no checks.
+   */
+  configSchema?: Record<string, PluginConfigField> | undefined;
+  /**
+   * Persists a setting changed through `api.config.set`.
+   *
+   * Without it, `set` throws instead of silently discarding — which is what it
+   * used to do, and is the harder bug to find of the two.
+   */
+  persistConfig?:
+    | ((pluginName: string, key: string, value: unknown) => Promise<void>)
+    | undefined;
 }): PluginAPI {
   const { pluginName, permissions, db, eventEmitter, notificationSender, llmProvider } = params;
   const guard = new PermissionGuard(pluginName, permissions);
@@ -207,16 +223,44 @@ export function createPluginApi(params: {
   };
 
   // ─── Config ───
+  //
+  // Declared defaults, overlaid by the system config. Before this, `get` looked
+  // only at the system config, so a manifest's own defaults were dead weight
+  // and every plugin carried a DEFAULTS constant and a merge loop to work
+  // around it.
   const pluginConfig = params.config.plugins?.[pluginName] ?? {};
+  const configSchema = params.configSchema ?? {};
+  const resolved = resolvePluginConfig(configSchema, pluginConfig);
+
   const configApi: ConfigAPI = {
     async get<T = unknown>(key: string): Promise<T | null> {
-      if (key in pluginConfig) {
-        return pluginConfig[key] as T;
-      }
+      if (key in resolved.values) return resolved.values[key] as T;
+      // A key the schema does not declare still reads through, so a plugin
+      // using config as a loose bag is not broken by gaining a schema.
+      if (key in pluginConfig) return pluginConfig[key] as T;
       return null;
     },
-    async set(_key: string, _value: unknown): Promise<void> {
-      // Plugin config persistence comes in phase 2
+
+    async set(key: string, value: unknown): Promise<void> {
+      const field = configSchema[key];
+      if (field) {
+        const coerced = coerceConfigValue(field, value);
+        if (!coerced.ok) {
+          throw new Error(`Invalid value for ${pluginName}.${key}: ${coerced.message}`);
+        }
+        value = coerced.value;
+      }
+
+      if (!params.persistConfig) {
+        // Loudly, rather than the no-op this used to be. A setting that
+        // vanishes without a word is worse than one that refuses to save.
+        throw new Error(
+          `Cannot save ${pluginName}.${key}: this TARDIS instance has no config writer`
+        );
+      }
+
+      await params.persistConfig(pluginName, key, value);
+      resolved.values[key] = value;
     },
   };
 

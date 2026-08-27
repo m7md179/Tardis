@@ -25,7 +25,7 @@ just as hard to conversation state, permissions and scheduling.
 | 3 | Hybrid vector memory | **done** — 892 tests, 8/8 paraphrase / 10/10 quiet live |
 | 4 | Turn filters | **done** — 919 tests |
 | 5 | rrule scheduling | **done** — 950 tests |
-| 6 | Typed plugin config | queued |
+| 6 | Typed plugin config | **done** — 993 tests |
 | 7 | Published OpenAPI schema | queued |
 
 ---
@@ -432,6 +432,65 @@ descriptor-driven rendering works here.
 
 Open WebUI splits admin-level `Valves` from per-user `UserValves`. TARDIS is single-user;
 one level is enough.
+
+### What was actually broken
+
+Worse than "untyped bag". `api.config.get` read **only** the system config
+file, so a manifest's declared defaults were never consulted at all — which is
+why every plugin carries its own `DEFAULTS` constant and a merge loop. And
+`api.config.set` was a no-op: it resolved, discarded the value, and said
+nothing.
+
+### What was built
+
+The manifest `config` block now accepts a described field:
+
+```jsonc
+"maxResults": {
+  "type": "number", "label": "Results per search",
+  "description": "Snippets are a token budget, not a page.",
+  "default": 5, "min": 1, "max": 20
+}
+```
+
+Bare values still work — `"currency": "JOD"` becomes a string field whose label
+is derived from the key — so no manifest broke. A descriptor is distinguished
+from an object-valued default by requiring **both** a known `type` and a
+`label`, which makes a collision essentially impossible.
+
+The manifest exposes two views of the same block: `configSchema` describes each
+setting, and `config` stays exactly the plain key → default map it always was,
+so every existing reader is untouched. All four manifests that had settings are
+now described; a test asserts the resolved defaults are unchanged.
+
+`api.config.get` returns the declared default when the system config says
+nothing. `api.config.set` validates and persists to `config.json` — and when
+there is nowhere to write it **throws** rather than resolving. A setting that
+vanishes without a word is the harder bug of the two.
+
+Misconfiguration is reported at load, not at first use: a plugin that starts
+cleanly and then fails on its first call because a required token is missing is
+much harder to diagnose. Unknown keys are reported too — a typo in `config.json`
+that silently does nothing is the most annoying kind of configuration bug and it
+is free to catch.
+
+```
+GET /api/plugins/:name/config   -> { schema, values, issues, writable }
+PUT /api/plugins/:name/config   -> { values } ; 400 INVALID_CONFIG
+```
+
+Two details that would each have been a bug: a resubmitted secret mask means
+*unchanged*, not "set it to bullet characters" — otherwise opening the settings
+form and pressing save destroys every token. And an empty string for a number
+field is rejected rather than read as zero, because a cleared field means
+"unset", and silently storing `0` for a timeout is a dangerous reading.
+
+Masking is presentation, not storage: the value is still in `config.json` in the
+clear, and the code says so rather than implying otherwise.
+
+Existing plugins keep their local `DEFAULTS` — they work, and rewriting a
+shipped plugin for tidiness is not what this change promised. New plugins do
+not need one.
 
 ---
 

@@ -14,6 +14,7 @@ import {
   MemoryRetriever,
   MemoryIndexer,
   OllamaEmbedder,
+  resolvePluginConfig,
   MEMORY_TOOLS,
   createMemoryExecutor,
   ProactiveScheduler,
@@ -106,6 +107,21 @@ async function main(): Promise<void> {
   // ReferenceError — invisible to tsc, since the capture is inside a closure.
   const llmProvider = buildLLMProvider(config);
 
+  const saveConfig = makeSaveConfig(dataDir);
+
+  /**
+   * Writes one plugin setting back to config.json.
+   *
+   * Mutates the in-memory `config` too, so a running plugin that reads through
+   * `api.config.get` sees its own write without a restart.
+   */
+  const persistConfig = async (plugin: string, key: string, value: unknown): Promise<void> => {
+    const plugins = { ...(config.plugins ?? {}) };
+    plugins[plugin] = { ...(plugins[plugin] ?? {}), [key]: value };
+    config.plugins = plugins;
+    saveConfig(config);
+  };
+
   const pluginManager = new PluginManager(pluginsDir, (manifest) =>
     createPluginApi({
       pluginName: manifest.name,
@@ -116,6 +132,8 @@ async function main(): Promise<void> {
       notificationSender: (msg) => notificationSenderRef.send(msg),
       memoryStore,
       memoryIndexer,
+      configSchema: manifest.configSchema,
+      persistConfig,
     })
   );
   await pluginManager.loadAll();
@@ -125,6 +143,19 @@ async function main(): Promise<void> {
     `[tardis] Loaded ${loadedPlugins.length} plugin(s):`,
     loadedPlugins.map((m) => m.name)
   );
+
+  // Settings problems surface here rather than at first use — a plugin that
+  // loads fine and then fails on its first call because a required token is
+  // missing is a much harder thing to diagnose.
+  for (const manifest of loadedPlugins) {
+    const { issues } = resolvePluginConfig(
+      manifest.configSchema,
+      config.plugins?.[manifest.name] ?? {}
+    );
+    for (const issue of issues) {
+      console.warn(`[tardis] Config problem in "${manifest.name}": ${issue.message}`);
+    }
+  }
 
   // Turn filters come from module exports, not the manifest, so they are
   // invisible in `tardis plugins`. Announcing them at load is the only place a
@@ -190,7 +221,8 @@ async function main(): Promise<void> {
     db,
     config,
     pluginManager,
-    saveConfig: makeSaveConfig(dataDir),
+    saveConfig,
+    persistConfig,
     scheduler,
     memoryStore,
     ...(memoryIndexer ? { memoryIndexer } : {}),
