@@ -23,7 +23,7 @@ just as hard to conversation state, permissions and scheduling.
 | 1 | Conversation history survives a refresh | **done** — 816 tests, verified live |
 | 2 | `mutates` on skills → read-only mode | **done** — 837 tests, 3/3 live on three cases |
 | 3 | Hybrid vector memory | **done** — 892 tests, 8/8 paraphrase / 10/10 quiet live |
-| 4 | Turn filters | queued |
+| 4 | Turn filters | **done** — 919 tests |
 | 5 | rrule scheduling | queued |
 | 6 | Typed plugin config | queued |
 | 7 | Published OpenAPI schema | queued |
@@ -336,6 +336,32 @@ turn can break every turn**, so a throwing filter is skipped and logged, never f
 
 `pipe` (custom model endpoints — TARDIS has one model by design) and `action` (message
 buttons — the UI contract's `actions` already covers this ground).
+
+### What was built
+
+Filters live in `runConversationTurn`, which is the one place every surface —
+web, mobile, terminal, Telegram — already goes through. They are discovered
+from a plugin's module exports, the same way proactive handlers are; the server
+announces them at load, because a plugin quietly rewriting every turn is
+otherwise invisible in `tardis plugins`.
+
+**The rewrite is total.** A message rewritten by `onTurnStart` is the message
+for the rest of the turn: plugin selection, memory retrieval, the agent loop,
+the thought trace and the stored history all see it, and the original is not
+kept. The alternative — the model sees one thing and history records another —
+means the next turn replays a conversation that never happened, and makes a
+trace a record of something other than what ran. The same holds at the other
+end: the trace and the transcript carry the response as *delivered*, not the one
+the loop happened to produce.
+
+A rewrite to empty is ignored at both ends. Returning `{}` is the natural way to
+say "no change", and Telegram rejects empty message text outright, so a filter
+must not be able to produce a turn that cannot be delivered.
+
+**Not built: short-circuiting.** `onTurnStart` cannot end a turn early with a
+canned reply. It would be useful — a blocklist, a rate limiter — but it is a
+larger contract than this needs (what does the trace contain? is it persisted?)
+and nothing queued wants it yet. Adding it later is additive.
 
 ---
 

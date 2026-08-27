@@ -9,6 +9,8 @@ import { runAgentLoop } from './agent-loop.js';
 import type { PendingApproval } from './agent-loop.js';
 import { selectPlugins } from './plugin-router.js';
 import { CLARIFY_TOOL } from './clarify.js';
+import { applyTurnEnd, applyTurnStart } from './turn-filters.js';
+import type { TurnFilter } from './turn-filters.js';
 
 /**
  * One user message, all the way through TARDIS.
@@ -32,6 +34,12 @@ export interface ConversationDeps {
   conversationStore?: ConversationStore;
   thoughtTracer?: ThoughtTracer;
   contextWindowSize?: number;
+  /**
+   * Plugin hooks that see the whole turn. See turn-filters.ts — in particular
+   * that an onTurnStart rewrite is total: history and the trace record the
+   * rewritten message, not the original.
+   */
+  turnFilters?: TurnFilter[];
 }
 
 export interface ConversationTurnInput {
@@ -63,7 +71,12 @@ export async function runConversationTurn(
   input: ConversationTurnInput,
   deps: ConversationDeps
 ): Promise<ConversationTurnResult> {
-  const { chatId, message } = input;
+  const { chatId } = input;
+
+  // Before anything else, so plugin selection, memory retrieval, the trace and
+  // the stored history all agree about what was asked.
+  const filters = deps.turnFilters ?? [];
+  const message = await applyTurnStart(filters, { chatId, userMessage: input.message });
 
   const { tools, selectedPlugins, method } = await selectPlugins(
     message,
@@ -106,6 +119,16 @@ export async function runConversationTurn(
     pluginSelectionMethod: method,
   });
 
+  const response = await applyTurnEnd(filters, {
+    chatId,
+    userMessage: message,
+    response: result.response,
+    steps: result.trace.steps,
+  });
+  // The trace is a record of the turn as delivered, so it carries the filtered
+  // response rather than the one the loop happened to produce.
+  result.trace.finalResponse = response;
+
   // Best-effort: a tracing failure must never turn a good answer into an error.
   if (deps.thoughtTracer) {
     try {
@@ -115,10 +138,10 @@ export async function runConversationTurn(
     }
   }
 
-  await persistHistory(chatId, message, result, deps);
+  await persistHistory(chatId, message, { ...result, response }, deps);
 
   return {
-    response: result.response,
+    response,
     trace: result.trace,
     selectedPlugins,
     ...(result.pendingApproval ? { pendingApproval: result.pendingApproval } : {}),

@@ -384,3 +384,113 @@ export const executeTool = async () => ({});`;
     }
   });
 });
+
+// ─── Turn filters ────────────────────────────────────────────────────────────
+//
+// Discovered from module exports rather than declared in the manifest, the same
+// way proactive handlers are. Nothing in `tardis plugins` reveals them, which is
+// why the server announces them at load.
+
+describe('PluginManager: turn filters', () => {
+  const manifestFor = (name: string) =>
+    PluginManifestSchema.parse({
+      ...VALID_MANIFEST,
+      name,
+      tools: [
+        {
+          name: `${name}.ping`,
+          description: 'Pings the plugin',
+          parameters: { type: 'object', properties: {} },
+          actionType: 'direct',
+        },
+      ],
+    });
+
+  it('finds a plugin that exports both hooks', async () => {
+    const dir = makeTempDir();
+    createPlugin(
+      dir,
+      manifestFor('filtered'),
+      `export const onActivate = async () => {};
+       export const executeTool = async () => ({});
+       export const onTurnStart = async ({ userMessage }) => ({ userMessage: userMessage + '!' });
+       export const onTurnEnd = async ({ response }) => ({ response: response + '?' });`
+    );
+
+    const manager = new PluginManager(dir, mockApi);
+    await manager.loadAll();
+    try {
+      const filters = manager.getTurnFilters();
+      expect(filters).toHaveLength(1);
+      expect(filters[0]!.plugin).toBe('filtered');
+      expect(typeof filters[0]!.onTurnStart).toBe('function');
+      expect(typeof filters[0]!.onTurnEnd).toBe('function');
+    } finally {
+      await manager.unloadAll();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('finds a plugin that exports only one hook', async () => {
+    const dir = makeTempDir();
+    createPlugin(
+      dir,
+      manifestFor('half'),
+      `export const onActivate = async () => {};
+       export const executeTool = async () => ({});
+       export const onTurnEnd = async ({ response }) => ({ response });`
+    );
+
+    const manager = new PluginManager(dir, mockApi);
+    await manager.loadAll();
+    try {
+      const [filter] = manager.getTurnFilters();
+      expect(filter!.onTurnStart).toBeUndefined();
+      expect(typeof filter!.onTurnEnd).toBe('function');
+    } finally {
+      await manager.unloadAll();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a plugin that exports neither', async () => {
+    const dir = makeTempDir();
+    createPlugin(
+      dir,
+      manifestFor('plain'),
+      `export const onActivate = async () => {};
+       export const executeTool = async () => ({});`
+    );
+
+    const manager = new PluginManager(dir, mockApi);
+    await manager.loadAll();
+    try {
+      expect(manager.getTurnFilters()).toEqual([]);
+    } finally {
+      await manager.unloadAll();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores an export that is not a function', async () => {
+    // A plugin exporting `onTurnStart = true` would otherwise be registered and
+    // then throw on every single turn.
+    const dir = makeTempDir();
+    createPlugin(
+      dir,
+      manifestFor('wrong-type'),
+      `export const onActivate = async () => {};
+       export const executeTool = async () => ({});
+       export const onTurnStart = 'not a function';`
+    );
+
+    const manager = new PluginManager(dir, mockApi);
+    await manager.loadAll();
+    try {
+      expect(manager.getTurnFilters()).toEqual([]);
+    } finally {
+      await manager.unloadAll();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

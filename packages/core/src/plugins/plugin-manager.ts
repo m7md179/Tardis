@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, resolve } from 'path';
+import type { TurnFilter } from '../agent/turn-filters.js';
 import type {
   PluginManifest,
   PluginInstance,
@@ -265,5 +266,36 @@ export class PluginManager {
     }
 
     return handlers;
+  }
+
+  /**
+   * Turn filters across every active plugin, in load order.
+   *
+   * Discovered from module exports rather than declared in the manifest, the
+   * same way proactive handlers are. A filter is not a capability the model can
+   * invoke, so there is nothing for a permission to gate — but it is also not
+   * visible in the manifest, which is why loadAll logs the plugins that
+   * registered one.
+   */
+  getTurnFilters(): TurnFilter[] {
+    const filters: TurnFilter[] = [];
+
+    for (const [name, active] of this.activePlugins) {
+      const onTurnStart = active.moduleExports['onTurnStart'];
+      const onTurnEnd = active.moduleExports['onTurnEnd'];
+      if (typeof onTurnStart !== 'function' && typeof onTurnEnd !== 'function') continue;
+
+      filters.push({
+        plugin: name,
+        ...(typeof onTurnStart === 'function'
+          ? { onTurnStart: onTurnStart as TurnFilter['onTurnStart'] }
+          : {}),
+        ...(typeof onTurnEnd === 'function'
+          ? { onTurnEnd: onTurnEnd as TurnFilter['onTurnEnd'] }
+          : {}),
+      });
+    }
+
+    return filters;
   }
 }

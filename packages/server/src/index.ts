@@ -126,6 +126,24 @@ async function main(): Promise<void> {
     loadedPlugins.map((m) => m.name)
   );
 
+  // Turn filters come from module exports, not the manifest, so they are
+  // invisible in `tardis plugins`. Announcing them at load is the only place a
+  // plugin quietly rewriting every turn becomes apparent.
+  const turnFilters = pluginManager.getTurnFilters();
+  if (turnFilters.length > 0) {
+    console.log(
+      '[tardis] Turn filters:',
+      turnFilters
+        .map(
+          (f) =>
+            `${f.plugin} (${[f.onTurnStart && 'start', f.onTurnEnd && 'end']
+              .filter(Boolean)
+              .join('+')})`
+        )
+        .join(', ')
+    );
+  }
+
   // 4. Build AI engine
   const toolRouter = new ToolRouter(pluginManager);
   const memoryRetriever = new MemoryRetriever(
@@ -160,6 +178,7 @@ async function main(): Promise<void> {
     memoryExecutor,
     conversationStore,
     thoughtTracer,
+    turnFilters,
     ...(config.llm.contextWindowSize !== undefined
       ? { contextWindowSize: config.llm.contextWindowSize }
       : {}),
