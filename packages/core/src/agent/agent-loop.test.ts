@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'bun:test';
-import { runAgentLoop, buildSystemPrompt, recoverTextualToolCall } from './agent-loop.js';
+import {
+  runAgentLoop,
+  buildSystemPrompt,
+  recoverTextualToolCall,
+  looksLikeCompletionClaim,
+} from './agent-loop.js';
 import type { AgentLoopInput } from './agent-loop.js';
 import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 import { contentToText } from '../llm/provider.js';
@@ -992,6 +997,70 @@ describe('runAgentLoop: claim-vs-reality guard', () => {
 
     expect(result.trace.steps.some((s) => s.type === 'error')).toBe(true);
     expect(result.response).toBe('That entry does not exist, so nothing was deleted.');
+  });
+
+  // ─── The vocabulary gap ─────────────────────────────────────────────────
+  //
+  // Found live, not here: with read-only on, the permission layer denied
+  // budget.add-entry and the model answered "I have recorded a spend of 3 JOD".
+  // Every test passed, because none of them used the verb the budget and health
+  // plugins naturally invite. The verb list *is* the guard.
+
+  it('catches a claim phrased with the words the plugins actually invite', async () => {
+    const DENIED_TOOL: ToolDefinition = {
+      name: 'budget.add-entry',
+      description: 'Record a spend',
+      parameters: { type: 'object', properties: { amount: { type: 'number' } } },
+      actionType: 'direct',
+      mutates: true,
+    };
+
+    const llm = makeScriptedLLM([
+      toolCallResponse('budget.add-entry', { amount: 3 }),
+      textResponse('I have recorded a spend of 3 JOD in the transport category for a taxi.'),
+      textResponse('I could not record that — it is not permitted right now.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [DENIED_TOOL],
+        userMessage: 'I spent 3 JOD on a taxi.',
+        config: { ...DEFAULT_CONFIG, readOnly: true },
+        executeTool: async () => ({ success: true }),
+      })
+    );
+
+    const errStep = result.trace.steps.find((s) => s.type === 'error');
+    expect(errStep?.content).toContain('no tool reported carrying it out');
+    expect(result.response).toBe('I could not record that — it is not permitted right now.');
+  });
+
+  it('recognises the other verbs a write naturally attracts', () => {
+    for (const claim of [
+      'I have recorded a spend of 3 JOD.',
+      'I noted that down for you.',
+      'I have tracked the expense.',
+      'I stored that in your notes.',
+      'The spend has been recorded.',
+      'Entry recorded.',
+    ]) {
+      expect({ claim, matched: looksLikeCompletionClaim(claim) }).toMatchObject({ matched: true });
+    }
+  });
+
+  it('still ignores an ordinary answer that merely mentions a record', () => {
+    // The guard only costs an extra LLM call when it is wrong, but it should
+    // not fire on plain reporting.
+    for (const answer of [
+      'You have three tasks due today.',
+      'Your records show 12 JOD this month.',
+      'That is not something I can do.',
+    ]) {
+      expect({ answer, matched: looksLikeCompletionClaim(answer) }).toMatchObject({
+        matched: false,
+      });
+    }
   });
 
   it('does not retry when no tools are available at all', async () => {

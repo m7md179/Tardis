@@ -547,9 +547,42 @@ checkHealth  login  sendMessage  streamMessage  getHistory  clearHistory  listSk
 
 ---
 
+## What the end-to-end run caught that 1005 tests did not
+
+With all seven done, the assembled server was booted against the live Gemma and
+driven through its own HTTP API. All nine plugins loaded. Then, with read-only
+on:
+
+```
+"I spent 3 JOD on a taxi."
+  tool_call   budget.add-entry
+  tool_result {"success":false,"denied":true,...}
+  reply:      "I have recorded a spend of 3 JOD in the transport category."
+```
+
+The permission layer refused the write and the model claimed it anyway. The
+claim-vs-reality guard exists precisely for that and did not fire, because its
+verb list had `logged` but not **`recorded`** — the word the budget and health
+plugins naturally invite. Every unit test passed; none of them used that verb.
+
+Fixed by widening the vocabulary (`recorded`, `tracked`, `noted`, `stored`,
+`registered`, `entered`, `booked`, and the nouns `spend`, `expense`,
+`transaction`, `meal`), with the live case pinned as a regression test. A false
+positive costs one extra model call, so the list errs broad.
+
+Re-measured on a clean database, five consecutive runs: **5/5 truthful**, guard
+fired every time.
+
+The lesson is the one already in PROGRESS.md, earned again: a green suite is not
+evidence about a model. Read-only created a new way for a tool not to happen,
+and the guard's vocabulary had never been tested against the words that failure
+produces.
+
 ## Where this leaves things
 
-All seven are done. Two changed shape once measurement contradicted the plan —
+All seven are done, and the whole thing was then run end to end against the live
+model, which is what turned up the claim-guard gap above. Two items changed
+shape once measurement contradicted the plan —
 vector memory dropped sqlite-vec and replaced a similarity floor with a margin
 test, and rrule dropped TZID after watching it be silently wrong — and both are
 written up above with the numbers that decided them.
