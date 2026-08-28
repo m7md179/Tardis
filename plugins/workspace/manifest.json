@@ -267,6 +267,441 @@
           "subtitle": "role"
         }
       }
+    },
+    {
+      "id": "workspace.draft-start",
+      "description": "Begin drafting a new work item from a plain-language description. Returns what is still needed and the next question to ask. Use this when the user describes work they want captured, rather than creating an item immediately.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The description of the work, in the user's own words."
+          },
+          "workspaceKey": {
+            "type": "string",
+            "description": "Optional workspace key; defaults to the current one."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "New work item",
+        "icon": "plus",
+        "submitLabel": "Start",
+        "fields": [
+          {
+            "name": "text",
+            "type": "textarea",
+            "label": "Describe the work",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "workspace.draft-set",
+      "description": "Fill in one or more fields on the current draft. Pass only the fields the user just told you. Returns the updated draft and the next question.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "EPIC, STORY or SUB_TASK"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description"
+          },
+          "parent_id": {
+            "type": "number",
+            "description": "Numeric id of the parent epic or story"
+          },
+          "story_points": {
+            "type": "number",
+            "description": "Story points"
+          },
+          "estimate_hours": {
+            "type": "number",
+            "description": "Estimated hours to finish"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, ISO 8601"
+          },
+          "priority": {
+            "type": "string",
+            "description": "LOW, MEDIUM, HIGH or URGENT"
+          },
+          "assignee_account_ids": {
+            "type": "array",
+            "description": "Account ids to assign"
+          },
+          "status": {
+            "type": "string",
+            "description": "BACKLOG, TODO, IN_PROGRESS, IN_REVIEW or DONE"
+          }
+        }
+      },
+      "ui": {
+        "block": "form",
+        "label": "Edit draft",
+        "icon": "edit",
+        "submitLabel": "Save"
+      }
+    },
+    {
+      "id": "workspace.draft-show",
+      "description": "Show the current draft and what is still missing.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "ui": {
+        "block": "detail",
+        "label": "Draft",
+        "icon": "file",
+        "item": {
+          "title": "title",
+          "body": "summary",
+          "meta": [
+            "stillNeeded"
+          ]
+        }
+      }
+    },
+    {
+      "id": "workspace.draft-commit",
+      "description": "Create the real work item from the current draft. Fails with a list of what is missing if the draft is incomplete.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "ui": {
+        "block": "action",
+        "label": "Create it",
+        "icon": "check",
+        "args": {}
+      }
+    },
+    {
+      "id": "workspace.draft-cancel",
+      "description": "Discard the current draft.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "ui": {
+        "block": "action",
+        "label": "Discard draft",
+        "icon": "x",
+        "args": {}
+      }
+    },
+    {
+      "id": "workspace.create-item",
+      "description": "Create a work item directly, without drafting. Use only when every field is already known; otherwise prefer workspace.draft-start.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "EPIC, STORY or SUB_TASK"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Required unless the status is BACKLOG"
+          },
+          "parent_id": {
+            "type": "number",
+            "description": "Parent epic (for a STORY) or story (for a SUB_TASK)"
+          },
+          "priority": {
+            "type": "string",
+            "description": "LOW, MEDIUM, HIGH or URGENT"
+          },
+          "story_points": {
+            "type": "number",
+            "description": "Story points"
+          },
+          "estimate_hours": {
+            "type": "number",
+            "description": "Estimated hours"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, ISO 8601"
+          },
+          "status": {
+            "type": "string",
+            "description": "Defaults to BACKLOG"
+          },
+          "workspaceKey": {
+            "type": "string",
+            "description": "Optional workspace key; defaults to the current one."
+          }
+        },
+        "required": [
+          "type",
+          "title"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Create work item",
+        "icon": "plus",
+        "submitLabel": "Create"
+      }
+    },
+    {
+      "id": "workspace.edit-item",
+      "description": "Change fields on a work item you report or are assigned to. Refuses items belonging to someone else.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric work item id"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title"
+          },
+          "description": {
+            "type": "string",
+            "description": "New description"
+          },
+          "priority": {
+            "type": "string",
+            "description": "LOW, MEDIUM, HIGH or URGENT"
+          },
+          "story_points": {
+            "type": "number",
+            "description": "Story points"
+          },
+          "estimate_hours": {
+            "type": "number",
+            "description": "Estimated hours"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, ISO 8601"
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Edit item",
+        "icon": "edit",
+        "submitLabel": "Save"
+      }
+    },
+    {
+      "id": "workspace.move-item",
+      "description": "Move a work item to another status column. Only offers transitions your workspace role permits. Refuses items belonging to someone else.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric work item id"
+          },
+          "status": {
+            "type": "string",
+            "description": "BACKLOG, TODO, IN_PROGRESS, IN_REVIEW or DONE"
+          }
+        },
+        "required": [
+          "itemId",
+          "status"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Move item",
+        "icon": "arrow-right",
+        "submitLabel": "Move"
+      }
+    },
+    {
+      "id": "workspace.comment",
+      "description": "Add a comment to a work item.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric work item id"
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment text"
+          }
+        },
+        "required": [
+          "itemId",
+          "body"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Comment",
+        "icon": "message",
+        "submitLabel": "Post"
+      }
+    },
+    {
+      "id": "workspace.edit-any-item",
+      "description": "Change fields on any work item, including one belonging to someone else. Requires approval.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric work item id"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title"
+          },
+          "description": {
+            "type": "string",
+            "description": "New description"
+          },
+          "priority": {
+            "type": "string",
+            "description": "LOW, MEDIUM, HIGH or URGENT"
+          },
+          "status": {
+            "type": "string",
+            "description": "Target status"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date, ISO 8601"
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Edit any item",
+        "icon": "edit",
+        "submitLabel": "Save"
+      }
+    },
+    {
+      "id": "workspace.assign",
+      "description": "Assign a work item to one or more people. This is the only way to put work on someone other than yourself. Requires approval.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric work item id"
+          },
+          "accountIds": {
+            "type": "array",
+            "description": "Account ids to assign the item to"
+          }
+        },
+        "required": [
+          "itemId",
+          "accountIds"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Assign",
+        "icon": "users",
+        "submitLabel": "Assign"
+      }
+    },
+    {
+      "id": "workspace.archive-item",
+      "description": "Archive a work item, removing it from the board without deleting it. Requires approval.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric work item id"
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Archive",
+        "icon": "archive",
+        "submitLabel": "Archive"
+      }
+    },
+    {
+      "id": "workspace.delete-item",
+      "description": "Delete a work item. The server blocks this if the item has children. Requires approval.",
+      "aiInvocable": true,
+      "actionType": "workflow",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "number",
+            "description": "Numeric work item id"
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Delete",
+        "icon": "trash",
+        "submitLabel": "Delete"
+      }
     }
   ],
   "config": {

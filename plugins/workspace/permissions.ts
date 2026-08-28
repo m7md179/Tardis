@@ -77,3 +77,21 @@ export function resolvePermissions(workspace: Workspace, myAccountId: number): P
       !s.act_own_only || (item.assignees ?? []).some((a) => a.account_id === myAccountId),
   };
 }
+
+/**
+ * Whether an item is yours, for the purposes of the direct-vs-approval split.
+ *
+ * Separate from `canActOnItem`, which answers what the *server* will allow.
+ * This answers what we are willing to do without asking, and it deliberately
+ * counts the reporter: an item you filed is yours to correct even before
+ * anyone picks it up.
+ */
+export function isMine(
+  item: { assignees: { account_id: number }[] | null; reporter_account_id: number },
+  myAccountId: number
+): boolean {
+  // -1 is the "not logged in yet" sentinel. It must never match anything.
+  if (myAccountId < 0) return false;
+  if (item.reporter_account_id === myAccountId) return true;
+  return (item.assignees ?? []).some((a) => a.account_id === myAccountId);
+}

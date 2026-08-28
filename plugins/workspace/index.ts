@@ -1,10 +1,28 @@
 import type { PluginAPI } from '@tardis/core';
 import { IoClient } from './io-client.js';
-import { resolvePermissions } from './permissions.js';
+import { isMine, resolvePermissions } from './permissions.js';
 import { displayName, formatBoard, formatWorkItem, formatWorkspaceSummary } from './format.js';
 import { WORK_ITEM_STATUSES } from './types.js';
-import type { Assignee, WorkItem } from './types.js';
+import type {
+  Assignee,
+  WorkItem,
+  WorkItemPriority,
+  WorkItemStatus,
+  WorkItemType,
+} from './types.js';
 import { resolveWorkspaceId } from './current.js';
+import {
+  blockingSlots,
+  createDraft,
+  optionalSlots,
+  setSlots,
+  toCreatePayload,
+  validateForCommit,
+} from './draft.js';
+import type { Draft, SlotPatch } from './draft.js';
+import { describeDraft, nextQuestion } from './questions.js';
+import { rankCandidates } from './ranking.js';
+import type { Candidate } from './ranking.js';
 
 let api: PluginAPI;
 let client: IoClient | null = null;
@@ -123,6 +141,84 @@ function optionalKey(args: Record<string, unknown>): string | undefined {
   return typeof k === 'string' && k.trim() !== '' ? k : undefined;
 }
 
+function requireItemId(args: Record<string, unknown>): number {
+  const id = Number(args['itemId']);
+  if (!Number.isInteger(id)) throw new Error('Workspace: itemId must be a whole number.');
+  return id;
+}
+
+/**
+ * The direct/approval split cannot be configuration: actionType is static and
+ * resolvePermission grades by tool name, so "ask only when the item is someone
+ * else's" has to be a skill boundary. These refuse and name the workflow twin.
+ */
+function assertMine(item: WorkItem, myAccountId: number, itemId: number): void {
+  if (isMine(item, myAccountId)) return;
+  throw new Error(
+    `Workspace: #${itemId} is not yours — you neither reported it nor are assigned to it. ` +
+      `Use workspace.edit-any-item if you mean to change someone else's work.`
+  );
+}
+
+function buildPatchFromArgs(args: Record<string, unknown>): SlotPatch {
+  const patch: SlotPatch = {};
+  if (typeof args['type'] === 'string') patch.type = args['type'] as WorkItemType;
+  if (typeof args['title'] === 'string') patch.title = args['title'];
+  if (typeof args['description'] === 'string') patch.description = args['description'];
+  if (typeof args['priority'] === 'string') patch.priority = args['priority'] as WorkItemPriority;
+  if (typeof args['status'] === 'string') patch.status = args['status'] as WorkItemStatus;
+  if (typeof args['due_date'] === 'string') patch.due_date = args['due_date'];
+  if (typeof args['parent_id'] === 'number') patch.parent_id = args['parent_id'];
+  if (typeof args['story_points'] === 'number') patch.story_points = args['story_points'];
+  if (typeof args['estimate_hours'] === 'number') patch.estimate_hours = args['estimate_hours'];
+  if (Array.isArray(args['assignee_account_ids'])) {
+    patch.assignee_account_ids = (args['assignee_account_ids'] as unknown[]).filter(
+      (v): v is number => typeof v === 'number'
+    );
+  }
+  return patch;
+}
+
+const DRAFT_KEY = 'draft:active';
+
+async function loadDraft(): Promise<Draft> {
+  const d = await api.storage.get<Draft>(DRAFT_KEY);
+  if (d === null || d.status !== 'OPEN') {
+    throw new Error('Workspace: no draft in progress. Start one by describing the work.');
+  }
+  return d;
+}
+
+/** Parent candidates for the draft's current type, or [] when none apply. */
+async function parentCandidates(io: IoClient, draft: Draft): Promise<Candidate[]> {
+  const type = draft.slots.type.value;
+  if (type === null || type === 'EPIC') return [];
+  const parentType = type === 'STORY' ? 'EPIC' : 'STORY';
+
+  const all = await io.searchItemsByType(draft.workspaceId, parentType);
+  return rankCandidates(
+    { generate: (prompt) => api.llm.generate(prompt), logger: api.logger },
+    draft.sourceText,
+    all
+  );
+}
+
+/** The one shape every draft skill returns, so every surface renders it alike. */
+async function draftEnvelope(io: IoClient, draft: Draft): Promise<Record<string, unknown>> {
+  const blocking = blockingSlots(draft);
+  const candidates = blocking[0] === 'parent_id' ? await parentCandidates(io, draft) : [];
+  return {
+    draft,
+    title: draft.slots.title.value ?? '(untitled draft)',
+    summary: describeDraft(draft),
+    blocking,
+    optional: optionalSlots(draft),
+    stillNeeded: blocking.length > 0 ? blocking.join(', ') : 'nothing — ready to create',
+    candidates,
+    nextQuestion: nextQuestion(draft, candidates),
+  };
+}
+
 // ─── Tool execution ───
 
 export const executeTool = async (
@@ -234,6 +330,197 @@ export const executeTool = async (
           }),
         })),
       };
+    }
+
+    // ─── Draft ───
+
+    case 'workspace.draft-start': {
+      const io = assertConfigured();
+      const workspaceId = await currentWorkspaceId(io, optionalKey(args));
+      const text = typeof args['text'] === 'string' ? args['text'] : '';
+      if (text.trim() === '') throw new Error('Workspace: describe the work you want captured.');
+
+      const myAccountId = (await api.storage.get<number>('accountId')) ?? -1;
+      const now = new Date().toISOString();
+      const draft = createDraft({ id: `d_${now}`, workspaceId, sourceText: text, myAccountId, now });
+      await api.storage.set(DRAFT_KEY, draft);
+      return draftEnvelope(io, draft);
+    }
+
+    case 'workspace.draft-set': {
+      const io = assertConfigured();
+      const draft = await loadDraft();
+      const updated = setSlots(draft, buildPatchFromArgs(args), 'user', new Date().toISOString());
+      await api.storage.set(DRAFT_KEY, updated);
+      return draftEnvelope(io, updated);
+    }
+
+    case 'workspace.draft-show': {
+      const io = assertConfigured();
+      return draftEnvelope(io, await loadDraft());
+    }
+
+    case 'workspace.draft-commit': {
+      const io = assertConfigured();
+      const draft = await loadDraft();
+      const errors = validateForCommit(draft);
+      if (errors.length > 0) {
+        return {
+          created: false,
+          errors,
+          summary: describeDraft(draft),
+          nextQuestion: nextQuestion(draft),
+        };
+      }
+
+      const item = await io.createItem(draft.workspaceId, toCreatePayload(draft));
+      await api.storage.set(DRAFT_KEY, { ...draft, status: 'COMMITTED' });
+
+      const myAccountId = (await api.storage.get<number>('accountId')) ?? -1;
+      const others = (draft.slots.assignee_account_ids.value ?? []).filter(
+        (id) => id !== myAccountId
+      );
+
+      return {
+        created: true,
+        id: item.id,
+        text: formatWorkItem(item),
+        // Commit is `direct`, so it must not be the thing that lands work in
+        // someone else's queue. workspace.assign is `workflow` and asks first.
+        followUp:
+          others.length > 0
+            ? `The draft named other assignees (${others.join(', ')}). Call workspace.assign to put it on them.`
+            : null,
+      };
+    }
+
+    case 'workspace.draft-cancel': {
+      const draft = await api.storage.get<Draft>(DRAFT_KEY);
+      await api.storage.delete(DRAFT_KEY);
+      return { cancelled: draft !== null, message: 'Draft discarded.' };
+    }
+
+    // ─── Direct writes ───
+
+    case 'workspace.create-item': {
+      const io = assertConfigured();
+      const workspaceId = await currentWorkspaceId(io, optionalKey(args));
+      const myAccountId = (await api.storage.get<number>('accountId')) ?? -1;
+      const now = new Date().toISOString();
+
+      // Routed through the Draft so create-item and the conversational path
+      // share one set of rules. Two copies of the hierarchy and description
+      // gates would drift.
+      let draft = createDraft({
+        id: `d_${now}`,
+        workspaceId,
+        sourceText: String(args['title'] ?? ''),
+        myAccountId,
+        now,
+      });
+      draft = setSlots(draft, buildPatchFromArgs(args), 'user', now);
+
+      const errors = validateForCommit(draft);
+      if (errors.length > 0) throw new Error(`Workspace: ${errors.join(' ')}`);
+
+      const item = await io.createItem(workspaceId, toCreatePayload(draft));
+      return { id: item.id, text: formatWorkItem(item) };
+    }
+
+    case 'workspace.edit-item': {
+      const io = assertConfigured();
+      const itemId = requireItemId(args);
+      const myAccountId = (await api.storage.get<number>('accountId')) ?? -1;
+      assertMine(await io.getItem(itemId), myAccountId, itemId);
+
+      const patch: Record<string, unknown> = {};
+      for (const k of ['title', 'description', 'priority', 'due_date'] as const) {
+        if (typeof args[k] === 'string' && args[k] !== '') patch[k] = args[k];
+      }
+      for (const k of ['story_points', 'estimate_hours'] as const) {
+        if (typeof args[k] === 'number') patch[k] = args[k];
+      }
+      if (Object.keys(patch).length === 0) throw new Error('Workspace: nothing to change.');
+
+      const item = await io.updateItem(itemId, patch);
+      return { id: item.id, text: formatWorkItem(item) };
+    }
+
+    case 'workspace.move-item': {
+      const io = assertConfigured();
+      const itemId = requireItemId(args);
+      const status = String(args['status'] ?? '').toUpperCase() as WorkItemStatus;
+      const myAccountId = (await api.storage.get<number>('accountId')) ?? -1;
+
+      const existing = await io.getItem(itemId);
+      assertMine(existing, myAccountId, itemId);
+
+      const ws = (await io.listWorkspaces()).find((w) => w.id === existing.workspace_id);
+      if (ws !== undefined) {
+        const perms = resolvePermissions(ws, myAccountId);
+        if (!perms.canTransition(existing.status, status)) {
+          const legal = perms.allowedTargets(existing.status);
+          throw new Error(
+            `Workspace: you cannot move #${itemId} from ${existing.status} to ${status}. ` +
+              (legal.length > 0
+                ? `You can move it to: ${legal.join(', ')}.`
+                : 'You have no transitions from this column.')
+          );
+        }
+      }
+
+      const item = await io.moveItem(itemId, { status });
+      return { id: item.id, text: formatWorkItem(item) };
+    }
+
+    case 'workspace.comment': {
+      const io = assertConfigured();
+      const itemId = requireItemId(args);
+      const body = String(args['body'] ?? '').trim();
+      if (body === '') throw new Error('Workspace: the comment is empty.');
+      await io.addComment(itemId, body);
+      return { message: `Commented on #${itemId}.` };
+    }
+
+    // ─── Approval-gated ───
+
+    case 'workspace.edit-any-item': {
+      const io = assertConfigured();
+      const itemId = requireItemId(args);
+      const patch: Record<string, unknown> = {};
+      for (const k of ['title', 'description', 'priority', 'status', 'due_date'] as const) {
+        if (typeof args[k] === 'string' && args[k] !== '') patch[k] = args[k];
+      }
+      if (Object.keys(patch).length === 0) throw new Error('Workspace: nothing to change.');
+      const item = await io.updateItem(itemId, patch);
+      return { id: item.id, text: formatWorkItem(item) };
+    }
+
+    case 'workspace.assign': {
+      const io = assertConfigured();
+      const itemId = requireItemId(args);
+      const ids = Array.isArray(args['accountIds'])
+        ? (args['accountIds'] as unknown[]).filter((v): v is number => typeof v === 'number')
+        : [];
+      if (ids.length === 0) throw new Error('Workspace: name at least one account id to assign.');
+      // The server rejects admin accounts as assignees with a clear 400; let it,
+      // rather than duplicating a rule here that would drift.
+      const item = await io.assign(itemId, ids);
+      return { id: item.id, text: formatWorkItem(item) };
+    }
+
+    case 'workspace.archive-item': {
+      const io = assertConfigured();
+      const itemId = requireItemId(args);
+      await io.archiveItem(itemId);
+      return { message: `Archived #${itemId}.` };
+    }
+
+    case 'workspace.delete-item': {
+      const io = assertConfigured();
+      const itemId = requireItemId(args);
+      await io.deleteItem(itemId);
+      return { message: `Deleted #${itemId}.` };
     }
 
     default:
