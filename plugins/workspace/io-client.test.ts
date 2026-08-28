@@ -265,3 +265,91 @@ describe('typed reads', () => {
     expect(calls[1]!.url).toContain('q=rate%20limit%20%26%20auth');
   });
 });
+
+describe('writes', () => {
+  const okThen =
+    (payload: unknown) =>
+    (_c: Call, n: number): Response =>
+      n === 1
+        ? jsonResponse(LOGIN_OK)
+        : jsonResponse({ data: payload, status: 200, message: 'ok' });
+
+  it('POSTs a create to the workspace-scoped route', async () => {
+    const { client, calls } = makeClient(okThen({ id: 9 }));
+    await client.createItem(7, { type: 'EPIC', title: 'T' });
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/7/work-items');
+    expect(calls[1]!.init?.method).toBe('POST');
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ type: 'EPIC', title: 'T' });
+  });
+
+  it('PATCHes an update to the flat work-item route', async () => {
+    const { client, calls } = makeClient(okThen({ id: 9 }));
+    await client.updateItem(9, { title: 'New' });
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/9');
+    expect(calls[1]!.init?.method).toBe('PATCH');
+  });
+
+  it('PATCHes a move to the move sub-route', async () => {
+    const { client, calls } = makeClient(okThen({ id: 9 }));
+    await client.moveItem(9, { status: 'TODO' });
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/9/move');
+    expect(calls[1]!.init?.method).toBe('PATCH');
+  });
+
+  it('assigns by PATCHing assignee_account_ids', async () => {
+    const { client, calls } = makeClient(okThen({ id: 9 }));
+    await client.assign(9, [4, 5]);
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/9');
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ assignee_account_ids: [4, 5] });
+  });
+
+  it('DELETEs a soft-delete', async () => {
+    const { client, calls } = makeClient(okThen(true));
+    await client.deleteItem(9);
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/9');
+    expect(calls[1]!.init?.method).toBe('DELETE');
+  });
+
+  it('POSTs an archive to its own sub-route', async () => {
+    const { client, calls } = makeClient(okThen({ id: 9 }));
+    await client.archiveItem(9);
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/9/archive');
+    expect(calls[1]!.init?.method).toBe('POST');
+  });
+
+  it('posts a comment as { body }, matching CreateCommentDto', async () => {
+    const { client, calls } = makeClient(okThen({ id: 1 }));
+    await client.addComment(9, 'looks good');
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/9/comments');
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ body: 'looks good' });
+  });
+
+  it('fetches all items of one type for the parent picker', async () => {
+    const { client, calls } = makeClient(okThen([]));
+    await client.searchItemsByType(7, 'EPIC');
+    expect(calls[1]!.url).toContain('/workspaces/7/work-items');
+    expect(calls[1]!.url).toContain('type=EPIC');
+    expect(calls[1]!.url).toContain('archived=exclude');
+  });
+
+  it('surfaces the description gate verbatim rather than paraphrasing it', async () => {
+    const { client } = makeClient((_c, n) =>
+      n === 1
+        ? jsonResponse(LOGIN_OK)
+        : jsonResponse(
+            {
+              message: 'A work item needs a description before it can enter To Do',
+              statusCode: 400,
+            },
+            400
+          )
+    );
+    let caught: unknown;
+    try {
+      await client.createItem(7, { type: 'EPIC', title: 'T', status: 'TODO' });
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as Error).message).toContain('needs a description');
+  });
+});

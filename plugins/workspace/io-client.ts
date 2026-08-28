@@ -196,4 +196,42 @@ export class IoClient {
   async getMembers(workspaceId: number): Promise<unknown[]> {
     return this.request<unknown[]>('GET', `/workspaces/${workspaceId}/members`);
   }
+
+  /** Every item of one type, for the parent picker. Not a text search. */
+  async searchItemsByType(workspaceId: number, type: string): Promise<WorkItem[]> {
+    const query = `?type=${encodeURIComponent(type)}&archived=exclude`;
+    return this.request<WorkItem[]>('GET', `/workspaces/${workspaceId}/work-items${query}`);
+  }
+
+  // ─── Writes ───
+
+  async createItem(workspaceId: number, payload: Record<string, unknown>): Promise<WorkItem> {
+    return this.request<WorkItem>('POST', `/workspaces/${workspaceId}/work-items`, payload);
+  }
+
+  async updateItem(itemId: number, patch: Record<string, unknown>): Promise<WorkItem> {
+    return this.request<WorkItem>('PATCH', `/workspaces/work-items/${itemId}`, patch);
+  }
+
+  /** Board move: { status, board_order } — or backlog reorder: { backlog_order }. */
+  async moveItem(itemId: number, body: Record<string, unknown>): Promise<WorkItem> {
+    return this.request<WorkItem>('PATCH', `/workspaces/work-items/${itemId}/move`, body);
+  }
+
+  async assign(itemId: number, accountIds: number[]): Promise<WorkItem> {
+    return this.updateItem(itemId, { assignee_account_ids: accountIds });
+  }
+
+  /** CreateCommentDto is { body, mention_account_ids? }; mentions are out of scope. */
+  async addComment(itemId: number, body: string): Promise<unknown> {
+    return this.request<unknown>('POST', `/workspaces/work-items/${itemId}/comments`, { body });
+  }
+
+  async archiveItem(itemId: number): Promise<WorkItem> {
+    return this.request<WorkItem>('POST', `/workspaces/work-items/${itemId}/archive`, {});
+  }
+
+  async deleteItem(itemId: number): Promise<unknown> {
+    return this.request<unknown>('DELETE', `/workspaces/work-items/${itemId}`);
+  }
 }
