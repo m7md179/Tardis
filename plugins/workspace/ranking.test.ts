@@ -62,6 +62,24 @@ describe('scoreAgainst', () => {
     expect(inTitle).toBeGreaterThan(inDesc);
   });
 
+  it('ignores a subsequence-only match, which is noise at this scale', () => {
+    // fuzzyScore falls back to "are the needle's characters somewhere in order",
+    // so "rate" scores 0.188 against "ContRAcTor modulE". Measured against a
+    // real workspace: a query about login rate limiting surfaced Contractor
+    // Module, Contractor Agreement and R&D System Development. Any four-letter
+    // token subsequence-matches almost any longer title, so only exact and
+    // substring matches may count.
+    expect(scoreAgainst('rate limiting', { title: 'Contractor Module', description: null })).toBe(0);
+    expect(scoreAgainst('add rate limiting to the login endpoint', {
+      title: 'Contractor Agreement',
+      description: null,
+    })).toBe(0);
+  });
+
+  it('still scores a real substring match', () => {
+    expect(scoreAgainst('rate limiting', { title: 'Login rate limits', description: null })).toBeGreaterThan(0);
+  });
+
   it('returns 0 when the query has no usable tokens, instead of dividing by zero', () => {
     expect(scoreAgainst('a to the', { title: 'Anything', description: null })).toBe(0);
   });
@@ -221,6 +239,39 @@ describe('rankCandidates', () => {
       EPICS3
     );
     expect(called).toBe(true);
+  });
+
+  it('offers nothing rather than something arbitrary when nothing matches', async () => {
+    // Seen against a real workspace: a query about login rate limiting matched
+    // no epic, and the old fallback returned the first three items in the
+    // workspace — "Procurement Purchase", "Site Request", "Contractor Module" —
+    // presented as if they were candidates. An empty list is honest; the
+    // question is still asked, just without a misleading shortlist.
+    let called = false;
+    const out = await rankCandidates(
+      {
+        generate: async () => {
+          called = true;
+          return '[]';
+        },
+        logger: noopLog,
+      },
+      'quantum entanglement harmonics',
+      EPICS3
+    );
+    expect(out).toEqual([]);
+    expect(called).toBe(false);
+  });
+
+  it('still offers everything when the query itself carried no signal', async () => {
+    // Different case: no usable tokens at all means we have no opinion, so
+    // showing the list beats showing nothing.
+    const out = await rankCandidates(
+      { generate: async () => 'not json', logger: noopLog },
+      'a to the',
+      EPICS3
+    );
+    expect(out.length).toBeGreaterThan(0);
   });
 
   it('returns nothing when there are no items at all', async () => {

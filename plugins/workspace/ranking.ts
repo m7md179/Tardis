@@ -72,6 +72,20 @@ export function tokenize(text: string): string[] {
 /** A description match counts, but a title match counts for more. */
 const DESCRIPTION_WEIGHT = 0.4;
 
+/**
+ * Below this, a token did not really match.
+ *
+ * fuzzyScore has three tiers: 1.0 exact, 0.9 substring, and otherwise a
+ * subsequence ratio scaled to 0.8. That third tier is noise at this scale —
+ * "rate" scores 0.188 against "ContRAcTor modulE" because the letters happen to
+ * appear in order. Measured against a real workspace, a query about login rate
+ * limiting surfaced Contractor Module, Contractor Agreement and R&D System
+ * Development, none of which are related to anything.
+ *
+ * 0.5 keeps the exact and substring tiers and discards the subsequence one.
+ */
+const MIN_TOKEN_SCORE = 0.5;
+
 export function scoreAgainst(
   query: string,
   item: { title: string; description: string | null }
@@ -79,11 +93,15 @@ export function scoreAgainst(
   const tokens = tokenize(query);
   if (tokens.length === 0) return 0;
 
+  const keep = (score: number): number => (score >= MIN_TOKEN_SCORE ? score : 0);
+
   let total = 0;
   for (const token of tokens) {
-    const titleScore = fuzzyScore(token, item.title);
+    // Threshold BEFORE the description weight, so a genuine substring match in
+    // a description is not scaled below the floor and thrown away.
+    const titleScore = keep(fuzzyScore(token, item.title));
     const descScore =
-      item.description === null ? 0 : fuzzyScore(token, item.description) * DESCRIPTION_WEIGHT;
+      item.description === null ? 0 : keep(fuzzyScore(token, item.description)) * DESCRIPTION_WEIGHT;
     total += Math.max(titleScore, descScore);
   }
 
@@ -149,8 +167,13 @@ export async function rankCandidates(
 ): Promise<Candidate[]> {
   if (items.length === 0) return [];
 
-  const shortlist = prefilter(query, items);
-  const pool = shortlist.length > 0 ? shortlist : items;
+  // An empty shortlist means the query had real tokens and none of them
+  // matched. That is an answer, not a failure — offering the first three items
+  // instead would dress unrelated work up as candidates. `prefilter` already
+  // returns everything for the genuinely-no-opinion case (a query with no
+  // usable tokens), so this only fires when we know nothing fits.
+  const pool = prefilter(query, items);
+  if (pool.length === 0) return [];
 
   const asCandidates = (list: WorkItem[]): Candidate[] =>
     list.slice(0, topN).map((i) => ({ id: i.id, title: i.title, reason: null }));
