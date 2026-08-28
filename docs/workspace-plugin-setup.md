@@ -306,3 +306,74 @@ Plan 1; the AI path needs a provider configured before it is worth testing.
 members, so `workspace.my-items` is permanently empty and `my_settings` is always
 `null`. Fine for reads; Plan 2's draft flow needs an ordinary user account on
 whichever database the plugin points at.
+
+---
+
+## 7. Plan 2 verification — drafts, ranking and writes
+
+Run 2026-08-28 against the live `wt-analytics-server` on `https://localhost:3010`
+(DB `internal-operation-local`), as a **non-admin** account. That matters: §3's
+admin limitation meant the whole assignee half of this was previously
+unexercisable. As a MEMBER, `getMyItems` returned **110** items where the admin
+account returned 0.
+
+### What passed
+
+| Check | Result |
+|---|---|
+| Login as a non-admin | account 100, `my_role="MEMBER"` |
+| `my_settings` parsed | real payload, 20 transition grants, all capabilities allowed |
+| `searchItemsByType` | 15 epics, 59 stories |
+| Draft question order | type → title → parent, and it says "story" for a SUB_TASK |
+| Description gate | fires **locally** before any request |
+| Full write cycle | create #439 → get → move TODO→BACKLOG → comment → delete |
+| `isMine` | true for an item this account reported |
+| EPIC-with-parent | refused locally, and `parent_id` stripped from the payload |
+| `delete-item` via the API | `APPROVAL_REQUIRED`, item untouched |
+
+### Correction to §4: `assignees` is absent, not null
+
+§4 says create returns `assignees: null`. Against this server it is **absent
+entirely** — `undefined`, not `null`. Both are handled (`item.assignees ?? []`),
+so nothing breaks, but the accurate statement is: **do not rely on `assignees`
+existing on a create or update response.** Only list, board and detail responses
+carry it.
+
+### Ranking: what real data exposed
+
+Synthetic fixtures made the ranker look better than it was. Against 15 real
+epics, a query about login rate limiting returned:
+
+```
+Contractor Module, Contractor Agreement, R&D System Development, ...
+```
+
+Two separate faults, both now fixed:
+
+**Subsequence noise.** `fuzzyScore`'s third tier scores "are the needle's
+characters present in order", so `rate` scores 0.188 against
+`Cont`**`ra`**`c`**`t`**`or modul`**`e`**. Any four-letter token
+subsequence-matches almost any longer title. Tokens now need **0.5**, which
+keeps the exact (1.0) and substring (0.9) tiers and discards the third.
+
+**Arbitrary fallback.** An empty shortlist means "the query had real tokens and
+none matched" — an answer. The code treated it as failure and returned the first
+three items in the workspace as candidates. It now returns nothing, so the
+question is still asked but without a misleading shortlist. `prefilter` still
+returns everything when the query carried no usable tokens at all, which is the
+genuinely-no-opinion case and a different thing.
+
+After both fixes, the same query returns `[]` — correct, because this workspace
+has no authentication epic.
+
+### The honest limit: no LLM was available
+
+Ollama is not running, so `rankCandidates` fell back to the fuzzy order on every
+call. **The LLM re-rank has never been executed against real data.** Everything
+above measures the prefilter alone. The re-rank's own failure paths are covered
+by unit tests with a stubbed model — fences, invented ids, non-JSON, throws — but
+whether a local model actually improves the ordering is untested and unknown.
+
+That matters most for the case the design was built for: wording that shares no
+words with the right epic. The prefilter cannot solve that by construction, and
+the re-rank is the part meant to. Configure a provider before trusting D4.
