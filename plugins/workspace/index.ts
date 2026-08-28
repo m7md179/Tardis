@@ -400,6 +400,26 @@ export const executeTool = async (
       return { cancelled: draft !== null, message: 'Draft discarded.' };
     }
 
+    case 'workspace.list-parent-candidates': {
+      const io = assertConfigured();
+      // Prefer the live draft's wording; fall back to the type the form passed.
+      const draft = await api.storage.get<Draft>(DRAFT_KEY);
+      const childType =
+        typeof args['type'] === 'string' ? args['type'] : (draft?.slots.type.value ?? null);
+      if (childType === null || childType === 'EPIC') return { candidates: [] };
+
+      const workspaceId = draft?.workspaceId ?? (await currentWorkspaceId(io));
+      const parentType = childType === 'STORY' ? 'EPIC' : 'STORY';
+      const all = await io.searchItemsByType(workspaceId, parentType);
+
+      const candidates = await rankCandidates(
+        { generate: (prompt) => api.llm.generate(prompt), logger: api.logger },
+        draft?.sourceText ?? '',
+        all
+      );
+      return { candidates };
+    }
+
     // ─── Direct writes ───
 
     case 'workspace.create-item': {

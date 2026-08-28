@@ -377,3 +377,67 @@ whether a local model actually improves the ordering is untested and unknown.
 That matters most for the case the design was built for: wording that shares no
 words with the right epic. The prefilter cannot solve that by construction, and
 the re-rank is the part meant to. Configure a provider before trusting D4.
+
+---
+
+## 8. Plan 3 — the `remote-select` field type
+
+The UI contract gained one field type, because `select` carries static options
+and a parent picker is a query. See `UI-CONTRACT.md` for the contract wording;
+this section is what shipped and what was actually checked.
+
+### What changed, in both repos
+
+| Repo | File | Change |
+|---|---|---|
+| Tardis | `packages/shared/src/schemas/plugin.ts` | `remote-select` + `SkillUiOptionsFromSchema`, with refinements both ways |
+| Tardis | `UI-CONTRACT.md` | documents the type, and adds Rule 6 |
+| Tardis | `plugins/workspace/manifest.json` | `workspace.list-parent-candidates`, and a real picker on `draft-set` |
+| tardis-app | `packages/ui-contract` | mirrors the type and `UiOptionsFrom` |
+| tardis-app | `packages/core/src/bindings.ts` | `buildOptionsArgs`, `resolveOptions`, `isSubmittable` |
+| tardis-app | `apps/tui/src/render.ts`, `browse.ts` | numbered-list picker |
+| tardis-app | `apps/web/src/components/blocks.tsx` | self-loading `<select>` + Rule 6 |
+
+**Deploy ordering still matters.** tardis-app must understand the type before
+Tardis emits it, or every workspace form silently loses its parent picker. Both
+sides are in this pair of branches, so ship them together.
+
+### Verified
+
+The descriptor survives `GET /api/skills` byte-for-byte:
+
+```json
+{ "name": "parent_id", "type": "remote-select", "label": "Parent",
+  "optionsFrom": { "skill": "workspace.list-parent-candidates",
+                   "args": { "type": "type" }, "resultPath": "candidates",
+                   "value": "id", "text": "title", "hint": "reason" } }
+```
+
+In the TUI, the field loads its options, and when that call fails it says so and
+falls back to a plain id prompt:
+
+```
+  Type (select) [Epic / Story / Sub-task]: SUB_TASK
+  Title (text): My sub-task
+  could not load options: Tool "workspace.list-parent-candidates" failed: …
+  Parent (remote-select) (no suggestions — enter an id):
+```
+
+All 23 skills render, with `[approval]` on the four `workflow` ones.
+
+### Not verified: the picker with options actually in it
+
+The IO server on `:3080` went down mid-session and would not restart —
+`dist/main` fails with `Error validating datasource "db": the URL must start
+with the protocol "prisma://"`. That Prisma client is built for Accelerate while
+`DATABASE_URL` is plain Postgres. Pre-existing, unrelated to this work, and left
+alone.
+
+So the **populated** picker has never been seen end to end. What is covered:
+
+- `resolveOptions` and `buildOptionsArgs` — unit tests in `packages/core`
+- `renderOptions` and `pickOption` — unit tests in `apps/tui`
+- `rankCandidates` returning real candidates — verified in §7 against `:3010`
+
+Every link is tested; the assembled chain is not. Drive `draft-set` in the TUI
+against a reachable IO server to close it.

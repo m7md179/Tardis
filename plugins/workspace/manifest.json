@@ -358,7 +358,118 @@
         "block": "form",
         "label": "Edit draft",
         "icon": "edit",
-        "submitLabel": "Save"
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "type",
+            "type": "select",
+            "label": "Type",
+            "options": [
+              {
+                "value": "EPIC",
+                "label": "Epic"
+              },
+              {
+                "value": "STORY",
+                "label": "Story"
+              },
+              {
+                "value": "SUB_TASK",
+                "label": "Sub-task"
+              }
+            ]
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "label": "Title"
+          },
+          {
+            "name": "parent_id",
+            "type": "remote-select",
+            "label": "Parent",
+            "optionsFrom": {
+              "skill": "workspace.list-parent-candidates",
+              "args": {
+                "type": "type"
+              },
+              "resultPath": "candidates",
+              "value": "id",
+              "text": "title",
+              "hint": "reason"
+            }
+          },
+          {
+            "name": "description",
+            "type": "textarea",
+            "label": "Description"
+          },
+          {
+            "name": "story_points",
+            "type": "number",
+            "label": "Points"
+          },
+          {
+            "name": "estimate_hours",
+            "type": "number",
+            "label": "Estimate (hours)"
+          },
+          {
+            "name": "due_date",
+            "type": "date",
+            "label": "Due"
+          },
+          {
+            "name": "priority",
+            "type": "select",
+            "label": "Priority",
+            "options": [
+              {
+                "value": "LOW",
+                "label": "Low"
+              },
+              {
+                "value": "MEDIUM",
+                "label": "Medium"
+              },
+              {
+                "value": "HIGH",
+                "label": "High"
+              },
+              {
+                "value": "URGENT",
+                "label": "Urgent"
+              }
+            ]
+          },
+          {
+            "name": "status",
+            "type": "select",
+            "label": "Status",
+            "options": [
+              {
+                "value": "BACKLOG",
+                "label": "Backlog"
+              },
+              {
+                "value": "TODO",
+                "label": "Todo"
+              },
+              {
+                "value": "IN_PROGRESS",
+                "label": "In Progress"
+              },
+              {
+                "value": "IN_REVIEW",
+                "label": "In Review"
+              },
+              {
+                "value": "DONE",
+                "label": "Done"
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -701,6 +812,33 @@
         "label": "Delete",
         "icon": "trash",
         "submitLabel": "Delete"
+      }
+    },
+    {
+      "id": "workspace.list-parent-candidates",
+      "description": "Ranked parent candidates for the current draft. Feeds the parent picker; the agent resolves parents through the draft skills instead.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "The child's type: STORY or SUB_TASK"
+          }
+        }
+      },
+      "ui": {
+        "block": "list",
+        "label": "Parent candidates",
+        "icon": "list",
+        "resultPath": "candidates",
+        "emptyText": "No matching parent.",
+        "item": {
+          "id": "id",
+          "title": "title",
+          "subtitle": "reason"
+        }
       }
     }
   ],
