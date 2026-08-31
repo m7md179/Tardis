@@ -171,3 +171,28 @@ describe('maskSecrets', () => {
     expect(maskSecrets(schema, { apiToken: '' })['apiToken']).toBe('');
   });
 });
+
+describe('resolvePluginConfig: required means set', () => {
+  const schema = { apiKey: str({ required: true, default: '' }) };
+
+  it('reports a required field left empty by its own default', () => {
+    // The workspace plugin ships `"required": true, "default": ""` for its
+    // password and API key. Saying "no issues" would report a plugin as
+    // configured while every call it makes fails on a missing credential.
+    const { issues } = resolvePluginConfig(schema);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('required but not set');
+  });
+
+  it('reports a required field explicitly blanked in the config', () => {
+    expect(resolvePluginConfig(schema, { apiKey: '' }).issues).toHaveLength(1);
+  });
+
+  it('is satisfied once a real value is present', () => {
+    expect(resolvePluginConfig(schema, { apiKey: 'abc123' }).issues).toEqual([]);
+  });
+
+  it('leaves an optional empty field alone', () => {
+    expect(resolvePluginConfig({ note: str({ default: '' }) }).issues).toEqual([]);
+  });
+});

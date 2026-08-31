@@ -119,16 +119,32 @@ describe('shipped plugin settings', () => {
     )
   );
 
-  it('every declared setting resolves without complaint out of the box', () => {
-    // A shipped plugin that is misconfigured before anyone has touched it is a
-    // packaging bug, and this is the only place it shows up.
+  /**
+   * Plugins that cannot work without a credential someone must supply.
+   *
+   * They are allowed to report their required fields as unset out of the box —
+   * that is the settings UI telling the truth, not a packaging bug. Everything
+   * else must be usable the moment it is installed.
+   */
+  const NEEDS_CREDENTIALS = new Set(['workspace', 'todoist', 'google-calendar']);
+
+  it('every plugin that can work unconfigured, does', () => {
     for (const m of manifests) {
+      if (NEEDS_CREDENTIALS.has(m.name)) continue;
       const { issues } = resolvePluginConfig(m.configSchema, {});
-      const requiredWithoutDefault = issues.filter((i) => i.message.includes('required'));
-      expect({ plugin: m.name, issues: requiredWithoutDefault }).toEqual({
-        plugin: m.name,
-        issues: [],
-      });
+      expect({ plugin: m.name, issues }).toEqual({ plugin: m.name, issues: [] });
+    }
+  });
+
+  it('a plugin needing credentials says exactly which ones, and nothing else', () => {
+    // The failure this catches is a plugin that is broken for some *other*
+    // reason hiding behind "well, it needs credentials".
+    for (const name of NEEDS_CREDENTIALS) {
+      const m = manifests.find((x) => x.name === name);
+      if (!m) continue;
+      const { issues } = resolvePluginConfig(m.configSchema, {});
+      const unexpected = issues.filter((i) => !i.message.includes('required but not set'));
+      expect({ plugin: name, unexpected }).toEqual({ plugin: name, unexpected: [] });
     }
   });
 

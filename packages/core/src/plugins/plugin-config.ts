@@ -104,6 +104,13 @@ export function resolvePluginConfig(
     if (supplied === undefined || supplied === null) {
       if (field.default !== undefined) {
         values[key] = field.default;
+        // A required field whose default is empty is not satisfied by it. The
+        // workspace plugin ships `"password": { "required": true, "default": "" }`
+        // — reporting "no issues" there would tell someone their settings are
+        // fine while every call fails on a missing credential.
+        if (field.required && isEmpty(field.default)) {
+          issues.push({ key, message: `${field.label} is required but not set` });
+        }
       } else if (field.required) {
         issues.push({ key, message: `${field.label} is required and has no default` });
       }
@@ -113,6 +120,9 @@ export function resolvePluginConfig(
     const coerced = coerceConfigValue(field, supplied);
     if (coerced.ok) {
       values[key] = coerced.value;
+      if (field.required && isEmpty(coerced.value)) {
+        issues.push({ key, message: `${field.label} is required but not set` });
+      }
     } else {
       issues.push({ key, message: `${field.label}: ${coerced.message}` });
     }
@@ -148,6 +158,11 @@ export function maskSecrets(
 
 /** Whether a submitted value is the mask rather than a real edit. */
 export const SECRET_MASK = '••••••••';
+
+/** Blank counts as unset for a required field. */
+function isEmpty(value: unknown): boolean {
+  return value === '' || value === undefined || value === null;
+}
 
 function describe(value: unknown): string {
   if (value === null) return 'null';
