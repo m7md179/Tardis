@@ -152,6 +152,29 @@ const MAX_COMPLETION_RETRIES = 1;
  * decline only as a subordinate clause, measures 3/3 and still produces a reply
  * naming both records.
  */
+/**
+ * Sent when the model answered without calling anything at all.
+ *
+ * A different problem from the multi-intent one below, and it needs a different
+ * sentence. The failure is not "you missed a part of my request" — it is that
+ * the answer came out of the conversation rather than out of the data. Live,
+ * this produced "You are assigned to 135 work items. The list of items is
+ * provided in the previous response", and a Todoist error replayed for a plugin
+ * that had been removed.
+ *
+ * So it names the fact — nothing was looked up — rather than naming a plugin,
+ * for the same reason the multi-intent nudge names an amount: a fact leaves
+ * nothing to argue with.
+ */
+function recallNudge(userMessage: string, unusedPlugins: string[]): string {
+  return (
+    `Re-read what I asked: "${userMessage}". ` +
+    'You answered without calling any tool, so that answer came from our earlier ' +
+    'conversation, not from checking. Anything you told me before may be out of date. ' +
+    `Call ${unusedPlugins.join(' or ')} now and answer from what it returns.`
+  );
+}
+
 function completionNudge(
   userMessage: string,
   unusedPlugins: string[],
@@ -466,8 +489,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       const finalText = text.trim() ? text : fallbackForEmptyResponse(rawSteps);
 
       // ─── Completion guard ─────────────────────────────────────────────────
-      // The router deliberately chose these plugins. If the turn is ending with
-      // some of them untouched, a part of the request is probably unhandled.
+      // The router deliberately chose these plugins. If the turn ends with any
+      // of them untouched, part of the request is probably unhandled.
       const deliberate =
         input.pluginSelectionMethod === 'llm' || input.pluginSelectionMethod === 'explicit';
       if (deliberate && tools !== undefined && completionRetriesUsed < MAX_COMPLETION_RETRIES) {
@@ -477,22 +500,46 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
             .map((s) => (s.toolName as string).split('.')[0]!)
         );
         const unused = input.selectedPlugins.filter((p) => !usedPlugins.has(p));
-        if (input.selectedPlugins.length > 1 && unused.length > 0) {
+
+        // Two shapes, and the first used to be missed entirely.
+        //
+        // `nothingUsed`: the router picked plugins and the model called none of
+        // them. Live, "what am I assigned to?" came back "You are assigned to
+        // 135 work items. The list of items is provided in the previous
+        // response" — answered from conversation history, with zero tool calls,
+        // about data that had not been fetched this turn. Worse, "what do i
+        // have in to do" replayed a Todoist error from history for a plugin
+        // that had since been removed entirely.
+        //
+        // The old condition required more than one selected plugin, so exactly
+        // this case — one plugin chosen, nothing called — was silent. That is
+        // backwards: it is the clearest signal there is.
+        //
+        // `partiallyUsed` is the original multi-intent case, where one message
+        // carried two requests and only one was handled.
+        const nothingUsed = input.selectedPlugins.length > 0 && unused.length === input.selectedPlugins.length;
+        const partiallyUsed = input.selectedPlugins.length > 1 && unused.length > 0;
+
+        if (nothingUsed || partiallyUsed) {
           completionRetriesUsed++;
           steps.push({
             type: 'error',
-            content: `Turn ended without using ${unused.join(', ')} — checking whether part of the request is unhandled.`,
+            content: nothingUsed
+              ? `Turn ended without calling ${unused.join(', ')} at all — the answer may be recalled rather than looked up.`
+              : `Turn ended without using ${unused.join(', ')} — checking whether part of the request is unhandled.`,
             timestamp: stepStart,
             durationMs: Date.now() - stepStart,
           });
           messages.push({ role: 'assistant', content: text });
           messages.push({
             role: 'user',
-            content: completionNudge(
-              input.userMessage,
-              unused,
-              unrecordedAmounts(input.userMessage, rawSteps)
-            ),
+            content: nothingUsed
+              ? recallNudge(input.userMessage, unused)
+              : completionNudge(
+                  input.userMessage,
+                  unused,
+                  unrecordedAmounts(input.userMessage, rawSteps)
+                ),
           });
           continue;
         }

@@ -2277,3 +2277,138 @@ describe('runAgentLoop: read-only mode', () => {
     expect(result.response).toBe('Which month did you mean?');
   });
 });
+
+// ─── Answering from memory instead of from the data ──────────────────────────
+//
+// Live, after Todoist had been removed entirely:
+//
+//   > what do i have in to do
+//   (router selected workspace, zero tool calls)
+//   > I am unable to list your tasks because the Todoist API token is not configured.
+//
+//   > what am I assigned to?
+//   (router selected workspace, zero tool calls)
+//   > You are assigned to 135 work items. The list of items is provided in the
+//     previous response.
+//
+// Both replayed an earlier turn. The completion guard was silent because it
+// required more than one selected plugin, so the single-plugin case — the
+// clearest one — could never trigger it.
+
+describe('runAgentLoop: answered without looking anything up', () => {
+  const WORKSPACE_TOOL: ToolDefinition = {
+    name: 'workspace.my-items',
+    description: 'List the work items assigned to me',
+    parameters: { type: 'object', properties: {} },
+    actionType: 'direct',
+    mutates: false,
+  };
+
+  it('retries when one plugin was selected and nothing was called', async () => {
+    const llm = makeScriptedLLM([
+      textResponse('You are assigned to 135 work items. The list is in the previous response.'),
+      toolCallResponse('workspace.my-items', {}),
+      textResponse('You are assigned to 4 work items.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WORKSPACE_TOOL],
+        selectedPlugins: ['workspace'],
+        pluginSelectionMethod: 'llm',
+        userMessage: 'what am I assigned to?',
+        executeTool: async () => ({ count: 4, items: [], text: '4 items:' }),
+      })
+    );
+
+    const err = result.trace.steps.find((s) => s.type === 'error');
+    expect(err?.content).toContain('without calling');
+    expect(result.trace.steps.some((s) => s.type === 'tool_call')).toBe(true);
+    expect(result.response).toBe('You are assigned to 4 work items.');
+  });
+
+  it('tells the model the answer came from the conversation, not from checking', async () => {
+    const seen: string[] = [];
+    let call = 0;
+    const llm: LLMProvider = {
+      name: 'mock',
+      async chat({ messages }) {
+        seen.push(...messages.map((m) => contentToText(m.content)));
+        call++;
+        return call === 1
+          ? textResponse('You are assigned to 135 work items.')
+          : toolCallResponse('workspace.my-items', {});
+      },
+      async generate() {
+        return '';
+      },
+    };
+
+    await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WORKSPACE_TOOL],
+        selectedPlugins: ['workspace'],
+        pluginSelectionMethod: 'llm',
+        userMessage: 'what am I assigned to?',
+        executeTool: async () => ({ count: 4, items: [], text: '4 items:' }),
+      })
+    );
+
+    expect(seen.some((c) => c.includes('came from our earlier conversation'))).toBe(true);
+    expect(seen.some((c) => c.includes('may be out of date'))).toBe(true);
+  });
+
+  it('still does not fire when the model did call the selected plugin', async () => {
+    const llm = makeScriptedLLM([
+      toolCallResponse('workspace.my-items', {}),
+      textResponse('You are assigned to 4 work items.'),
+    ]);
+
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WORKSPACE_TOOL],
+        selectedPlugins: ['workspace'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({ count: 4, items: [], text: '4 items:' }),
+      })
+    );
+    expect(result.trace.steps.some((s) => s.type === 'error')).toBe(false);
+  });
+
+  it('does not fire when the router never deliberately chose anything', async () => {
+    // A fallback selection is a guess, not an intent, and must not be treated
+    // as evidence that a tool was required.
+    const llm = makeScriptedLLM([textResponse('You are assigned to 135 work items.')]);
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WORKSPACE_TOOL],
+        selectedPlugins: ['workspace'],
+        pluginSelectionMethod: 'fallback',
+        executeTool: async () => ({}),
+      })
+    );
+    expect(result.trace.steps.some((s) => s.type === 'error')).toBe(false);
+  });
+
+  it('retries only once, then lets the answer stand', async () => {
+    const llm = makeScriptedLLM([
+      textResponse('You are assigned to 135 work items.'),
+      textResponse('You are assigned to 135 work items.'),
+    ]);
+    const result = await runAgentLoop(
+      makeInput({
+        llmProvider: llm,
+        availableTools: [WORKSPACE_TOOL],
+        selectedPlugins: ['workspace'],
+        pluginSelectionMethod: 'llm',
+        executeTool: async () => ({}),
+      })
+    );
+    expect(result.trace.steps.filter((s) => s.type === 'error')).toHaveLength(1);
+    expect(result.response).toBe('You are assigned to 135 work items.');
+  });
+});
