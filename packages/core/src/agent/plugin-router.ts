@@ -14,6 +14,12 @@ export interface PluginSelectionResult {
   method: 'llm' | 'explicit' | 'fallback' | 'empty';
 }
 
+/** Keeps the routing prompt short; the router only needs the gist. */
+function truncate(text: string, max = 200): string {
+  const t = text.trim().replace(/\s+/g, ' ');
+  return t.length <= max ? t : t.slice(0, max) + '…';
+}
+
 // ─── Plugin Router ────────────────────────────────────────────────────────────
 
 /**
@@ -35,10 +41,27 @@ export interface PluginSelectionResult {
  *   3. Fallback         — if LLM returns malformed JSON, load all plugins
  *   4. Empty            — if no plugins are loaded, return empty (chatbot mode)
  */
+/**
+ * One line of "what just happened", for routing a reply that means nothing on
+ * its own.
+ *
+ * Live: TARDIS asked which workspace a draft belonged to, the user answered
+ * "RD-TEA", and the router — seeing only those seven characters — sent it to
+ * the notes plugin. A follow-up is the most common shape in a conversation and
+ * the router was the one component with no memory of one.
+ */
+export interface RoutingContext {
+  /** What the user said immediately before this message. */
+  previousUserMessage?: string | undefined;
+  /** Plugins the previous turn actually used. */
+  previousPlugins?: string[] | undefined;
+}
+
 export async function selectPlugins(
   userMessage: string,
   allPlugins: PluginManifest[],
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  context: RoutingContext = {}
 ): Promise<PluginSelectionResult> {
   const start = Date.now();
 
@@ -62,10 +85,25 @@ export async function selectPlugins(
   // ─── Strategy 2: LLM-based selection ─────────────────────────────────────
   const pluginSummaries = allPlugins.map((p) => `- ${p.name}: "${p.summary}"`).join('\n');
 
+  // Only the previous exchange, and only when there is one. A short answer
+  // like "RD-TEA" or "yes" carries its meaning entirely in what came before.
+  const priorLines: string[] = [];
+  if (context.previousUserMessage) {
+    priorLines.push(`Earlier the user said: "${truncate(context.previousUserMessage)}"`);
+  }
+  if (context.previousPlugins && context.previousPlugins.length > 0) {
+    priorLines.push(
+      `That was handled by: ${context.previousPlugins.join(', ')}. ` +
+        `If this message continues it, pick the same plugin.`
+    );
+  }
+  const prior = priorLines.length > 0 ? `${priorLines.join('\n')}\n\n` : '';
+
   const selectionPrompt =
     `Given the user's message, pick which plugins are needed to handle it.\n` +
     `Return ONLY a JSON array of plugin names. If no plugins are needed (e.g., casual conversation), return [].\n\n` +
     `Available plugins:\n${pluginSummaries}\n\n` +
+    prior +
     `User message: "${userMessage}"`;
 
   let rawResponse: string;

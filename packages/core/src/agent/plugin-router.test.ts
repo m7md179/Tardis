@@ -300,3 +300,84 @@ describe('selectPlugins: malformed-but-recognisable responses', () => {
     expect((await selectPlugins('x', ALL_PLUGINS, llm)).method).toBe('fallback');
   });
 });
+
+// ─── Routing a reply that means nothing alone ────────────────────────────────
+//
+// Live: TARDIS asked which workspace a draft belonged to, the user answered
+// "RD-TEA", and the router — seeing only those seven characters — sent it to
+// notes, 3 times out of 3. With the previous exchange it picks workspace, 3/3,
+// and ordinary routing is unchanged (18/18 across six cases against Gemma).
+
+describe('selectPlugins: conversation context', () => {
+  function capturingLLM(reply: string) {
+    let prompt = '';
+    const provider: LLMProvider = {
+      name: 'mock',
+      async chat() {
+        return { type: 'text', text: '' };
+      },
+      async generate(p: { userPrompt: string }) {
+        prompt = p.userPrompt;
+        return reply;
+      },
+    };
+    return { provider, seen: () => prompt };
+  }
+
+  const PLUGINS = [makePlugin('workspace', 'Work items, boards, sprints.', 1), NOTES];
+
+  it('tells the router what the user said a moment ago', () => {
+    const { provider, seen } = capturingLLM('["workspace"]');
+    return selectPlugins('RD-TEA', PLUGINS, provider, {
+      previousUserMessage: 'create a sub task for me',
+      previousPlugins: ['workspace'],
+    }).then(() => {
+      expect(seen()).toContain('create a sub task for me');
+      expect(seen()).toContain('workspace');
+      expect(seen()).toContain('RD-TEA');
+    });
+  });
+
+  it('says which plugin handled the previous turn, so a continuation stays put', async () => {
+    const { provider, seen } = capturingLLM('["workspace"]');
+    await selectPlugins('RD-TEA', PLUGINS, provider, { previousPlugins: ['workspace'] });
+    expect(seen()).toMatch(/handled by: workspace/i);
+    expect(seen()).toMatch(/continues it, pick the same plugin/i);
+  });
+
+  it('adds nothing when there is no previous turn', async () => {
+    // A first message must route exactly as it did before this existed.
+    const { provider, seen } = capturingLLM('["workspace"]');
+    await selectPlugins('what am I assigned to?', PLUGINS, provider);
+    expect(seen()).not.toMatch(/Earlier the user said/);
+    expect(seen()).not.toMatch(/handled by/);
+  });
+
+  it('truncates a long previous message rather than resending an essay', async () => {
+    const { provider, seen } = capturingLLM('["workspace"]');
+    await selectPlugins('yes', PLUGINS, provider, { previousUserMessage: 'x'.repeat(500) });
+    const line = seen().split('\n').find((l) => l.startsWith('Earlier the user said'))!;
+    expect(line.length).toBeLessThan(260);
+    expect(line).toContain('…');
+  });
+
+  it('does not disturb explicit selection, which never reaches the model', async () => {
+    let asked = false;
+    const provider: LLMProvider = {
+      name: 'mock',
+      async chat() {
+        return { type: 'text', text: '' };
+      },
+      async generate() {
+        asked = true;
+        return '[]';
+      },
+    };
+    const r = await selectPlugins('use workspace to list my items', PLUGINS, provider, {
+      previousPlugins: ['notes'],
+    });
+    expect(r.method).toBe('explicit');
+    expect(r.selectedPlugins).toEqual(['workspace']);
+    expect(asked).toBe(false);
+  });
+});

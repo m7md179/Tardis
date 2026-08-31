@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { runAgentLoop } from './agent-loop.js';
 import type { PendingApproval } from './agent-loop.js';
 import { selectPlugins } from './plugin-router.js';
+import type { RoutingContext } from './plugin-router.js';
 import { CLARIFY_TOOL } from './clarify.js';
 import { applyTurnEnd, applyTurnStart } from './turn-filters.js';
 import type { TurnFilter } from './turn-filters.js';
@@ -130,10 +131,18 @@ export async function runConversationTurn(
     ? installed.filter((m) => deps.isPluginConfigured!(m.name))
     : installed;
 
+  // Loaded before selection, not after, because the router needs it: a reply
+  // like "RD-TEA" or "yes" means nothing without the message it answers.
+  const maxMessages = deps.agentConfig.conversationHistoryLength * 2;
+  const conversationHistory =
+    input.history ??
+    (deps.conversationStore ? await deps.conversationStore.getHistory(chatId, maxMessages) : []);
+
   const { tools, selectedPlugins, method } = await selectPlugins(
     message,
     usable,
-    deps.llmProvider
+    deps.llmProvider,
+    routingContext(conversationHistory)
   );
   input.onPluginsSelected?.(selectedPlugins);
 
@@ -150,11 +159,6 @@ export async function runConversationTurn(
     }
     return pluginExecutor(toolName, args);
   };
-
-  const maxMessages = deps.agentConfig.conversationHistoryLength * 2;
-  const conversationHistory =
-    input.history ??
-    (deps.conversationStore ? await deps.conversationStore.getHistory(chatId, maxMessages) : []);
 
   const result = await runAgentLoop({
     userMessage: message,
@@ -197,6 +201,35 @@ export async function runConversationTurn(
     trace: result.trace,
     selectedPlugins,
     ...(result.pendingApproval ? { pendingApproval: result.pendingApproval } : {}),
+  };
+}
+
+/**
+ * The last thing the user said, and which plugins served it.
+ *
+ * Read back from the stored history rather than tracked separately, so it works
+ * on every surface and survives a restart. Tool messages carry the plugin name
+ * in `name`, which is how a turn's plugins are recovered without a second store.
+ */
+function routingContext(history: LLMMessage[]): RoutingContext {
+  let previousUserMessage: string | undefined;
+  const plugins = new Set<string>();
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i]!;
+    if (m.role === 'user' && previousUserMessage === undefined) {
+      previousUserMessage = typeof m.content === 'string' ? m.content : undefined;
+      // Everything before the previous user message belongs to an older turn.
+      break;
+    }
+    if (m.role === 'tool' && typeof m.name === 'string' && m.name.includes('.')) {
+      plugins.add(m.name.split('.')[0]!);
+    }
+  }
+
+  return {
+    ...(previousUserMessage !== undefined ? { previousUserMessage } : {}),
+    ...(plugins.size > 0 ? { previousPlugins: [...plugins] } : {}),
   };
 }
 
