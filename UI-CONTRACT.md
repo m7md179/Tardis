@@ -66,8 +66,52 @@ default; declare `fields` only to override order, labels, or widget choice.
 ```
 
 **Field types:** `text`, `textarea`, `number`, `date`, `time`, `datetime`, `select`,
-`tags`, `checkbox`, `image`. Every surface must implement all of them — a TUI renders
-`date` as a validated text input, which is a rendering choice, not an excuse to skip it.
+`remote-select`, `tags`, `checkbox`, `image`. Every surface must implement all of them — a
+TUI renders `date` as a validated text input, which is a rendering choice, not an excuse to
+skip it.
+
+#### `remote-select` — options that are not known at authoring time
+
+`select` carries its options as static JSON in the manifest. That cannot express a picker
+over a collection the plugin owns: which epic, which project, which calendar. Those are
+rows, and rows change.
+
+```jsonc
+{
+  "name": "parent_id",
+  "type": "remote-select",
+  "label": "Parent story",
+  "required": true,
+  "optionsFrom": {
+    "skill": "workspace.list-parent-candidates",
+    "args": { "type": "type" },      // skill param  <-  another field in this form
+    "resultPath": "candidates",
+    "value": "id",
+    "text": "title",
+    "hint": "reason"                  // optional secondary line
+  }
+}
+```
+
+It earns a place in the vocabulary because it is a **shape, not a feature** — any plugin
+whose parameter is an id into its own data needs it. `todoist` would use it for projects,
+`google-calendar` for calendars. And it keeps the rules that matter:
+
+- **Rule 1 holds.** It names a *skill id*, never a URL or an expression. The descriptor is
+  still JSON that survives `GET /api/skills` unchanged.
+- **Rule 2 holds.** `parameters` is still the single argument contract; the skill accepts
+  `parent_id: number` either way. Only the widget changed.
+- It reuses the existing indirection: `args` maps a skill parameter to a form field, the
+  exact mirror of `list.actions.args` mapping one to an item field.
+
+A `board` block would have failed that test, which is why there isn't one.
+
+**Degradation.** This is a new *type*, not a new key on `select`, so Rule 5 covers it: an
+older client skips the field and logs, rather than rendering a dropdown that is silently
+empty. Rule 6 below says what to do when the skipped field was required.
+
+**Schema.** `remote-select` without `optionsFrom` is rejected, and `optionsFrom` on a plain
+`select` is rejected — the two cannot be quietly confused.
 
 `image` submits a **data URI**, the same shape `PluginAPI.llm.analyzeImage` expects. A
 surface with a camera offers one; a surface without falls back to a file picker; the TUI
@@ -171,3 +215,7 @@ enhancement; the standard block is the contract.
    forgets cannot accidentally destroy anything.
 5. **Unknown block or field type → skip and log.** A client must never crash on a
    descriptor from a newer server than itself.
+6. **A skipped *required* field disables submission.** Rule 5 keeps an old client alive,
+   but a form missing a required id must not be submittable — silently posting an
+   incomplete payload is worse than showing no form. The client must disable submit and
+   say why.

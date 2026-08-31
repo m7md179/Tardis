@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'bun:test';
-import { PluginManifestSchema, resolveMutates, normalizeConfigSchema } from './plugin.js';
+import {
+  PluginManifestSchema,
+  SkillUiDescriptorSchema,
+  resolveMutates,
+  normalizeConfigSchema,
+} from './plugin.js';
 
 // ─── Manifest normalization (Phase B, see SKILLS.md) ─────────────────────────
 //
@@ -424,5 +429,99 @@ describe('PluginManifestSchema: config', () => {
     });
     expect(m.config).toEqual({});
     expect(m.configSchema).toEqual({});
+  });
+});
+
+// ─── remote-select ───────────────────────────────────────────────────────────
+//
+// The vocabulary gained one field type, for the shape `select` cannot express:
+// options that are not known when the manifest is written. It names a skill,
+// not a URL, so descriptors stay declarative data.
+
+describe('SkillUiFieldSchema: remote-select', () => {
+  const optionsFrom = {
+    skill: 'workspace.list-parent-candidates',
+    resultPath: 'candidates',
+    value: 'id',
+    text: 'title',
+  };
+
+  it('accepts a remote-select carrying optionsFrom', () => {
+    const parsed = SkillUiDescriptorSchema.parse({
+      block: 'form',
+      label: 'New item',
+      fields: [{ name: 'parent_id', type: 'remote-select', label: 'Parent', optionsFrom }],
+    });
+    expect(parsed.fields?.[0]?.type).toBe('remote-select');
+  });
+
+  it('rejects a remote-select without optionsFrom, which would render an empty picker', () => {
+    expect(() =>
+      SkillUiDescriptorSchema.parse({
+        block: 'form',
+        label: 'New item',
+        fields: [{ name: 'parent_id', type: 'remote-select', label: 'Parent' }],
+      })
+    ).toThrow();
+  });
+
+  it('rejects optionsFrom on a plain select, so the two cannot be confused', () => {
+    expect(() =>
+      SkillUiDescriptorSchema.parse({
+        block: 'form',
+        label: 'New item',
+        fields: [{ name: 'parent_id', type: 'select', label: 'Parent', optionsFrom }],
+      })
+    ).toThrow();
+  });
+
+  it('carries an optional hint path for a secondary line', () => {
+    const parsed = SkillUiDescriptorSchema.parse({
+      block: 'form',
+      label: 'New item',
+      fields: [
+        {
+          name: 'parent_id',
+          type: 'remote-select',
+          label: 'Parent',
+          optionsFrom: { ...optionsFrom, hint: 'reason' },
+        },
+      ],
+    });
+    expect(parsed.fields?.[0]?.optionsFrom?.hint).toBe('reason');
+  });
+
+  it('requires optionsFrom to name a skill, not a URL', () => {
+    expect(() =>
+      SkillUiDescriptorSchema.parse({
+        block: 'form',
+        label: 'New item',
+        fields: [
+          {
+            name: 'parent_id',
+            type: 'remote-select',
+            label: 'Parent',
+            optionsFrom: { ...optionsFrom, skill: 'https://example.com/options' },
+          },
+        ],
+      })
+    ).toThrow();
+  });
+
+  it('maps a skill argument to another field in the same form', () => {
+    const parsed = SkillUiDescriptorSchema.parse({
+      block: 'form',
+      label: 'New item',
+      fields: [
+        { name: 'type', type: 'text', label: 'Type' },
+        {
+          name: 'parent_id',
+          type: 'remote-select',
+          label: 'Parent',
+          optionsFrom: { ...optionsFrom, args: { type: 'type' } },
+        },
+      ],
+    });
+    expect(parsed.fields?.[1]?.optionsFrom?.args).toEqual({ type: 'type' });
   });
 });

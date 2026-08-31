@@ -44,10 +44,40 @@ export const SkillUiFieldTypeSchema = z.enum([
   'time',
   'datetime',
   'select',
+  'remote-select',
   'tags',
   'checkbox',
   'image',
 ]);
+
+/**
+ * Where a `remote-select` gets its options.
+ *
+ * The shape `select` cannot express: a picker over a collection the plugin
+ * owns, whose members are not known when the manifest is written. Any plugin
+ * with a parameter that is an id into its own data needs this — todoist for
+ * projects, google-calendar for calendars — so it is a shape, not a feature.
+ *
+ * It names a **skill id**, never a URL or an expression, so a descriptor
+ * remains declarative data that survives GET /api/skills unchanged.
+ */
+export const SkillUiOptionsFromSchema = z.object({
+  /** Skill to invoke for the options. `plugin.skill`, same format as everywhere else. */
+  skill: z.string().regex(/^[a-z0-9-]+\.[a-z0-9-]+$/),
+  /**
+   * Skill parameter name -> the name of another field in this same form. The
+   * mirror of list.actions.args, which maps a parameter to a field on an item.
+   */
+  args: z.record(z.string(), z.string()).optional(),
+  /** Where the array sits in the handler result. */
+  resultPath: z.string().min(1),
+  /** Path to the value submitted for this field. */
+  value: z.string().min(1),
+  /** Path to the text shown for each option. */
+  text: z.string().min(1),
+  /** Optional path to a secondary line, e.g. why a candidate was suggested. */
+  hint: z.string().optional(),
+});
 
 export const SkillUiFieldSchema = z.object({
   /** Must name a parameter the skill actually accepts. */
@@ -61,7 +91,16 @@ export const SkillUiFieldSchema = z.object({
   options: z
     .array(z.object({ value: z.union([z.string(), z.number()]), label: z.string().min(1) }))
     .optional(),
-});
+  optionsFrom: SkillUiOptionsFromSchema.optional(),
+})
+  .refine((f) => f.type !== 'remote-select' || f.optionsFrom !== undefined, {
+    message: 'A "remote-select" field requires "optionsFrom" — without it there is nothing to show',
+    path: ['optionsFrom'],
+  })
+  .refine((f) => f.optionsFrom === undefined || f.type === 'remote-select', {
+    message: '"optionsFrom" belongs to "remote-select"; a plain "select" carries static "options"',
+    path: ['optionsFrom'],
+  });
 
 /** How to read one element of a result collection. Values are field paths, not literals. */
 export const SkillUiItemSchema = z.object({
