@@ -42,6 +42,18 @@ export interface ConversationDeps {
    * rewritten message, not the original.
    */
   turnFilters?: TurnFilter[];
+  /**
+   * Whether a plugin's required settings are satisfied.
+   *
+   * Absent means "assume yes", which is the old behaviour.
+   *
+   * Offering the router a plugin that cannot possibly succeed costs a turn and
+   * produces an error the user has no way to act on. Live: "what do i have in
+   * to do" routed to Todoist — which has no API token and never has — and
+   * answered with a configuration error, while 135 real work items sat in a
+   * plugin that *is* configured.
+   */
+  isPluginConfigured?: (pluginName: string) => boolean;
 }
 
 export interface ConversationTurnInput {
@@ -94,19 +106,33 @@ export async function runConversationTurn(
   // This used to exist in the Telegram bot only, which is why the web app, the
   // mobile app and the terminal could not describe TARDIS at all.
   if (isCapabilityQuestion(message)) {
+    const all = deps.getAllManifests();
+    const needsSetup = new Set(
+      deps.isPluginConfigured
+        ? all.filter((m) => !deps.isPluginConfigured!(m.name)).map((m) => m.name)
+        : []
+    );
     return finishTurn({
       chatId,
       message,
-      answer: describeCapabilities(deps.getAllManifests(), capabilityDetail(message)),
+      answer: describeCapabilities(all, capabilityDetail(message), needsSetup),
       filters,
       startedAt,
       deps,
     });
   }
 
+  // A plugin missing a required credential is not a capability, however good
+  // its summary reads. Hiding it from selection is what lets a question about
+  // "to do" reach the plugin that actually holds work items.
+  const installed = deps.getAllManifests();
+  const usable = deps.isPluginConfigured
+    ? installed.filter((m) => deps.isPluginConfigured!(m.name))
+    : installed;
+
   const { tools, selectedPlugins, method } = await selectPlugins(
     message,
-    deps.getAllManifests(),
+    usable,
     deps.llmProvider
   );
   input.onPluginsSelected?.(selectedPlugins);

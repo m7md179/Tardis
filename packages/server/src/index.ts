@@ -210,6 +210,15 @@ async function main(): Promise<void> {
     conversationStore,
     thoughtTracer,
     turnFilters,
+    // Computed per call rather than captured once, so saving a credential
+    // through the settings endpoint takes effect without a restart.
+    isPluginConfigured: (name: string): boolean => {
+      const manifest = pluginManager.getAllManifests().find((m) => m.name === name);
+      if (!manifest) return false;
+      return (
+        resolvePluginConfig(manifest.configSchema, config.plugins?.[name] ?? {}).issues.length === 0
+      );
+    },
     ...(config.llm.contextWindowSize !== undefined
       ? { contextWindowSize: config.llm.contextWindowSize }
       : {}),

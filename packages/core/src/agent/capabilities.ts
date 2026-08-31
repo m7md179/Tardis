@@ -155,11 +155,19 @@ function firstSentence(text: string): string {
   return (cut ? cut[0] : text).trim();
 }
 
+/**
+ * @param needsSetup plugins whose required settings are unsatisfied. They are
+ * hidden from the router — a capability that always fails is not one — so this
+ * is the only place a person can find out they exist and why they are quiet.
+ */
 export function describeCapabilities(
   manifests: PluginManifest[],
-  detail: CapabilityDetail = 'overview'
+  detail: CapabilityDetail = 'overview',
+  needsSetup: ReadonlySet<string> = new Set()
 ): string {
   const plugins = visible(manifests);
+  const setupNote = (m: PluginManifest): string =>
+    needsSetup.has(m.name) ? '  — needs setup before I can use it' : '';
 
   if (plugins.length === 0) {
     // Truthful rather than reassuring: with no plugins the AI can do nothing at
@@ -173,7 +181,7 @@ export function describeCapabilities(
     return [
       `I can do ${totalSkills} things, across ${plugins.length} plugins:`,
       '',
-      ...plugins.map((m) => `• ${m.displayName} — ${firstSentence(m.summary)}`),
+      ...plugins.map((m) => `• ${m.displayName} — ${firstSentence(m.summary)}${setupNote(m)}`),
       '',
       'You do not need commands — just say what happened:',
       '  "I had two eggs and toast"',
@@ -189,7 +197,9 @@ export function describeCapabilities(
     const skills = skillsOf(m).map(
       (s) => `  • ${shortSkillName(s.id)} — ${firstSentence(s.description)}`
     );
-    return [`${m.displayName} (${m.name}) — ${skills.length} skills`, ...skills].join('\n');
+    return [`${m.displayName} (${m.name}) — ${skills.length} skills${setupNote(m)}`, ...skills].join(
+      '\n'
+    );
   });
 
   const full = [`${totalSkills} skills across ${plugins.length} plugins:`, '', ...blocks].join('\n\n');
@@ -202,7 +212,7 @@ export function describeCapabilities(
     '',
     ...plugins.map(
       (m) =>
-        `• ${m.displayName} (${m.name}) — ${skillsOf(m).length} skills: ${skillsOf(m)
+        `• ${m.displayName} (${m.name}) — ${skillsOf(m).length} skills${setupNote(m)}: ${skillsOf(m)
           .map((s) => shortSkillName(s.id))
           .join(', ')}`
     ),

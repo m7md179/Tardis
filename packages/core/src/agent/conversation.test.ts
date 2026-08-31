@@ -9,7 +9,8 @@ import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 import { ConversationStore } from '../memory/conversation-store.js';
 import { PluginManager } from '../plugins/plugin-manager.js';
 import type { TurnFilter } from './turn-filters.js';
-import type { AgentConfig } from '@tardis/shared';
+import type { AgentConfig, PluginManifest } from '@tardis/shared';
+import { PluginManifestSchema } from '@tardis/shared';
 
 const CONFIG: AgentConfig = {
   maxSteps: 5,
@@ -249,5 +250,103 @@ describe('a plugin on disk filtering a real turn', () => {
       await manager.unloadAll();
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ─── Unconfigured plugins ────────────────────────────────────────────────────
+//
+// Live: "what do i have in to do" routed to Todoist, which has never had an API
+// token, and answered with a configuration error — while 135 real work items sat
+// in a plugin that *is* configured. A capability that always fails is not one.
+
+describe('runConversationTurn: plugins that cannot work', () => {
+  function manifest(name: string, summary: string): PluginManifest {
+    return PluginManifestSchema.parse({
+      name,
+      version: '1.0.0',
+      displayName: name,
+      description: `${name} plugin`,
+      summary,
+      tier: 1,
+      main: 'index.ts',
+      permissions: [],
+      skills: [
+        {
+          id: `${name}.list`,
+          description: `List ${name} things`,
+          parameters: { type: 'object', properties: {} },
+        },
+      ],
+    });
+  }
+
+  const MANIFESTS = [
+    manifest('todoist', 'Manage tasks and to-dos in Todoist.'),
+    manifest('workspace', 'Work items, boards and backlogs.'),
+  ];
+
+  /** The tool names the model was actually offered. */
+  function toolCaptor() {
+    const seen: string[] = [];
+    const provider: LLMProvider = {
+      name: 'mock',
+      async chat({ tools }) {
+        for (const t of tools ?? []) seen.push(t.name);
+        return { type: 'text', text: 'ok' };
+      },
+      async generate() {
+        return '';
+      },
+    };
+    return { provider, seen };
+  }
+
+  it('keeps an unconfigured plugin out of the router', async () => {
+    // Asserted on the tools the model receives, not on the router's own
+    // prompt: with a small plugin set the router takes a fallback path and
+    // never asks the model at all, so instrumenting that would prove nothing.
+    const { provider, seen } = toolCaptor();
+
+    await runConversationTurn(
+      { chatId: 'app', message: 'what do i have in to do' },
+      makeDeps(provider, {
+        getAllManifests: () => MANIFESTS,
+        isPluginConfigured: (n) => n !== 'todoist',
+      })
+    );
+
+    expect(seen).toContain('workspace.list');
+    expect(seen).not.toContain('todoist.list');
+  });
+
+  it('offers every plugin when nothing reports its configuration', async () => {
+    // The old behaviour, kept for any caller that does not supply the check.
+    const { provider, seen } = toolCaptor();
+
+    await runConversationTurn(
+      { chatId: 'app', message: 'what do i have in to do' },
+      makeDeps(provider, { getAllManifests: () => MANIFESTS })
+    );
+
+    expect(seen).toContain('workspace.list');
+    expect(seen).toContain('todoist.list');
+  });
+
+  it('still names it when asked what TARDIS can do, marked as needing setup', async () => {
+    // Hidden from the router is not hidden from the user — otherwise a plugin
+    // they installed becomes invisible with no way to find out why.
+    const { provider } = echoLLM('unused');
+    const result = await runConversationTurn(
+      { chatId: 'app', message: 'what can you do' },
+      makeDeps(provider, {
+        getAllManifests: () => MANIFESTS,
+        isPluginConfigured: (n) => n !== 'todoist',
+      })
+    );
+
+    expect(result.response).toContain('todoist');
+    expect(result.response).toMatch(/todoist.*needs setup/i);
+    expect(result.response).toContain('workspace');
+    expect(result.response).not.toMatch(/workspace.*needs setup/i);
   });
 });

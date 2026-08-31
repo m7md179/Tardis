@@ -48,7 +48,11 @@ function headers(): Record<string, string> {
 function assertToken(): void {
   if (!apiToken) {
     throw new Error(
-      'Todoist API token not configured. Set it in config or ask me to save it: "my Todoist token is <token>"'
+      // This used to promise 'ask me to save it: "my Todoist token is <token>"'.
+      // No such skill exists — todoist has five, none of which write config —
+      // so following that instruction did nothing at all.
+      'Todoist is not set up: it has no API token. Add it under plugins.todoist.apiToken ' +
+        'in the TARDIS config, or through the plugin settings page.'
     );
   }
 }
