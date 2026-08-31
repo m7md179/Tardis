@@ -12,6 +12,23 @@
     "storage:write",
     "notifications:send"
   ],
+  "config": {
+    "clientId": {
+      "type": "string",
+      "label": "OAuth client ID",
+      "description": "From the Google Cloud console, for a Desktop app OAuth client.",
+      "default": "",
+      "required": true
+    },
+    "clientSecret": {
+      "type": "string",
+      "label": "OAuth client secret",
+      "description": "Pairs with the client ID. Run google-calendar.setup-oauth once both are set.",
+      "default": "",
+      "required": true,
+      "secret": true
+    }
+  },
   "skills": [
     {
       "id": "google-calendar.list-events",
