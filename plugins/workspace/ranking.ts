@@ -10,8 +10,50 @@
  * So we score per token and aggregate. Same primitive, used at a size it works at.
  */
 
-import { fuzzyScore } from '@tardis/shared';
 import type { WorkItem } from './types.js';
+
+/**
+ * A copy of `fuzzyScore` from @tardis/shared, deliberately.
+ *
+ * This plugin is the only one that ships a `tsconfig.json`, and a tsconfig in a
+ * plugin directory anchors Bun's module resolution to that directory — so a
+ * bare `@tardis/shared` import can no longer resolve upward to the repo's
+ * node_modules once the plugin is copied into $TARDIS_DATA_DIR/plugins, which
+ * is how this server holds them.
+ *
+ * Verified on the box by adding nothing but a tsconfig.json to a plugin that
+ * had just loaded:
+ *
+ *   Failed to activate plugin "probe-sibling": Cannot find module
+ *   '@tardis/shared' from '.../plugins/probe-sibling/helper.ts'
+ *
+ * Deleting the tsconfig would also work, but `workspaces` covers `plugins/*`,
+ * so `turbo run typecheck` reaches this plugin — the only one with the script,
+ * and the largest in the repo. Twenty lines of duplication is the cheaper side
+ * of that trade. `ranking.test.ts` asserts this stays identical to the shared
+ * implementation, so the copy cannot drift unnoticed.
+ */
+export function fuzzyScore(needle: string, haystack: string): number {
+  const n = needle.toLowerCase();
+  const h = haystack.toLowerCase();
+
+  if (h === n) return 1;
+  if (h.includes(n)) return 0.9;
+
+  let ni = 0;
+  let matched = 0;
+
+  for (let hi = 0; hi < h.length && ni < n.length; hi++) {
+    if (h[hi] === n[ni]) {
+      matched++;
+      ni++;
+    }
+  }
+
+  if (ni < n.length) return 0; // not all needle chars found
+
+  return (matched / h.length) * 0.8;
+}
 
 /**
  * Words carrying no signal about which epic something belongs to. Deliberately

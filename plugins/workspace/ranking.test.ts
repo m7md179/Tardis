@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
-import { tokenize, scoreAgainst, prefilter, rankCandidates } from './ranking.js';
+import { tokenize, scoreAgainst, prefilter, rankCandidates, fuzzyScore } from './ranking.js';
+import { fuzzyScore as sharedFuzzyScore } from '@tardis/shared';
 import type { WorkItem } from './types.js';
 
 function epic(id: number, title: string, description: string | null = null): WorkItem {
@@ -289,4 +290,29 @@ describe('rankCandidates', () => {
     );
     expect(out.length).toBeLessThanOrEqual(3);
   });
+});
+
+// ─── The copied primitive ────────────────────────────────────────────────────
+
+describe('fuzzyScore stays identical to the shared implementation', () => {
+  // ranking.ts carries its own copy, because a tsconfig.json in a plugin
+  // directory stops a bare `@tardis/shared` import resolving once the plugin is
+  // copied into the data dir. A copy that silently drifts would be worse than
+  // the import was, so this compares the two on every run. Importing the shared
+  // one *here* is safe: tests run in the repo, never from the data dir.
+  const cases: [string, string][] = [
+    ['login', 'Login rate limits'],
+    ['login', 'login'],
+    ['lgn', 'Login rate limits'],
+    ['zzz', 'Login rate limits'],
+    ['', 'anything'],
+    ['rate limiting', 'Rate limiting for the API'],
+    ['api', 'API'],
+  ];
+
+  for (const [needle, haystack] of cases) {
+    it(`agrees for ${JSON.stringify(needle)} against ${JSON.stringify(haystack)}`, () => {
+      expect(fuzzyScore(needle, haystack)).toBe(sharedFuzzyScore(needle, haystack));
+    });
+  }
 });
