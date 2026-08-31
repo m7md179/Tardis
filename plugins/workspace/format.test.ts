@@ -123,3 +123,38 @@ describe('formatWorkspaceSummary', () => {
     expect(out).toContain('LEAD');
   });
 });
+
+// ─── List results carry their own count ──────────────────────────────────────
+//
+// Asked "what am I assigned to?" against 135 real items, the model answered
+// "45". The tool had handed it a 135-line text blob and no number, so it
+// estimated one and stated the estimate as fact. These pin the shape that fixes
+// that; `listResult` is exercised through the skills in index.ts.
+
+describe('list results state their size', () => {
+  const shape = (n: number) => {
+    const rows = Array.from({ length: n }, (_, i) => ({ id: i + 1 }));
+    const lines = rows.map((r) => `#${r.id} something`);
+    const noun = n === 1 ? 'item' : 'items';
+    return { count: rows.length, items: rows, text: [`${n} ${noun}:`, ...lines].join('\n') };
+  };
+
+  it('puts the count where the model reads first', () => {
+    const out = shape(135);
+    expect(out.count).toBe(135);
+    expect(out.text.split('\n')[0]).toBe('135 items:');
+  });
+
+  it('survives a trimmed tail — the count is in the first line, not the last', () => {
+    // Context fitting can cut the end of a long result. A total derived by
+    // counting lines would silently shrink; this one cannot.
+    const out = shape(135);
+    const trimmed = out.text.split('\n').slice(0, 20).join('\n');
+    expect(trimmed.split('\n')[0]).toBe('135 items:');
+  });
+
+  it('says "item" for one and "items" for none', () => {
+    expect(shape(1).text.split('\n')[0]).toBe('1 item:');
+    expect(shape(0).text).toBe('0 items:');
+  });
+});

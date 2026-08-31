@@ -221,6 +221,28 @@ async function draftEnvelope(io: IoClient, draft: Draft): Promise<Record<string,
 
 // ─── Tool execution ───
 
+/**
+ * The shape every list skill returns.
+ *
+ * `count` exists because the model was asked "what am I assigned to?", got a
+ * 135-line text blob, and answered "45". It had no number to read, so it
+ * estimated one — and stated the estimate as fact. The count leads the text as
+ * well as sitting in the payload, so it survives even if context fitting trims
+ * the tail of a long list.
+ */
+function listResult<T>(rows: T[], lines: string[]): {
+  count: number;
+  items: T[];
+  text: string;
+} {
+  const noun = rows.length === 1 ? 'item' : 'items';
+  return {
+    count: rows.length,
+    items: rows,
+    text: [`${rows.length} ${noun}:`, ...lines].join('\n'),
+  };
+}
+
 export const executeTool = async (
   toolName: string,
   args: Record<string, unknown>
@@ -272,14 +294,14 @@ export const executeTool = async (
       const io = assertConfigured();
       const id = await currentWorkspaceId(io, optionalKey(args));
       const backlog = await io.getBacklog(id);
-      return { items: backlog.map(toRow), text: backlog.map(formatWorkItem).join('\n') };
+      return listResult(backlog.map(toRow), backlog.map(formatWorkItem));
     }
 
     case 'workspace.my-items': {
       const io = assertConfigured();
       const status = typeof args['status'] === 'string' ? args['status'] : undefined;
       const items = await io.getMyItems(status);
-      return { items: items.map(toRow), text: items.map(formatWorkItem).join('\n') };
+      return listResult(items.map(toRow), items.map(formatWorkItem));
     }
 
     case 'workspace.search-items': {
@@ -287,7 +309,7 @@ export const executeTool = async (
       const id = await currentWorkspaceId(io, optionalKey(args));
       const q = typeof args['q'] === 'string' ? args['q'] : '';
       const items = await io.searchItems(id, q);
-      return { items: items.map(toRow), text: items.map(formatWorkItem).join('\n') };
+      return listResult(items.map(toRow), items.map(formatWorkItem));
     }
 
     case 'workspace.get-item': {
