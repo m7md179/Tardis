@@ -40,4 +40,7 @@ export const CLARIFY_TOOL: ToolDefinition = {
     required: ['question'],
   },
   actionType: 'direct',
+  // Asking a question changes nothing, so it stays available in read-only mode
+  // — which is the point: the alternative to asking is guessing.
+  mutates: false,
 };

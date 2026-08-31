@@ -53,6 +53,31 @@ export const RateLimitConfigSchema = z.object({
   maxLoginAttempts: z.number().int().min(1).default(5),
 });
 
+/**
+ * The embedding service used for memory search.
+ *
+ * Optional on purpose. With no embedder configured, retrieval is keyword-only —
+ * exactly the behaviour that shipped before vectors existed — so a service that
+ * is down or was never set up degrades TARDIS rather than breaking it.
+ */
+export const EmbedderConfigSchema = z.object({
+  /** OpenAI-compatible /api/embed host, e.g. http://127.0.0.1:11434 */
+  baseUrl: z.string().url(),
+  model: z.string().min(1),
+  timeoutMs: z.number().int().min(100).optional(),
+  /**
+   * How long the runtime should hold the model in memory, e.g. "1h" or -1 for
+   * forever. Ollama unloads after five idle minutes by default, and the reload
+   * costs about 1.1 s on the first query after that — against ~20 ms warm.
+   * Unset means "leave the runtime's default alone".
+   */
+  keepAlive: z.union([z.string(), z.number()]).optional(),
+});
+
+export const MemoryConfigSchema = z.object({
+  embedder: EmbedderConfigSchema.optional(),
+});
+
 export const SystemConfigSchema = z.object({
   server: ServerConfigSchema.default({}),
   auth: AuthConfigSchema,
@@ -61,5 +86,6 @@ export const SystemConfigSchema = z.object({
   telegram: TelegramConfigSchema.optional(),
   proactive: ProactiveConfigSchema.default({}),
   rateLimit: RateLimitConfigSchema.default({}),
+  memory: MemoryConfigSchema.default({}),
   plugins: z.record(z.string(), z.record(z.string(), z.any())).optional(),
 });

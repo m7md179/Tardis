@@ -1,5 +1,6 @@
 import type { ToolDefinition, MemoryType } from '@tardis/shared';
 import type { MemoryStore } from './memory-store.js';
+import type { MemoryIndexer } from './memory-indexer.js';
 
 // ─── Tool definitions (always injected, not subject to skill selection) ───
 
@@ -30,6 +31,7 @@ export const MEMORY_TOOLS: ToolDefinition[] = [
       required: ['key', 'value'],
     },
     actionType: 'direct',
+    mutates: true,
   },
   {
     name: 'memory.recall',
@@ -46,6 +48,7 @@ export const MEMORY_TOOLS: ToolDefinition[] = [
       required: ['query'],
     },
     actionType: 'direct',
+    mutates: false,
   },
   {
     name: 'memory.forget',
@@ -61,6 +64,7 @@ export const MEMORY_TOOLS: ToolDefinition[] = [
       required: ['key'],
     },
     actionType: 'direct',
+    mutates: true,
   },
 ];
 
@@ -70,7 +74,14 @@ export interface MemoryExecutor {
   execute(toolName: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
-export function createMemoryExecutor(store: MemoryStore): MemoryExecutor {
+/**
+ * @param indexer optional. Without it, save skips embedding and recall is
+ * keyword-only — the behaviour that shipped before vectors existed.
+ */
+export function createMemoryExecutor(
+  store: MemoryStore,
+  indexer?: MemoryIndexer
+): MemoryExecutor {
   return {
     async execute(toolName: string, args: Record<string, unknown>): Promise<unknown> {
       switch (toolName) {
@@ -83,7 +94,11 @@ export function createMemoryExecutor(store: MemoryStore): MemoryExecutor {
             return { success: false, message: 'Both key and value are required' };
           }
 
-          await store.upsertByKey({ type, key, value, source: 'agent' });
+          const saved = await store.upsertByKey({ type, key, value, source: 'agent' });
+          // Awaited, not fired and forgotten: a memory saved and searched in
+          // the same turn is a normal thing to do, and indexOne swallows its
+          // own failures, so waiting costs ~30 ms and never costs the save.
+          await indexer?.indexOne(saved);
           return { success: true, message: `Saved "${key}" to memory` };
         }
 
@@ -93,7 +108,19 @@ export function createMemoryExecutor(store: MemoryStore): MemoryExecutor {
             return { success: false, message: 'Query is required' };
           }
 
+          // Literal matches first, then anything the index considers a
+          // standout. Without this second half, recalling "the car" cannot find
+          // a memory phrased "vehicle down payment" — the failure that
+          // motivated embeddings in the first place.
           const results = await store.search(query, 10);
+          const seen = new Set(results.map((m) => m.id));
+          for (const m of (await indexer?.similar(query)) ?? []) {
+            if (!seen.has(m.id)) {
+              results.push(m);
+              seen.add(m.id);
+            }
+          }
+
           if (results.length === 0) {
             return { success: true, memories: [], message: 'No memories found' };
           }

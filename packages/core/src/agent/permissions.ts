@@ -63,6 +63,27 @@ export function matchesGlob(pattern: string, toolName: string): boolean {
 }
 
 /**
+ * What is known about this call beyond the rules — the second axis.
+ *
+ * `mutates` answers *does it change anything*, which the glob rules cannot:
+ * `direct` covers both `budget.this-month` and `budget.add-entry`, so the
+ * obvious read-only preset `{ '*': 'deny' }` silences reading too. Skills
+ * declare the answer; see `resolveMutates` in the manifest schema.
+ *
+ * `mutates` is deliberately compared against `false` rather than truthiness.
+ * A tool nobody has classified is treated as mutating, because the cost of
+ * being wrong runs one way: refusing a harmless read is an inconvenience,
+ * running an unclassified write in read-only mode is the bug read-only exists
+ * to prevent.
+ */
+export interface PermissionContext {
+  /** Whether the skill changes state. Undefined means unclassified. */
+  mutates?: boolean | undefined;
+  /** Global read-only mode: nothing that changes state may run. */
+  readOnly?: boolean | undefined;
+}
+
+/**
  * The effective permission for one tool call.
  *
  * Rules are walked in the order they appear and **the last match wins**, so a
@@ -76,7 +97,8 @@ export function matchesGlob(pattern: string, toolName: string): boolean {
 export function resolvePermission(
   toolName: string,
   declared: ActionType,
-  overrides: Record<string, string> = {}
+  overrides: Record<string, string> = {},
+  context: PermissionContext = {}
 ): Permission {
   const baseline = baselineFor(declared);
   let resolved = baseline;
@@ -88,19 +110,13 @@ export function resolvePermission(
   }
 
   // Never weaker than the skill declared for itself.
-  return RANK[resolved] >= RANK[baseline] ? resolved : baseline;
+  const graded = RANK[resolved] >= RANK[baseline] ? resolved : baseline;
+
+  // Read-only is a floor, not a rule, so it is applied after grading and a
+  // per-tool `allow` cannot punch through it. A switch that some other line of
+  // config can quietly cancel is not a switch worth having.
+  if (context.readOnly && context.mutates !== false) return 'deny';
+
+  return graded;
 }
 
-/**
- * Read-only mode is NOT expressible here yet, and it is worth saying why.
- *
- * The obvious preset — `{ '*': 'deny' }` — denies reading as well as writing,
- * because `direct` covers both `budget.this-month` and `budget.add-entry`. The
- * axis this file grades is *how much ceremony an action needs*, which is not the
- * same axis as *does it change anything*.
- *
- * Doing it properly needs a `mutates` declaration on skills. That is a small
- * manifest change and it would pay twice: the claim-vs-reality guard currently
- * infers the same fact at runtime from whether a tool returned a Result, which
- * works but only after the call has already happened.
- */

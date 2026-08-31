@@ -12,7 +12,12 @@
     "llm:use"
   ],
   "config": {
-    "currency": "JOD"
+    "currency": {
+      "type": "string",
+      "label": "Currency",
+      "description": "Currency code amounts are recorded in.",
+      "default": "JOD"
+    }
   },
   "skills": [
     {
@@ -20,6 +25,7 @@
       "description": "Record spending from a natural sentence, e.g. 'spent 45 on groceries at Tesco'. Extracts amount, category and merchant.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -53,6 +59,7 @@
       "description": "Record spending with the amount and category given explicitly. No interpretation.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -242,6 +249,7 @@
       "description": "Set monthly income, the minimum you want left at month end, and your own name as the bank writes it so transfers to yourself are not counted as spending.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -295,6 +303,7 @@
       "description": "Set a monthly spending limit for one category.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -369,6 +378,7 @@
       "description": "Start saving for something: a car, a trip, a GPU. Target amount and optional deadline.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -476,6 +486,7 @@
       "description": "Put money toward a goal.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -537,6 +548,7 @@
       "description": "Register a card and what you use it for, so transfers between your own cards are not counted as spending.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -654,6 +666,7 @@
       "description": "Record moving money between your own cards. This is NOT spending and never counts against the budget.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -736,6 +749,7 @@
       "description": "Parse a bank SMS into a spend or a transfer between your own cards.",
       "aiInvocable": false,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -768,6 +782,7 @@
       "description": "Record a fixed monthly outgoing that happens automatically \u2014 savings, family support, a subscription. Subtracted before anything counts as spendable.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {

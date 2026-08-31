@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'bun:test';
-import { PluginManifestSchema } from './plugin.js';
+import {
+  PluginManifestSchema,
+  SkillUiDescriptorSchema,
+  resolveMutates,
+  normalizeConfigSchema,
+} from './plugin.js';
 
 // ─── Manifest normalization (Phase B, see SKILLS.md) ─────────────────────────
 //
@@ -276,5 +281,247 @@ describe('SkillUiDescriptorSchema: the escape hatch', () => {
         uiManifest({ block: 'list', label: 'Meals', custom: { mobile: 'x.tsx' } })
       )
     ).toThrow(/requires an .*item.* descriptor/);
+  });
+});
+
+// ─── The `mutates` axis ──────────────────────────────────────────────────────
+//
+// `actionType` grades how much ceremony an action needs. `mutates` answers a
+// different question — does it change anything — and read-only mode needs the
+// second one, because `direct` covers both `budget.this-month` and
+// `budget.add-entry`.
+
+describe('resolveMutates', () => {
+  it('takes the skill at its word when it declares', () => {
+    expect(resolveMutates({ mutates: true, actionType: 'direct' })).toBe(true);
+    expect(resolveMutates({ mutates: false, actionType: 'workflow' })).toBe(false);
+  });
+
+  it('derives from ceremony when it does not', () => {
+    // Needing approval implies there is something to approve.
+    expect(resolveMutates({ actionType: 'workflow' })).toBe(true);
+    expect(resolveMutates({ actionType: 'direct' })).toBe(false);
+  });
+});
+
+describe('PluginManifestSchema: mutates', () => {
+  const withSkill = (skill: Record<string, unknown>) => ({
+    ...BASE,
+    summary: 'Set timed reminders',
+    skills: [
+      {
+        id: 'reminders.set-reminder',
+        description: 'Set a reminder',
+        parameters: { type: 'object', properties: {} },
+        ...skill,
+      },
+    ],
+  });
+
+  it('resolves to a boolean on every skill, so nothing downstream re-derives it', () => {
+    const derived = PluginManifestSchema.parse(withSkill({}));
+    expect(derived.skills[0]!.mutates).toBe(false);
+
+    const declared = PluginManifestSchema.parse(withSkill({ mutates: true }));
+    expect(declared.skills[0]!.mutates).toBe(true);
+  });
+
+  it('carries the resolved value onto the derived tools array', () => {
+    // The agent loop reads `tools`, not `skills`. If the flag stopped here the
+    // claim guard and read-only mode would both silently see undefined.
+    const m = PluginManifestSchema.parse(withSkill({ mutates: true }));
+    expect(m.tools[0]!.mutates).toBe(true);
+  });
+
+  it('lets a direct skill declare that it writes — the case that motivated this', () => {
+    const m = PluginManifestSchema.parse(withSkill({ actionType: 'direct', mutates: true }));
+    expect(m.skills[0]!.actionType).toBe('direct');
+    expect(m.skills[0]!.mutates).toBe(true);
+  });
+
+  it('leaves an existing manifest that says nothing entirely valid', () => {
+    const m = PluginManifestSchema.parse({
+      ...BASE,
+      skillSummary: 'Set timed reminders',
+      tools: [LEGACY_TOOL],
+    });
+    expect(m.skills[0]!.mutates).toBe(false);
+    expect(m.tools[0]!.mutates).toBe(false);
+  });
+});
+
+// ─── Typed plugin config ─────────────────────────────────────────────────────
+//
+// Manifests shipped with bare values — `"config": { "currency": "JOD" }` — so a
+// described field has to be distinguishable from an object-valued default
+// without breaking any of them.
+
+describe('normalizeConfigSchema', () => {
+  it('describes a bare value, inferring its type', () => {
+    const out = normalizeConfigSchema({ currency: 'JOD', maxResults: 5, enabled: true });
+    expect(out['currency']).toMatchObject({ type: 'string', default: 'JOD' });
+    expect(out['maxResults']).toMatchObject({ type: 'number', default: 5 });
+    expect(out['enabled']).toMatchObject({ type: 'boolean', default: true });
+  });
+
+  it('gives a bare value a readable label instead of the raw key', () => {
+    expect(normalizeConfigSchema({ searxngUrl: 'x' })['searxngUrl']!.label).toBe('Searxng url');
+    expect(normalizeConfigSchema({ api_token: 'x' })['api_token']!.label).toBe('Api token');
+  });
+
+  it('keeps a full descriptor as written', () => {
+    const out = normalizeConfigSchema({
+      maxResults: { type: 'number', label: 'Results', default: 5, min: 1, max: 20 },
+    });
+    expect(out['maxResults']).toMatchObject({ label: 'Results', min: 1, max: 20 });
+  });
+
+  it('treats an object without a type and label as a plain default', () => {
+    // The ambiguity that had to be resolved: a plugin could legitimately want an
+    // object-valued setting. Requiring *both* keys makes a collision essentially
+    // impossible.
+    const out = normalizeConfigSchema({ mapping: { a: 1 } });
+    expect(out['mapping']!.type).toBe('string');
+    expect(out['mapping']!.default).toEqual({ a: 1 });
+  });
+
+  it('handles a plugin with no config block', () => {
+    expect(normalizeConfigSchema(undefined)).toEqual({});
+  });
+});
+
+describe('PluginManifestSchema: config', () => {
+  const withConfig = (config: Record<string, unknown>) => ({
+    ...BASE,
+    summary: 'Set timed reminders',
+    config,
+    skills: [
+      {
+        id: 'reminders.set-reminder',
+        description: 'Set a reminder',
+        parameters: { type: 'object', properties: {} },
+      },
+    ],
+  });
+
+  it('keeps `config` a plain key -> default map, so existing readers are untouched', () => {
+    const m = PluginManifestSchema.parse(
+      withConfig({
+        currency: { type: 'string', label: 'Currency', default: 'JOD' },
+        maxResults: 5,
+      })
+    );
+    expect(m.config).toEqual({ currency: 'JOD', maxResults: 5 });
+  });
+
+  it('exposes the described form alongside it', () => {
+    const m = PluginManifestSchema.parse(
+      withConfig({ apiToken: { type: 'string', label: 'API token', default: '', secret: true } })
+    );
+    expect(m.configSchema['apiToken']).toMatchObject({ label: 'API token', secret: true });
+  });
+
+  it('leaves a manifest with no config block valid', () => {
+    const m = PluginManifestSchema.parse({
+      ...BASE,
+      summary: 'Set timed reminders',
+      tools: [LEGACY_TOOL],
+    });
+    expect(m.config).toEqual({});
+    expect(m.configSchema).toEqual({});
+  });
+});
+
+// ─── remote-select ───────────────────────────────────────────────────────────
+//
+// The vocabulary gained one field type, for the shape `select` cannot express:
+// options that are not known when the manifest is written. It names a skill,
+// not a URL, so descriptors stay declarative data.
+
+describe('SkillUiFieldSchema: remote-select', () => {
+  const optionsFrom = {
+    skill: 'workspace.list-parent-candidates',
+    resultPath: 'candidates',
+    value: 'id',
+    text: 'title',
+  };
+
+  it('accepts a remote-select carrying optionsFrom', () => {
+    const parsed = SkillUiDescriptorSchema.parse({
+      block: 'form',
+      label: 'New item',
+      fields: [{ name: 'parent_id', type: 'remote-select', label: 'Parent', optionsFrom }],
+    });
+    expect(parsed.fields?.[0]?.type).toBe('remote-select');
+  });
+
+  it('rejects a remote-select without optionsFrom, which would render an empty picker', () => {
+    expect(() =>
+      SkillUiDescriptorSchema.parse({
+        block: 'form',
+        label: 'New item',
+        fields: [{ name: 'parent_id', type: 'remote-select', label: 'Parent' }],
+      })
+    ).toThrow();
+  });
+
+  it('rejects optionsFrom on a plain select, so the two cannot be confused', () => {
+    expect(() =>
+      SkillUiDescriptorSchema.parse({
+        block: 'form',
+        label: 'New item',
+        fields: [{ name: 'parent_id', type: 'select', label: 'Parent', optionsFrom }],
+      })
+    ).toThrow();
+  });
+
+  it('carries an optional hint path for a secondary line', () => {
+    const parsed = SkillUiDescriptorSchema.parse({
+      block: 'form',
+      label: 'New item',
+      fields: [
+        {
+          name: 'parent_id',
+          type: 'remote-select',
+          label: 'Parent',
+          optionsFrom: { ...optionsFrom, hint: 'reason' },
+        },
+      ],
+    });
+    expect(parsed.fields?.[0]?.optionsFrom?.hint).toBe('reason');
+  });
+
+  it('requires optionsFrom to name a skill, not a URL', () => {
+    expect(() =>
+      SkillUiDescriptorSchema.parse({
+        block: 'form',
+        label: 'New item',
+        fields: [
+          {
+            name: 'parent_id',
+            type: 'remote-select',
+            label: 'Parent',
+            optionsFrom: { ...optionsFrom, skill: 'https://example.com/options' },
+          },
+        ],
+      })
+    ).toThrow();
+  });
+
+  it('maps a skill argument to another field in the same form', () => {
+    const parsed = SkillUiDescriptorSchema.parse({
+      block: 'form',
+      label: 'New item',
+      fields: [
+        { name: 'type', type: 'text', label: 'Type' },
+        {
+          name: 'parent_id',
+          type: 'remote-select',
+          label: 'Parent',
+          optionsFrom: { ...optionsFrom, args: { type: 'type' } },
+        },
+      ],
+    });
+    expect(parsed.fields?.[1]?.optionsFrom?.args).toEqual({ type: 'type' });
   });
 });

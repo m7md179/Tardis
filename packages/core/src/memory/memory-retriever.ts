@@ -1,5 +1,6 @@
 import type { MemoryEntry, MemoryType } from '@tardis/shared';
 import type { MemoryStore } from './memory-store.js';
+import type { MemoryIndexer } from './memory-indexer.js';
 
 // ─── Scoring constants ───
 
@@ -23,10 +24,23 @@ interface ScoredMemory {
   keywordHits: number;
 }
 
+/**
+ * Hybrid retrieval: literal keyword matching, plus optional vector search.
+ *
+ * The two halves cover each other's blind spots. Keyword search finds an exact
+ * name, an id or a phrase and cannot find a paraphrase — "what did I say about
+ * the car" misses a memory that says "vehicle down payment". Vector search
+ * finds the paraphrase and is unreliable at the exact-token case.
+ *
+ * The vector half is optional. With no embedder configured this class behaves
+ * exactly as it did before vectors existed, which is what makes the embedding
+ * service a nice-to-have rather than a dependency.
+ */
 export class MemoryRetriever {
   constructor(
     private readonly store: MemoryStore,
-    private readonly tokenBudget: number = 2000
+    private readonly tokenBudget: number = 2000,
+    private readonly indexer?: MemoryIndexer | undefined
   ) {}
 
   /**
@@ -51,14 +65,28 @@ export class MemoryRetriever {
     // Require at least one keyword match — recency/type alone isn't enough
     const relevant = scored.filter((s) => s.keywordHits > 0);
 
-    // If no relevant matches, return nothing (don't waste token budget on noise)
-    if (relevant.length === 0) return [];
+    // The vector half runs regardless of whether keywords found anything: its
+    // whole purpose is the case where they found nothing.
+    const bySimilarity = await this.vectorCandidates(userMessage);
+
+    // Literal matches lead. A keyword hit is direct evidence the user named
+    // this memory; a vector hit is an inference about what they meant.
+    const ordered: MemoryEntry[] = relevant.map((s) => s.memory);
+    const seen = new Set(ordered.map((m) => m.id));
+    for (const memory of bySimilarity) {
+      if (!seen.has(memory.id)) {
+        ordered.push(memory);
+        seen.add(memory.id);
+      }
+    }
+
+    if (ordered.length === 0) return [];
 
     // Pack within token budget
     const selected: MemoryEntry[] = [];
     let usedTokens = 0;
 
-    for (const { memory } of relevant) {
+    for (const memory of ordered) {
       const entryTokens = this.estimateTokens(memory);
       if (usedTokens + entryTokens > this.tokenBudget) break;
       selected.push(memory);
@@ -71,6 +99,11 @@ export class MemoryRetriever {
     }
 
     return selected;
+  }
+
+  /** Memories the index considers a standout match. Empty without an indexer. */
+  private async vectorCandidates(userMessage: string): Promise<MemoryEntry[]> {
+    return this.indexer ? this.indexer.similar(userMessage) : [];
   }
 
   private scoreMemory(

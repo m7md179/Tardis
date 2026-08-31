@@ -7,6 +7,8 @@ import type {
   RateLimitConfigSchema,
   ServerConfigSchema,
   AuthConfigSchema,
+  EmbedderConfigSchema,
+  MemoryConfigSchema,
 } from '../schemas/config.js';
 
 // Types are derived from Zod schemas to ensure compatibility with exactOptionalPropertyTypes
@@ -16,4 +18,6 @@ export type ProactiveConfig = z.infer<typeof ProactiveConfigSchema>;
 export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
+export type EmbedderConfig = z.infer<typeof EmbedderConfigSchema>;
+export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 export type SystemConfig = z.infer<typeof SystemConfigSchema>;

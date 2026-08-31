@@ -1,31 +1,21 @@
-import CronExpressionParser from 'cron-parser';
+import { occursIn } from './schedule.js';
 
 /**
  * Whether a cron schedule has an occurrence to run now.
  *
- * Fires once for each occurrence in the half-open interval `(since, now]`.
+ * Kept as the cron-shaped name for callers that only ever mean cron. The
+ * scheduler itself calls `occursIn` in schedule.ts, which accepts RRULE too;
+ * this delegates so there is one implementation of the interval rule rather
+ * than two that can drift apart.
  *
- * The previous implementation accepted any occurrence within 60 seconds of
- * `now` in *either* direction, so for `0 * * * *` the tick before the hour and
- * the tick after it both matched the same occurrence and every scheduled
- * message went out twice — 429 duplicate pairs in production before this was
- * caught.
- *
- * `since` is the scheduler's previous tick. Passing it matters because
- * `setInterval(60_000)` drifts: a strict same-minute test would eventually step
- * straight over an occurrence and drop it. Omitting `since` falls back to
- * matching the current minute exactly, which is what a one-off check wants.
+ * Fires once for each occurrence in the half-open interval `(since, now]`. The
+ * previous implementation accepted any occurrence within 60 seconds of `now` in
+ * *either* direction, so for `0 * * * *` the tick before the hour and the tick
+ * after it both matched the same occurrence and every scheduled message went
+ * out twice — 429 duplicate pairs in production before this was caught.
  */
 export function isTimeToRun(cronExpr: string, now: Date = new Date(), since?: Date): boolean {
-  try {
-    const from = since ?? new Date(new Date(now).setSeconds(0, 0) - 1);
-    if (from.getTime() >= now.getTime()) return false;
-
-    const parsed = CronExpressionParser.parse(cronExpr, { currentDate: from });
-    return parsed.next().toDate().getTime() <= now.getTime();
-  } catch {
-    return false;
-  }
+  return occursIn(cronExpr, now, since);
 }
 
 /**

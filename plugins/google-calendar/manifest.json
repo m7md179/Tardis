@@ -66,6 +66,7 @@
       "description": "Create a new calendar event.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -206,6 +207,7 @@
       "description": "Update an existing upcoming calendar event. Use this to reschedule, rename, or change the time of an event. Find the event by title.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -308,6 +310,7 @@
       "description": "Exchange the OAuth2 authorization code to complete Google Calendar connection. Call this immediately when the user provides a Google authorization code (typically starts with '4/1' or '4/'). Do not ask for more info \u2014 just call this tool with the code.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {

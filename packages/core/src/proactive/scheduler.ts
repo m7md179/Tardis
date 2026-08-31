@@ -3,7 +3,8 @@ import { randomUUID } from 'crypto';
 import { proactiveSettings, proactiveLogs } from '@tardis/db';
 import type { TardisDB } from '@tardis/db';
 import type { ProactiveTrigger } from '@tardis/shared';
-import { isTimeToRun, isDuringQuietHours } from './cron-utils.js';
+import { isDuringQuietHours } from './cron-utils.js';
+import { occursIn, nextRunAt, isValidSchedule, scheduleKind } from './schedule.js';
 
 // ─── Types ───
 
@@ -24,8 +25,15 @@ export interface TriggerInfo {
   description: string;
   enabled: boolean;
   schedule: string;
+  /** Which dialect `schedule` is written in. */
+  scheduleKind: 'cron' | 'rrule';
   quietHoursStart: string | null;
   quietHoursEnd: string | null;
+  /**
+   * Epoch ms of the next run, honouring quiet hours. Null when disabled, when
+   * the rule has no future occurrence, or when quiet hours swallow every one.
+   */
+  nextRunAt: number | null;
 }
 
 export interface ProactiveLogEntry {
@@ -98,6 +106,7 @@ export class ProactiveScheduler {
           triggerName: trigger.name,
           enabled: trigger.defaultEnabled ? 1 : 0,
           schedule: trigger.defaultSchedule,
+          nextRunAt: nextRunAt(trigger.defaultSchedule)?.getTime() ?? null,
         });
       }
     }
@@ -164,13 +173,19 @@ export class ProactiveScheduler {
       const registered = this.handlers.get(key);
       if (!registered) continue;
 
+      // Recomputed every tick, from `now`. Cheap (a handful of rows), and it
+      // self-heals a stored value left stale by a crash or a clock change —
+      // which matters more than the arithmetic, because a stale answer to
+      // "when will you next tell me?" is a wrong answer, not a slow one.
+      await this.refreshNextRun(row.id, row.schedule, now, row.quietHoursStart, row.quietHoursEnd);
+
       // Check quiet hours
       if (isDuringQuietHours(now, row.quietHoursStart ?? undefined, row.quietHoursEnd ?? undefined)) {
         continue;
       }
 
-      // Check cron schedule
-      if (!isTimeToRun(row.schedule, now, since)) {
+      // Check the schedule, in whichever dialect it is written
+      if (!occursIn(row.schedule, now, since)) {
         continue;
       }
 
@@ -205,6 +220,25 @@ export class ProactiveScheduler {
     }
   }
 
+  /** Stores when this trigger next fires, quiet hours included. */
+  private async refreshNextRun(
+    id: string,
+    schedule: string,
+    from: Date,
+    quietStart: string | null,
+    quietEnd: string | null
+  ): Promise<void> {
+    const next =
+      nextRunAt(schedule, from, {
+        start: quietStart ?? undefined,
+        end: quietEnd ?? undefined,
+      })?.getTime() ?? null;
+    await this.db
+      .update(proactiveSettings)
+      .set({ nextRunAt: next })
+      .where(eq(proactiveSettings.id, id));
+  }
+
   // ─── Management API ───
 
   async listTriggers(): Promise<TriggerInfo[]> {
@@ -218,8 +252,11 @@ export class ProactiveScheduler {
         description: registered?.description ?? '',
         enabled: r.enabled === 1,
         schedule: r.schedule,
+        scheduleKind: scheduleKind(r.schedule),
         quietHoursStart: r.quietHoursStart,
         quietHoursEnd: r.quietHoursEnd,
+        // A disabled trigger has no next run, whatever its schedule says.
+        nextRunAt: r.enabled === 1 ? r.nextRunAt : null,
       };
     });
   }
@@ -277,14 +314,42 @@ export class ProactiveScheduler {
     return check.length > 0;
   }
 
+  /**
+   * Change a trigger's schedule. Accepts cron or RRULE.
+   *
+   * Rejects an unparseable schedule rather than storing it: `occursIn` returns
+   * false on a parse failure, so a bad expression would otherwise be accepted
+   * silently and then simply never fire.
+   */
   async updateSchedule(
     pluginName: string,
     triggerName: string,
     schedule: string
   ): Promise<boolean> {
+    if (!isValidSchedule(schedule)) return false;
+
+    const existing = await this.db
+      .select()
+      .from(proactiveSettings)
+      .where(
+        and(
+          eq(proactiveSettings.pluginName, pluginName),
+          eq(proactiveSettings.triggerName, triggerName)
+        )
+      )
+      .limit(1);
+    const row = existing[0];
+
     await this.db
       .update(proactiveSettings)
-      .set({ schedule })
+      .set({
+        schedule,
+        nextRunAt:
+          nextRunAt(schedule, new Date(), {
+            start: row?.quietHoursStart ?? undefined,
+            end: row?.quietHoursEnd ?? undefined,
+          })?.getTime() ?? null,
+      })
       .where(
         and(
           eq(proactiveSettings.pluginName, pluginName),
@@ -310,9 +375,32 @@ export class ProactiveScheduler {
     start: string | null,
     end: string | null
   ): Promise<boolean> {
+    const existing = await this.db
+      .select()
+      .from(proactiveSettings)
+      .where(
+        and(
+          eq(proactiveSettings.pluginName, pluginName),
+          eq(proactiveSettings.triggerName, triggerName)
+        )
+      )
+      .limit(1);
+    const row = existing[0];
+
     await this.db
       .update(proactiveSettings)
-      .set({ quietHoursStart: start, quietHoursEnd: end })
+      .set({
+        quietHoursStart: start,
+        quietHoursEnd: end,
+        // Quiet hours change which occurrence is really next — the tick skips a
+        // run inside them rather than deferring it.
+        nextRunAt: row
+          ? (nextRunAt(row.schedule, new Date(), {
+              start: start ?? undefined,
+              end: end ?? undefined,
+            })?.getTime() ?? null)
+          : null,
+      })
       .where(
         and(
           eq(proactiveSettings.pluginName, pluginName),

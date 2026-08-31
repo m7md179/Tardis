@@ -258,6 +258,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   memoryTokenBudget: 2000,
   enableFallbackIntent: false,
   actionOverrides: {},
+  readOnly: false,
 };
 
 function makeScriptedLLM(responses: LLMResponse[]): LLMProvider {

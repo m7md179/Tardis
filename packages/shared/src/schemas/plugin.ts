@@ -22,6 +22,8 @@ export const ToolDefinitionSchema = z.object({
   description: z.string().min(1),
   parameters: z.record(z.unknown()),
   actionType: ActionTypeSchema,
+  /** See `mutates` on SkillDefinitionSchema. Derived, never authored here. */
+  mutates: z.boolean().optional(),
 });
 
 // ─── UI descriptors (Phase C — see UI-CONTRACT.md) ───────────────────────────
@@ -42,10 +44,40 @@ export const SkillUiFieldTypeSchema = z.enum([
   'time',
   'datetime',
   'select',
+  'remote-select',
   'tags',
   'checkbox',
   'image',
 ]);
+
+/**
+ * Where a `remote-select` gets its options.
+ *
+ * The shape `select` cannot express: a picker over a collection the plugin
+ * owns, whose members are not known when the manifest is written. Any plugin
+ * with a parameter that is an id into its own data needs this — todoist for
+ * projects, google-calendar for calendars — so it is a shape, not a feature.
+ *
+ * It names a **skill id**, never a URL or an expression, so a descriptor
+ * remains declarative data that survives GET /api/skills unchanged.
+ */
+export const SkillUiOptionsFromSchema = z.object({
+  /** Skill to invoke for the options. `plugin.skill`, same format as everywhere else. */
+  skill: z.string().regex(/^[a-z0-9-]+\.[a-z0-9-]+$/),
+  /**
+   * Skill parameter name -> the name of another field in this same form. The
+   * mirror of list.actions.args, which maps a parameter to a field on an item.
+   */
+  args: z.record(z.string(), z.string()).optional(),
+  /** Where the array sits in the handler result. */
+  resultPath: z.string().min(1),
+  /** Path to the value submitted for this field. */
+  value: z.string().min(1),
+  /** Path to the text shown for each option. */
+  text: z.string().min(1),
+  /** Optional path to a secondary line, e.g. why a candidate was suggested. */
+  hint: z.string().optional(),
+});
 
 export const SkillUiFieldSchema = z.object({
   /** Must name a parameter the skill actually accepts. */
@@ -59,7 +91,16 @@ export const SkillUiFieldSchema = z.object({
   options: z
     .array(z.object({ value: z.union([z.string(), z.number()]), label: z.string().min(1) }))
     .optional(),
-});
+  optionsFrom: SkillUiOptionsFromSchema.optional(),
+})
+  .refine((f) => f.type !== 'remote-select' || f.optionsFrom !== undefined, {
+    message: 'A "remote-select" field requires "optionsFrom" — without it there is nothing to show',
+    path: ['optionsFrom'],
+  })
+  .refine((f) => f.optionsFrom === undefined || f.type === 'remote-select', {
+    message: '"optionsFrom" belongs to "remote-select"; a plain "select" carries static "options"',
+    path: ['optionsFrom'],
+  });
 
 /** How to read one element of a result collection. Values are field paths, not literals. */
 export const SkillUiItemSchema = z.object({
@@ -174,6 +215,19 @@ export const SkillDefinitionSchema = z.object({
   /** When false the agent loop never sees this skill — it is invocable only directly. */
   aiInvocable: z.boolean().default(true),
   actionType: ActionTypeSchema.default('direct'),
+  /**
+   * Whether running this skill changes anything.
+   *
+   * A separate axis from `actionType`, which grades **how much ceremony an
+   * action needs**. Read-only mode needs the other question — **does it change
+   * anything** — and `direct` answers it for neither `budget.this-month` nor
+   * `budget.add-entry`.
+   *
+   * Omitted, it is derived: a `workflow` skill mutates, a `direct` skill does
+   * not. Every existing manifest therefore stays valid, and only a direct skill
+   * that writes has to say so.
+   */
+  mutates: z.boolean().optional(),
   /** JSON Schema. The single argument contract shared by the LLM and the UI. */
   parameters: z.record(z.unknown()),
   /** Additive to the plugin's own permissions. */
@@ -190,6 +244,104 @@ export const ProactiveTriggerSchema = z.object({
   defaultEnabled: z.boolean(),
   handler: z.string().min(1),
 });
+
+// ─── Plugin configuration ────────────────────────────────────────────────────
+
+export const PluginConfigFieldTypeSchema = z.enum(['string', 'number', 'boolean', 'select']);
+
+/**
+ * One configurable setting, described well enough to validate it and to render
+ * a form for it without any per-plugin knowledge.
+ *
+ * The same idea as the skill UI descriptor, applied to settings — and the
+ * reason is the same: three clients render this, and anything they have to
+ * infer, two of them will infer differently.
+ */
+export const PluginConfigFieldSchema = z.object({
+  type: PluginConfigFieldTypeSchema,
+  label: z.string().min(1),
+  description: z.string().optional(),
+  /** Used when the system config says nothing. */
+  default: z.unknown().optional(),
+  /** A required field with no default is a setup error, reported at load. */
+  required: z.boolean().optional(),
+  /**
+   * Masked in responses and in the UI. Note this is presentation, not storage:
+   * the value still lives in config.json in the clear.
+   */
+  secret: z.boolean().optional(),
+  /** number only */
+  min: z.number().optional(),
+  max: z.number().optional(),
+  /** select only */
+  options: z
+    .array(z.object({ value: z.union([z.string(), z.number()]), label: z.string().min(1) }))
+    .optional(),
+});
+
+export type PluginConfigField = z.infer<typeof PluginConfigFieldSchema>;
+
+/**
+ * Whether a manifest `config` entry describes a field or is just a default.
+ *
+ * Manifests shipped with bare values — `"config": { "currency": "JOD" }` — and
+ * those keep working, so a descriptor has to be distinguishable from an
+ * object-valued default. Requiring *both* a known `type` and a `label` makes a
+ * collision essentially impossible while keeping the descriptor form readable.
+ */
+export function isConfigFieldDescriptor(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v['label'] === 'string' &&
+    typeof v['type'] === 'string' &&
+    PluginConfigFieldTypeSchema.safeParse(v['type']).success
+  );
+}
+
+/** "searxngUrl" -> "Searxng url". A label is better than a raw key. */
+function humanizeKey(key: string): string {
+  const spaced = key.replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
+/**
+ * Normalizes a manifest `config` block into a full field description per key.
+ *
+ * A bare value becomes a field whose type is inferred and whose default is that
+ * value, so an old manifest gains validation and a settings form for free.
+ */
+export function normalizeConfigSchema(
+  config: Record<string, unknown> | undefined
+): Record<string, PluginConfigField> {
+  const out: Record<string, PluginConfigField> = {};
+  for (const [key, raw] of Object.entries(config ?? {})) {
+    if (isConfigFieldDescriptor(raw)) {
+      const parsed = PluginConfigFieldSchema.safeParse(raw);
+      if (parsed.success) {
+        out[key] = parsed.data;
+        continue;
+      }
+    }
+    const type =
+      typeof raw === 'number' ? 'number' : typeof raw === 'boolean' ? 'boolean' : 'string';
+    out[key] = { type, label: humanizeKey(key), default: raw };
+  }
+  return out;
+}
+
+/**
+ * Does this skill change anything?
+ *
+ * An explicit declaration wins. Otherwise it is derived from the ceremony the
+ * skill asked for: needing approval implies there is something to approve.
+ */
+export function resolveMutates(skill: {
+  mutates?: boolean | undefined;
+  actionType: z.infer<typeof ActionTypeSchema>;
+}): boolean {
+  return skill.mutates ?? skill.actionType === 'workflow';
+}
 
 /**
  * Raw manifest as authored on disk.
@@ -253,15 +405,20 @@ export const PluginManifestSchema = PluginManifestInputSchema.superRefine((m, ct
     });
   }
 }).transform((m) => {
-  const skills: z.infer<typeof SkillDefinitionSchema>[] =
+  const authored: z.infer<typeof SkillDefinitionSchema>[] =
     m.skills ??
     (m.tools ?? []).map((t) => ({
       id: t.name,
       description: t.description,
       aiInvocable: true,
       actionType: t.actionType,
+      mutates: t.mutates,
       parameters: t.parameters,
     }));
+
+  // Resolve `mutates` once, here, so nothing downstream has to remember the
+  // derivation rule — or worse, guess differently.
+  const skills = authored.map((s) => ({ ...s, mutates: resolveMutates(s) }));
 
   const summary = m.summary ?? m.skillSummary ?? '';
 
@@ -272,8 +429,17 @@ export const PluginManifestSchema = PluginManifestInputSchema.superRefine((m, ct
       description: s.description,
       parameters: s.parameters,
       actionType: s.actionType,
+      mutates: s.mutates,
     }));
 
+  // Two views of the same block: `configSchema` describes each setting,
+  // `config` stays a plain key -> default map so every existing reader is
+  // untouched by the descriptor form.
+  const configSchema = normalizeConfigSchema(m.config);
+  const config = Object.fromEntries(
+    Object.entries(configSchema).map(([key, field]) => [key, field.default])
+  );
+
   const { skillSummary: _deprecatedSummary, ...rest } = m;
-  return { ...rest, summary, skills, tools };
+  return { ...rest, summary, skills, tools, config, configSchema };
 });

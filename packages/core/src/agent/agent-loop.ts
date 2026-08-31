@@ -256,25 +256,36 @@ function claimCorrectionNudge(userMessage: string): string {
 }
 
 /**
+ * Verbs that assert something was carried out.
+ *
+ * `recorded` and `tracked` were missing until a live read-only run answered
+ * "I have recorded a spend of 3 JOD" to a call the permission layer had just
+ * denied — with every unit test passing, because none of them used the word the
+ * budget and health plugins naturally invite. The list is the guard's whole
+ * vocabulary, so a gap in it is a gap in the guard.
+ */
+const COMPLETION_VERBS =
+  'set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged|recorded|tracked|noted|stored|registered|entered|booked';
+
+/**
  * Matches responses that assert an action was carried out ("Reminder set…",
  * "I've added…", "Done."). Used only to decide whether a tool-less response is
- * suspicious — a false positive costs one extra LLM call, nothing more.
+ * suspicious — a false positive costs one extra LLM call, nothing more, which
+ * is why the verb list errs towards being broad.
  */
 const COMPLETION_CLAIM_PATTERN = new RegExp(
   [
     // "I've set…", "I have created…", "I set…"
-    /\bi(?:'ve|\s+have)?\s+(?:just\s+|already\s+|now\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged)\b/
-      .source,
-    // "Reminder set", "Task added", "Timer has been started"
-    /\b(?:memory|memories|reminder|task|timer|session|note|event|alarm|entry|fact|preference)s?\s+(?:has|have)?\s*(?:been\s+)?(?:set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed)\b/
-      .source,
+    `\\bi(?:'ve|\\s+have)?\\s+(?:just\\s+|already\\s+|now\\s+)?(?:${COMPLETION_VERBS})\\b`,
+    // "Reminder set", "Task added", "Timer has been started", "Spend recorded"
+    `\\b(?:memory|memories|reminder|task|timer|session|note|event|alarm|entry|entries|fact|preference|spend|expense|transaction|meal)s?\\s+(?:has|have)?\\s*(?:been\\s+)?(?:${COMPLETION_VERBS})\\b`,
     // Bare confirmations
     /^(?:done|all set|ok(?:ay)?,?\s+done|got it,?\s+done)\b/.source,
   ].join('|'),
   'i'
 );
 
-function looksLikeCompletionClaim(text: string): boolean {
+export function looksLikeCompletionClaim(text: string): boolean {
   return COMPLETION_CLAIM_PATTERN.test(text.trim());
 }
 
@@ -407,17 +418,29 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       // Calling *a* tool is not evidence: "Delete my most recent budget entry."
       // made the model run budget.this-month, delete nothing, and answer "I have
       // deleted the most recent budget entry" — 1 live run in 3. What counts is
-      // whether anything reported doing something. Plugins follow the Result
-      // pattern this project mandates, so mutating skills return `success` and
-      // queries return plain data; that holds for every skill across all eight
-      // plugins, which makes it a contract rather than a guess.
-      const recordedSomething = steps.some(
-        (s) =>
-          s.type === 'tool_result' &&
+      // whether anything reported doing something.
+      //
+      // Two signals, and both must agree:
+      //
+      //  - A skill that *declares* `mutates: false` can never validate a
+      //    completion claim, however cheerful its return value. That is the
+      //    declaration doing work the runtime check could not: it rules out
+      //    `budget.this-month` before the call, rather than hoping its result
+      //    happens to omit a `success` field.
+      //  - The result must still report success, because a delete that threw is
+      //    not a delete that happened. Plugins follow the Result pattern this
+      //    project mandates, so mutating skills return `success` — the runtime
+      //    half stays as the fallback for anything unclassified.
+      const recordedSomething = steps.some((s) => {
+        if (s.type !== 'tool_result') return false;
+        const declared = input.availableTools.find((t) => t.name === s.toolName);
+        if (declared?.mutates === false) return false;
+        return (
           typeof s.toolResult === 'object' &&
           s.toolResult !== null &&
           (s.toolResult as Record<string, unknown>)['success'] === true
-      );
+        );
+      });
       if (
         tools !== undefined &&
         !recordedSomething &&
@@ -499,7 +522,8 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
       const permission = resolvePermission(
         toolName,
         tool?.actionType ?? 'direct',
-        input.config.actionOverrides
+        input.config.actionOverrides,
+        { mutates: tool?.mutates, readOnly: input.config.readOnly }
       );
 
       steps.push({

@@ -657,7 +657,47 @@ describe('handleUserMessage: capability question', () => {
     const res = await handleUserMessage(CHAT_ID, 'what can you do', state, deps);
 
     expect(modelCalled).toBe(false);
-    expect(res.text).toContain('Just talk to me');
+    // With no plugins loaded, the truthful answer is that there is nothing it
+    // can do — the AI acts only through plugins.
+    expect(res.text).toContain('No plugins are loaded');
+  });
+
+  it('names the loaded plugins, not whichever ones a turn happened to select', async () => {
+    // The bug this exists for: with skill-based selection the model sees only
+    // the router's picks and reports them as the whole of TARDIS.
+    let modelCalled = false;
+    const deps = makeDeps({
+      getAllManifests: () => [makeManifest('todoist')],
+      llmProvider: {
+        name: 'mock',
+        async chat() {
+          modelCalled = true;
+          return { type: 'text' as const, text: 'I am a capable assistant.' };
+        },
+        async generate() {
+          modelCalled = true;
+          return '';
+        },
+      },
+    });
+
+    const res = await handleUserMessage(CHAT_ID, 'what can you do', createBotState(), deps);
+    expect(modelCalled).toBe(false);
+    expect(res.text).toContain('todoist');
+  });
+
+  it('catches the phrasings a person actually uses', async () => {
+    // None of these matched before; all four are from one live conversation.
+    const deps = makeDeps({ getAllManifests: () => [makeManifest('todoist')] });
+    for (const text of [
+      'hola tardis, what are capable of',
+      'give me list of the plugins and tools you have',
+      'do you have any other tools? and if yes give me there names and what they can do',
+      '/plugins',
+    ]) {
+      const res = await handleUserMessage(CHAT_ID, text, createBotState(), deps);
+      expect({ text, named: res.text.includes('todoist') }).toMatchObject({ named: true });
+    }
   });
 
   it('does not swallow a pending approval reply', async () => {

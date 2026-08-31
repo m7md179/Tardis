@@ -2,7 +2,16 @@ import { Hono } from 'hono';
 import { jwt, sign } from 'hono/jwt';
 import { randomUUID } from 'crypto';
 import { eq, desc, like, or, memories, thoughtTraces } from '@tardis/db';
-import { ThoughtTracer, OllamaAdapter, OpenAIAdapter } from '@tardis/core';
+import { buildOpenApiDocument } from './openapi.js';
+import {
+  ThoughtTracer,
+  OllamaAdapter,
+  OpenAIAdapter,
+  isValidSchedule,
+  resolvePluginConfig,
+  maskSecrets,
+  SECRET_MASK,
+} from '@tardis/core';
 import { MemoryEntrySchema, LLMProviderConfigSchema } from '@tardis/shared';
 import type { TardisDB } from '@tardis/db';
 import type { LLMProviderConfig, SystemConfig } from '@tardis/shared';
@@ -36,7 +45,21 @@ export interface AppDeps {
   adminPassword?: string;
   /** Absolute path to the web-ui dist folder for static file serving. */
   webUiDistPath?: string;
+  /**
+   * Vector index over memories. Absent means no embedder is configured and
+   * memory search is keyword-only.
+   */
+  memoryIndexer?: import('@tardis/core').MemoryIndexer;
+  /** Backs the reindex endpoint and embedding upkeep on memory writes. */
+  memoryStore?: import('@tardis/core').MemoryStore;
+  /** Persists one plugin setting. Without it, settings are read-only. */
+  persistConfig?: (pluginName: string, key: string, value: unknown) => Promise<void>;
+  /** Base URL to advertise in the published OpenAPI document, if TARDIS knows one. */
+  publicUrl?: string;
 }
+
+/** Version reported by GET /doc. Tracks the server package. */
+const API_VERSION = '2.0.0';
 
 interface OllamaTagsResponse {
   models?: Array<{ name?: string }>;
@@ -52,6 +75,37 @@ const OPENAI_COMPATIBLE_BASE_URLS: Record<string, string> = {
   together: 'https://api.together.xyz/v1',
   openrouter: 'https://openrouter.ai/api/v1',
 };
+
+/**
+ * Strips the stored vector from a row before it goes over the wire.
+ *
+ * It is several KB of binary per memory and no client has any use for it —
+ * returning it would turn a list of 50 memories into a 150 KB response.
+ */
+function withoutVector<T extends { embedding?: unknown; embeddingModel?: unknown }>(
+  row: T
+): Omit<T, 'embedding'> {
+  const { embedding: _dropped, ...rest } = row;
+  return rest;
+}
+
+/**
+ * Re-embed one memory after its text changed, if there is an index.
+ *
+ * Failures are deliberately silent: the write already succeeded, the row is the
+ * truth, and the vector will be rebuilt by the next reindex. Failing the
+ * request here would mean a memory the user can see but the API says it
+ * refused to save.
+ */
+async function reindexOne(
+  deps: AppDeps,
+  id: string | null,
+  key: string,
+  value: string
+): Promise<void> {
+  if (!deps.memoryIndexer || !id) return;
+  await deps.memoryIndexer.indexOne({ id, key, value });
+}
 
 function resolveProviderBaseUrl(provider: string, baseUrl?: string): string {
   if (baseUrl) return baseUrl.replace(/\/$/, '');
@@ -128,6 +182,20 @@ export function createApp(deps: AppDeps): Hono {
   // ─── Public routes ────────────────────────────────────────────────────────
 
   app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
+
+  // ─── Published API description (public) ───────────────────────────────────
+  //
+  // Outside /api, so it sits outside the JWT middleware: a generated client
+  // needs the schema before it has a token. It describes the surface, it does
+  // not expose it — every endpoint in it still requires auth.
+  app.get('/doc', (c) =>
+    c.json(
+      buildOpenApiDocument({
+        version: API_VERSION,
+        ...(deps.publicUrl ? { serverUrl: deps.publicUrl } : {}),
+      })
+    )
+  );
 
   // ─── Auth login (public) ────────────────────────────────────────────────
 
@@ -379,6 +447,7 @@ export function createApp(deps: AppDeps): Hono {
         description: s.description,
         aiInvocable: s.aiInvocable,
         actionType: s.actionType,
+        mutates: s.mutates,
         parameters: s.parameters,
         ui: s.ui ?? null,
       })),
@@ -406,6 +475,20 @@ export function createApp(deps: AppDeps): Hono {
       // No body is fine for zero-argument skills.
     }
 
+    // Read-only mode is a property of the installation, not of the agent loop.
+    // A skill reached over HTTP is the same skill; a switch the UI can step
+    // around is not a switch.
+    if (deps.config.agent.readOnly && skill.mutates !== false) {
+      return c.json(
+        {
+          success: false,
+          code: 'READ_ONLY',
+          error: `Skill "${id}" changes state, and TARDIS is in read-only mode`,
+        },
+        403
+      );
+    }
+
     // A workflow skill must not execute just because it was reached over HTTP
     // instead of through the agent loop. Direct invocation is a different door,
     // not a weaker one.
@@ -428,6 +511,87 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ success: false, error: result.error, code: result.code }, status);
     }
     return c.json({ success: true, data: result.data });
+  });
+
+  // ─── Plugin settings ──────────────────────────────────────────────────────
+  //
+  // Descriptor-driven, exactly like skills: the client renders a form from the
+  // schema and never hardcodes per-plugin knowledge.
+
+  app.get('/api/plugins/:name/config', (c) => {
+    const name = c.req.param('name');
+    const manifest = deps.pluginManager.getAllManifests().find((m) => m.name === name);
+    if (!manifest) {
+      return c.json({ error: `Plugin "${name}" not found`, code: 'PLUGIN_NOT_FOUND' }, 404);
+    }
+
+    const { values, issues } = resolvePluginConfig(
+      manifest.configSchema,
+      deps.config.plugins?.[name] ?? {}
+    );
+
+    return c.json({
+      plugin: name,
+      schema: manifest.configSchema,
+      values: maskSecrets(manifest.configSchema, values),
+      issues,
+      writable: deps.persistConfig !== undefined,
+    });
+  });
+
+  app.put('/api/plugins/:name/config', async (c) => {
+    const name = c.req.param('name');
+    const manifest = deps.pluginManager.getAllManifests().find((m) => m.name === name);
+    if (!manifest) {
+      return c.json({ error: `Plugin "${name}" not found`, code: 'PLUGIN_NOT_FOUND' }, 404);
+    }
+    if (!deps.persistConfig) {
+      return c.json(
+        { error: 'This TARDIS instance has no config writer', code: 'NOT_CONFIGURED' },
+        503
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const submitted = (body as { values?: Record<string, unknown> })?.values;
+    if (typeof submitted !== 'object' || submitted === null) {
+      return c.json({ error: 'Body must be { "values": { ... } }' }, 400);
+    }
+
+    // A masked secret means "unchanged", not "set it to bullet characters".
+    // Without this, opening the settings form and saving would overwrite every
+    // secret with the placeholder it was displayed as.
+    const stored = deps.config.plugins?.[name] ?? {};
+    const incoming: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(submitted)) {
+      const unchangedSecret = manifest.configSchema[key]?.secret && value === SECRET_MASK;
+      incoming[key] = unchangedSecret ? stored[key] : value;
+    }
+
+    const merged = { ...stored, ...incoming };
+    const { values, issues } = resolvePluginConfig(manifest.configSchema, merged);
+    if (issues.length > 0) {
+      return c.json({ error: 'Validation failed', code: 'INVALID_CONFIG', issues }, 400);
+    }
+
+    for (const [key, value] of Object.entries(incoming)) {
+      await deps.persistConfig(name, key, value);
+    }
+
+    return c.json({
+      success: true,
+      values: maskSecrets(manifest.configSchema, values),
+      // A plugin reads its settings at activation, so a change generally does
+      // not take effect until TARDIS restarts. Saying so beats letting someone
+      // wonder why the new value made no difference.
+      restartRequired: true,
+    });
   });
 
   // ─── Thought traces ───────────────────────────────────────────────────────
@@ -501,7 +665,7 @@ export function createApp(deps: AppDeps): Hono {
       query = query.where(conditions[0]!).where(conditions[1]!);
     }
 
-    const rows = await query.limit(limit).offset(offset);
+    const rows = (await query.limit(limit).offset(offset)).map(withoutVector);
     // Count matching total (not all memories)
     const allMatching = await (() => {
       let countQuery = deps.db.select().from(memories).$dynamic();
@@ -546,9 +710,17 @@ export function createApp(deps: AppDeps): Hono {
       })
       .onConflictDoUpdate({
         target: memories.id,
-        set: { value: entry.value, key: entry.key, updatedAt: now },
+        set: {
+          value: entry.value,
+          key: entry.key,
+          updatedAt: now,
+          // The old vector described the old text. See reindexOne.
+          embedding: null,
+          embeddingModel: null,
+        },
       });
 
+    await reindexOne(deps, entry.id ?? null, entry.key, entry.value);
     return c.json({ success: true }, 201);
   });
 
@@ -580,8 +752,44 @@ export function createApp(deps: AppDeps): Hono {
     if (value !== undefined) updates['value'] = value;
     if (source !== undefined) updates['source'] = source;
 
+    // Editing the text invalidates the vector. Leaving it would make the memory
+    // findable by what it used to say, which is worse than not being findable.
+    const textChanged = key !== undefined || value !== undefined;
+    if (textChanged) {
+      updates['embedding'] = null;
+      updates['embeddingModel'] = null;
+    }
+
     await deps.db.update(memories).set(updates).where(eq(memories.id, id));
+
+    if (textChanged) {
+      const [row] = await deps.db.select().from(memories).where(eq(memories.id, id)).limit(1);
+      if (row) await reindexOne(deps, row.id, row.key, row.value);
+    }
     return c.json({ success: true });
+  });
+
+  /**
+   * Rebuild every memory's vector from its row.
+   *
+   * The row is the truth and the embedding is derived, so this can always be
+   * run and can never lose anything — the worst case is the time it takes
+   * (measured at ~63 ms per memory against a local nomic-embed-text).
+   *
+   * `?full=true` drops existing vectors first, for when the model changed
+   * behind an unchanged name. Without it this only fills gaps, which makes it
+   * the right thing to run after an embedder outage.
+   */
+  app.post('/api/memory/reindex', async (c) => {
+    if (!deps.memoryIndexer) {
+      return c.json(
+        { success: false, code: 'NO_EMBEDDER', error: 'No embedder is configured' },
+        503
+      );
+    }
+    const full = c.req.query('full') === 'true';
+    const result = await deps.memoryIndexer.reindexAll(full);
+    return c.json({ success: true, ...result });
   });
 
   app.get('/api/memory/export', async (c) => {
@@ -661,9 +869,25 @@ export function createApp(deps: AppDeps): Hono {
     if (!pluginName || !triggerName || !schedule) {
       return c.json({ error: 'pluginName, triggerName, and schedule are required' }, 400);
     }
+    // Checked here as well as in updateSchedule so the caller learns *which*
+    // thing was wrong. A schedule that fails to parse simply never fires, so
+    // "saved" would be the least useful possible answer.
+    if (!isValidSchedule(schedule)) {
+      return c.json(
+        {
+          error: `"${schedule}" is not a valid cron expression or RRULE`,
+          code: 'INVALID_SCHEDULE',
+        },
+        400
+      );
+    }
     const found = await deps.scheduler.updateSchedule(pluginName, triggerName, schedule);
     if (!found) return c.json({ error: 'Trigger not found' }, 404);
-    return c.json({ success: true });
+
+    const updated = (await deps.scheduler.listTriggers()).find(
+      (t) => t.pluginName === pluginName && t.triggerName === triggerName
+    );
+    return c.json({ success: true, nextRunAt: updated?.nextRunAt ?? null });
   });
 
   app.get('/api/proactive/logs', async (c) => {

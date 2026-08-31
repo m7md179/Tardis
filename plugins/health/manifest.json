@@ -17,6 +17,7 @@
       "description": "Record something the user has ALREADY EATEN, from their own description of it. Only when they are reporting a meal — never for a recipe, a meal plan, a suggestion, or a question about food. \"Give me low calorie recipes\" is a question, not a meal. Estimates calories only when the user has not stated them. Pass their own words, including any calorie or portion figures they gave.",
       "aiInvocable": true,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {
@@ -87,6 +88,7 @@
       "description": "Record a meal the user has already eaten, from one photo of it. Analyses a single image — send multiple photos as separate calls.",
       "aiInvocable": false,
       "actionType": "direct",
+      "mutates": true,
       "parameters": {
         "type": "object",
         "properties": {

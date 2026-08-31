@@ -9,10 +9,35 @@
   "main": "index.ts",
   "permissions": ["http:external", "llm:use"],
   "config": {
-    "enabled": true,
-    "searxngUrl": "http://localhost:8888",
-    "maxResults": 5,
-    "timeoutMs": 12000
+    "enabled": {
+      "type": "boolean",
+      "label": "Enabled",
+      "description": "Turn web search and page reading on or off.",
+      "default": true
+    },
+    "searxngUrl": {
+      "type": "string",
+      "label": "SearXNG URL",
+      "description": "Base URL of the SearXNG instance to search through.",
+      "default": "http://localhost:8888",
+      "required": true
+    },
+    "maxResults": {
+      "type": "number",
+      "label": "Results per search",
+      "description": "Snippets are a token budget, not a page — five is usually plenty.",
+      "default": 5,
+      "min": 1,
+      "max": 20
+    },
+    "timeoutMs": {
+      "type": "number",
+      "label": "Timeout (ms)",
+      "description": "How long to wait for a search or a page before giving up.",
+      "default": 12000,
+      "min": 1000,
+      "max": 60000
+    }
   },
   "skills": [
     {

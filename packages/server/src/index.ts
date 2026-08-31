@@ -12,6 +12,9 @@ import {
   ToolRouter,
   MemoryStore,
   MemoryRetriever,
+  MemoryIndexer,
+  OllamaEmbedder,
+  resolvePluginConfig,
   MEMORY_TOOLS,
   createMemoryExecutor,
   ProactiveScheduler,
@@ -83,14 +86,41 @@ async function main(): Promise<void> {
     },
   };
 
-  // 3b. Initialize memory store
+  // 3b. Initialize memory store, and the vector index if one is configured.
+  //
+  // Optional by design: with no embedder, memory search is keyword-only —
+  // exactly the behaviour that shipped before vectors existed. An embedding
+  // service that is down or was never set up must degrade TARDIS, not break it.
   const memoryStore = new MemoryStore(db);
+  const memoryIndexer = config.memory.embedder
+    ? new MemoryIndexer(memoryStore, new OllamaEmbedder(config.memory.embedder))
+    : undefined;
+  console.log(
+    memoryIndexer
+      ? `[tardis] Memory search: hybrid (keyword + ${memoryIndexer.model})`
+      : '[tardis] Memory search: keyword only (no embedder configured)'
+  );
 
   // The LLM provider must exist BEFORE plugins load: the PluginAPI factory below
   // closes over it, and loadAll() runs it. Declaring it later put it in the
   // temporal dead zone and every plugin would fail to activate with a
   // ReferenceError — invisible to tsc, since the capture is inside a closure.
   const llmProvider = buildLLMProvider(config);
+
+  const saveConfig = makeSaveConfig(dataDir);
+
+  /**
+   * Writes one plugin setting back to config.json.
+   *
+   * Mutates the in-memory `config` too, so a running plugin that reads through
+   * `api.config.get` sees its own write without a restart.
+   */
+  const persistConfig = async (plugin: string, key: string, value: unknown): Promise<void> => {
+    const plugins = { ...(config.plugins ?? {}) };
+    plugins[plugin] = { ...(plugins[plugin] ?? {}), [key]: value };
+    config.plugins = plugins;
+    saveConfig(config);
+  };
 
   const pluginManager = new PluginManager(pluginsDir, (manifest) =>
     createPluginApi({
@@ -101,6 +131,9 @@ async function main(): Promise<void> {
       llmProvider,
       notificationSender: (msg) => notificationSenderRef.send(msg),
       memoryStore,
+      memoryIndexer,
+      configSchema: manifest.configSchema,
+      persistConfig,
     })
   );
   await pluginManager.loadAll();
@@ -111,10 +144,45 @@ async function main(): Promise<void> {
     loadedPlugins.map((m) => m.name)
   );
 
+  // Settings problems surface here rather than at first use — a plugin that
+  // loads fine and then fails on its first call because a required token is
+  // missing is a much harder thing to diagnose.
+  for (const manifest of loadedPlugins) {
+    const { issues } = resolvePluginConfig(
+      manifest.configSchema,
+      config.plugins?.[manifest.name] ?? {}
+    );
+    for (const issue of issues) {
+      console.warn(`[tardis] Config problem in "${manifest.name}": ${issue.message}`);
+    }
+  }
+
+  // Turn filters come from module exports, not the manifest, so they are
+  // invisible in `tardis plugins`. Announcing them at load is the only place a
+  // plugin quietly rewriting every turn becomes apparent.
+  const turnFilters = pluginManager.getTurnFilters();
+  if (turnFilters.length > 0) {
+    console.log(
+      '[tardis] Turn filters:',
+      turnFilters
+        .map(
+          (f) =>
+            `${f.plugin} (${[f.onTurnStart && 'start', f.onTurnEnd && 'end']
+              .filter(Boolean)
+              .join('+')})`
+        )
+        .join(', ')
+    );
+  }
+
   // 4. Build AI engine
   const toolRouter = new ToolRouter(pluginManager);
-  const memoryRetriever = new MemoryRetriever(memoryStore, config.agent.memoryTokenBudget);
-  const memoryExecutor = createMemoryExecutor(memoryStore);
+  const memoryRetriever = new MemoryRetriever(
+    memoryStore,
+    config.agent.memoryTokenBudget,
+    memoryIndexer
+  );
+  const memoryExecutor = createMemoryExecutor(memoryStore, memoryIndexer);
   const conversationStore = new ConversationStore(db);
   const thoughtTracer = new ThoughtTracer(db);
 
@@ -141,6 +209,7 @@ async function main(): Promise<void> {
     memoryExecutor,
     conversationStore,
     thoughtTracer,
+    turnFilters,
     ...(config.llm.contextWindowSize !== undefined
       ? { contextWindowSize: config.llm.contextWindowSize }
       : {}),
@@ -152,8 +221,16 @@ async function main(): Promise<void> {
     db,
     config,
     pluginManager,
-    saveConfig: makeSaveConfig(dataDir),
+    saveConfig,
+    persistConfig,
+    // Advertised in the published OpenAPI document so a generated client has a
+    // base URL. Absent is fine — a generator then asks for one.
+    ...(process.env['TARDIS_PUBLIC_URL']
+      ? { publicUrl: process.env['TARDIS_PUBLIC_URL'] }
+      : {}),
     scheduler,
+    memoryStore,
+    ...(memoryIndexer ? { memoryIndexer } : {}),
     ...(config.auth.adminPassword !== undefined ? { adminPassword: config.auth.adminPassword } : {}),
   });
 

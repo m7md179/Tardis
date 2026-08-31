@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { sign } from 'hono/jwt';
 import { createApp } from './app.js';
 import type { AppDeps } from './app.js';
-import { createDb, migrate } from '@tardis/db';
+import { createDb, migrate, memories, eq } from '@tardis/db';
 import type { PluginManager } from '@tardis/core';
 import { PluginManifestSchema } from '@tardis/shared';
 import type { PluginManifest, SystemConfig } from '@tardis/shared';
@@ -23,8 +23,10 @@ const BASE_CONFIG: SystemConfig = {
     memoryTokenBudget: 2000,
     enableFallbackIntent: false,
     actionOverrides: {},
+    readOnly: false,
   },
   proactive: { enabled: false },
+  memory: {},
   rateLimit: { enabled: false, windowMs: 60000, maxRequests: 120, maxLoginAttempts: 5 },
 };
 
@@ -840,6 +842,481 @@ describe('POST /api/skills/:id/invoke', () => {
       expect(res.status).toBe(409);
       expect((await res.json()) as { code: string }).toMatchObject({ code: 'APPROVAL_REQUIRED' });
       expect(called).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ─── Read-only mode ─────────────────────────────────────────────────────
+  //
+  // Read-only is a property of the installation, not of the agent loop. A
+  // skill reached over HTTP is the same skill; a switch the UI can step
+  // around is not a switch.
+
+  const READ_ONLY_CONFIG: SystemConfig = {
+    ...BASE_CONFIG,
+    agent: { ...BASE_CONFIG.agent, readOnly: true },
+  };
+
+  function budgetManifest(): PluginManifest {
+    return PluginManifestSchema.parse({
+      name: 'budget',
+      version: '1.0.0',
+      displayName: 'budget',
+      description: 'budget plugin',
+      tier: 1,
+      main: 'index.ts',
+      summary: 'budget skills',
+      permissions: [],
+      skills: [
+        {
+          id: 'budget.this-month',
+          description: "List this month's spending",
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          id: 'budget.add-entry',
+          description: 'Record a spend',
+          mutates: true,
+          parameters: { type: 'object', properties: {} },
+        },
+      ],
+    });
+  }
+
+  async function readOnlyApp(onExecute: () => void) {
+    return makeApp({
+      config: READ_ONLY_CONFIG,
+      pluginManager: makeMockPluginManager([budgetManifest()]),
+      toolRouter: {
+        execute: async () => {
+          onExecute();
+          return { success: true as const, data: { ok: true } };
+        },
+      } as unknown as AppDeps['toolRouter'],
+    });
+  }
+
+  it('refuses a skill that changes state', async () => {
+    let called = false;
+    const { app, cleanup } = await readOnlyApp(() => {
+      called = true;
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/budget.add-entry/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: {} }),
+      });
+      expect(res.status).toBe(403);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'READ_ONLY' });
+      expect(called).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('still runs a skill that only reads — the whole point of the second axis', async () => {
+    let called = false;
+    const { app, cleanup } = await readOnlyApp(() => {
+      called = true;
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/skills/budget.this-month/invoke', {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ args: {} }),
+      });
+      expect(res.status).toBe(200);
+      expect(called).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ─── Memory: vectors are derived, never authoritative ────────────────────────
+//
+// Every write path through HTTP has to keep that true. A vector that outlives
+// the text it described makes a memory findable by what it used to say, which
+// is worse than not being findable at all.
+
+describe('memory vectors over HTTP', () => {
+  function fakeIndexer() {
+    const indexed: string[] = [];
+    return {
+      indexed,
+      indexer: {
+        model: 'fake-embed-v1',
+        indexOne: async (m: { id: string }) => {
+          indexed.push(m.id);
+          return true;
+        },
+        reindexAll: async (full?: boolean) => ({
+          indexed: full === true ? 7 : 3,
+          failed: 0,
+          model: 'fake-embed-v1',
+        }),
+        similar: async () => [],
+      } as unknown as AppDeps['memoryIndexer'],
+    };
+  }
+
+  it('does not ship the stored vector to clients', async () => {
+    // Several KB of binary per memory that no client has any use for.
+    const { app, cleanup, deps } = await makeApp();
+    const token = await makeToken();
+    try {
+      const id = randomUUID();
+      await deps.db.insert(memories).values({
+        id,
+        type: 'user_fact',
+        key: 'k',
+        value: 'v',
+        embedding: Buffer.from(new Float32Array([1, 2, 3]).buffer),
+        embeddingModel: 'fake-embed-v1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const res = await app.request('/api/memory', { headers: authHeaders(token) });
+      const body = (await res.json()) as { data: Record<string, unknown>[] };
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0]).not.toHaveProperty('embedding');
+      expect(body.data[0]!['key']).toBe('k');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('re-embeds a memory whose text was edited', async () => {
+    const { indexed, indexer } = fakeIndexer();
+    const { app, cleanup, deps } = await makeApp({ memoryIndexer: indexer });
+    const token = await makeToken();
+    try {
+      const id = randomUUID();
+      await deps.db.insert(memories).values({
+        id,
+        type: 'user_fact',
+        key: 'k',
+        value: 'old text',
+        embedding: Buffer.from(new Float32Array([1, 2, 3]).buffer),
+        embeddingModel: 'fake-embed-v1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const res = await app.request(`/api/memory/${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 'completely new text' }),
+      });
+      expect(res.status).toBe(200);
+      expect(indexed).toEqual([id]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('leaves the vector alone when only the type changed', async () => {
+    // Re-embedding on every field would burn the embedder for no gain — the
+    // text the vector describes has not moved.
+    const { indexed, indexer } = fakeIndexer();
+    const { app, cleanup, deps } = await makeApp({ memoryIndexer: indexer });
+    const token = await makeToken();
+    try {
+      const id = randomUUID();
+      await deps.db.insert(memories).values({
+        id,
+        type: 'user_fact',
+        key: 'k',
+        value: 'v',
+        embedding: Buffer.from(new Float32Array([1, 2, 3]).buffer),
+        embeddingModel: 'fake-embed-v1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      await app.request(`/api/memory/${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'preference' }),
+      });
+      expect(indexed).toEqual([]);
+
+      const [row] = await deps.db.select().from(memories).where(eq(memories.id, id)).limit(1);
+      expect(row!.embedding).not.toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('drops a stale vector even when there is no indexer to replace it', async () => {
+    // Wrong is worse than missing: with no embedder configured the row simply
+    // stops participating in vector search until someone reindexes.
+    const { app, cleanup, deps } = await makeApp();
+    const token = await makeToken();
+    try {
+      const id = randomUUID();
+      await deps.db.insert(memories).values({
+        id,
+        type: 'user_fact',
+        key: 'k',
+        value: 'old text',
+        embedding: Buffer.from(new Float32Array([1, 2, 3]).buffer),
+        embeddingModel: 'fake-embed-v1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      await app.request(`/api/memory/${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: 'new text' }),
+      });
+
+      const [row] = await deps.db.select().from(memories).where(eq(memories.id, id)).limit(1);
+      expect(row!.embedding).toBeNull();
+      expect(row!.embeddingModel).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('POST /api/memory/reindex', () => {
+  it('rebuilds the index and reports what it did', async () => {
+    const { app, cleanup } = await makeApp({
+      memoryIndexer: {
+        reindexAll: async (full?: boolean) => ({
+          indexed: full === true ? 7 : 3,
+          failed: 0,
+          model: 'fake-embed-v1',
+        }),
+      } as unknown as AppDeps['memoryIndexer'],
+    });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/memory/reindex', {
+        method: 'POST',
+        headers: authHeaders(token),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ indexed: 3, failed: 0, model: 'fake-embed-v1' });
+
+      const full = await app.request('/api/memory/reindex?full=true', {
+        method: 'POST',
+        headers: authHeaders(token),
+      });
+      expect(await full.json()).toMatchObject({ indexed: 7 });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('says so plainly when no embedder is configured', async () => {
+    const { app, cleanup } = await makeApp();
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/memory/reindex', {
+        method: 'POST',
+        headers: authHeaders(token),
+      });
+      expect(res.status).toBe(503);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'NO_EMBEDDER' });
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ─── Plugin settings ─────────────────────────────────────────────────────────
+//
+// Descriptor-driven, like skills: the client renders a form from the schema and
+// never hardcodes per-plugin knowledge.
+
+describe('plugin settings', () => {
+  function webManifest(): PluginManifest {
+    return PluginManifestSchema.parse({
+      name: 'web',
+      version: '1.0.0',
+      displayName: 'Web',
+      description: 'web plugin',
+      tier: 2,
+      main: 'index.ts',
+      summary: 'Searches the web.',
+      permissions: [],
+      config: {
+        searxngUrl: {
+          type: 'string',
+          label: 'SearXNG URL',
+          default: 'http://localhost:8888',
+          required: true,
+        },
+        maxResults: { type: 'number', label: 'Results', default: 5, min: 1, max: 20 },
+        apiToken: { type: 'string', label: 'Token', default: '', secret: true },
+      },
+      skills: [
+        {
+          id: 'web.search',
+          description: 'Search the web',
+          parameters: { type: 'object', properties: {} },
+        },
+      ],
+    });
+  }
+
+  async function settingsApp(
+    stored: Record<string, unknown> = {},
+    writable = true
+  ) {
+    const written: [string, string, unknown][] = [];
+    const app = await makeApp({
+      config: { ...BASE_CONFIG, plugins: { web: stored } },
+      pluginManager: makeMockPluginManager([webManifest()]),
+      ...(writable
+        ? {
+            persistConfig: async (plugin: string, key: string, value: unknown) => {
+              written.push([plugin, key, value]);
+            },
+          }
+        : {}),
+    });
+    return { ...app, written };
+  }
+
+  it('serves the schema and the resolved values', async () => {
+    const { app, cleanup } = await settingsApp();
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/plugins/web/config', { headers: authHeaders(token) });
+      const body = (await res.json()) as {
+        schema: Record<string, { label: string }>;
+        values: Record<string, unknown>;
+        writable: boolean;
+      };
+      expect(body.schema['searxngUrl']!.label).toBe('SearXNG URL');
+      expect(body.values['searxngUrl']).toBe('http://localhost:8888');
+      expect(body.writable).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('masks a secret it has, and does not mask one it does not', async () => {
+    const { app, cleanup } = await settingsApp({ apiToken: 'real-token' });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/plugins/web/config', { headers: authHeaders(token) });
+      const body = (await res.json()) as { values: Record<string, unknown> };
+      expect(body.values['apiToken']).not.toBe('real-token');
+      expect(body.values['apiToken']).toBe('••••••••');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('reports a stored value the schema forbids', async () => {
+    const { app, cleanup } = await settingsApp({ maxResults: 500 });
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/plugins/web/config', { headers: authHeaders(token) });
+      const body = (await res.json()) as { issues: { key: string }[] };
+      expect(body.issues.map((i) => i.key)).toEqual(['maxResults']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('404s for a plugin that is not loaded', async () => {
+    const { app, cleanup } = await settingsApp();
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/plugins/nope/config', { headers: authHeaders(token) });
+      expect(res.status).toBe(404);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('saves a valid change', async () => {
+    const { app, cleanup, written } = await settingsApp();
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/plugins/web/config', {
+        method: 'PUT',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: { maxResults: 8 } }),
+      });
+      expect(res.status).toBe(200);
+      expect(written).toEqual([['web', 'maxResults', 8]]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('rejects an invalid change without writing anything', async () => {
+    const { app, cleanup, written } = await settingsApp();
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/plugins/web/config', {
+        method: 'PUT',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: { maxResults: 500 } }),
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'INVALID_CONFIG' });
+      expect(written).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('treats a resubmitted mask as "unchanged", not as the new value', async () => {
+    // Without this, opening the settings form and pressing save would overwrite
+    // every secret with the bullet characters it was displayed as.
+    const { app, cleanup, written } = await settingsApp({ apiToken: 'real-token' });
+    const token = await makeToken();
+    try {
+      await app.request('/api/plugins/web/config', {
+        method: 'PUT',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: { apiToken: '••••••••' } }),
+      });
+      expect(written).toEqual([['web', 'apiToken', 'real-token']]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('still accepts a genuine new secret', async () => {
+    const { app, cleanup, written } = await settingsApp({ apiToken: 'old-token' });
+    const token = await makeToken();
+    try {
+      await app.request('/api/plugins/web/config', {
+        method: 'PUT',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: { apiToken: 'new-token' } }),
+      });
+      expect(written).toEqual([['web', 'apiToken', 'new-token']]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('says so plainly when there is nowhere to write', async () => {
+    const { app, cleanup } = await settingsApp({}, false);
+    const token = await makeToken();
+    try {
+      const res = await app.request('/api/plugins/web/config', {
+        method: 'PUT',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: { maxResults: 8 } }),
+      });
+      expect(res.status).toBe(503);
+      expect((await res.json()) as { code: string }).toMatchObject({ code: 'NOT_CONFIGURED' });
     } finally {
       cleanup();
     }

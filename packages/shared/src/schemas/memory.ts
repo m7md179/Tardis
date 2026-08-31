@@ -9,6 +9,9 @@ export const MemoryEntrySchema = z.object({
   value: z.string(),
   source: z.string().min(1),
   pluginName: z.string().optional(),
+  /** Optional hierarchy, e.g. "finance/goals". Nothing reads it yet; it is here
+   *  because a nullable column is cheap now and painful to retrofit later. */
+  path: z.string().optional(),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive(),
   accessedAt: z.number().int().positive().optional(),

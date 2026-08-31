@@ -31,8 +31,10 @@ const MOCK_CONFIG: SystemConfig = {
     memoryTokenBudget: 2000,
     enableFallbackIntent: true,
     actionOverrides: {},
+    readOnly: false,
   },
   proactive: { enabled: true },
+  memory: {},
   rateLimit: { enabled: false, windowMs: 60000, maxRequests: 120, maxLoginAttempts: 5 },
 };
 
@@ -308,7 +310,10 @@ describe('PluginAPI.config', () => {
     cleanup();
   });
 
-  it('config.set() is available with no permissions and does not throw (stub)', async () => {
+  it('config.set() refuses loudly when there is nowhere to persist', async () => {
+    // It used to resolve and discard the value. A setting that vanishes without
+    // a word is worse than one that refuses to save — the first is a bug you
+    // find weeks later, the second is a message.
     const { db, cleanup } = makeTestDb();
     const api = createPluginApi({
       pluginName: 'no-perm-plugin',
@@ -317,7 +322,70 @@ describe('PluginAPI.config', () => {
       config: MOCK_CONFIG,
     });
 
-    await expect(api.config.set('key', 'value')).resolves.toBeUndefined();
+    await expect(api.config.set('key', 'value')).rejects.toThrow(/no config writer/);
+    cleanup();
+  });
+
+  it('returns a declared default when the system config says nothing', async () => {
+    // The bug this fixes: get() looked only at the system config, so a
+    // manifest's own defaults were dead weight and every plugin carried its own
+    // DEFAULTS constant and merge loop to compensate.
+    const { db, cleanup } = makeTestDb();
+    const api = createPluginApi({
+      pluginName: 'web',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+      configSchema: {
+        searxngUrl: {
+          type: 'string',
+          label: 'SearXNG URL',
+          default: 'http://localhost:8888',
+        },
+      },
+    });
+
+    expect(await api.config.get<string>('searxngUrl')).toBe('http://localhost:8888');
+    cleanup();
+  });
+
+  it('persists a valid write and reads it straight back', async () => {
+    const { db, cleanup } = makeTestDb();
+    const written: [string, string, unknown][] = [];
+    const api = createPluginApi({
+      pluginName: 'web',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+      configSchema: { maxResults: { type: 'number', label: 'Results', default: 5, max: 20 } },
+      persistConfig: async (plugin, key, value) => {
+        written.push([plugin, key, value]);
+      },
+    });
+
+    await api.config.set('maxResults', 8);
+    expect(written).toEqual([['web', 'maxResults', 8]]);
+    // Visible to the running plugin without a restart.
+    expect(await api.config.get<number>('maxResults')).toBe(8);
+    cleanup();
+  });
+
+  it('rejects a write the schema forbids', async () => {
+    const { db, cleanup } = makeTestDb();
+    let persisted = false;
+    const api = createPluginApi({
+      pluginName: 'web',
+      permissions: [],
+      db,
+      config: MOCK_CONFIG,
+      configSchema: { maxResults: { type: 'number', label: 'Results', default: 5, max: 20 } },
+      persistConfig: async () => {
+        persisted = true;
+      },
+    });
+
+    await expect(api.config.set('maxResults', 500)).rejects.toThrow(/at most 20/);
+    expect(persisted).toBe(false);
     cleanup();
   });
 });

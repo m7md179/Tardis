@@ -195,3 +195,82 @@ describe('MemoryStore', () => {
     expect(ttMems[0]!.key).toBe('tt_setting');
   });
 });
+
+// ─── Embeddings and path ─────────────────────────────────────────────────────
+//
+// The row is the truth and the vector is derived. These pin the two ways that
+// can go wrong: a vector outliving the text it described, and a vector from one
+// model being compared against another's.
+
+describe('MemoryStore: embeddings', () => {
+  let store: MemoryStore;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    const t = makeTestDb();
+    cleanup = t.cleanup;
+    store = new MemoryStore(t.db);
+  });
+
+  afterEach(() => cleanup());
+
+  const vec = (...v: number[]) => Float32Array.from(v);
+
+  it('round-trips a vector through the database', async () => {
+    const m = await store.create({ type: 'user_fact', key: 'k', value: 'v' });
+    await store.setEmbedding(m.id, 'model-a', vec(0.5, -0.25, 1));
+
+    const [found] = await store.getEmbedded('model-a');
+    expect(found!.memory.id).toBe(m.id);
+    expect(Array.from(found!.vector)).toEqual([0.5, -0.25, 1]);
+  });
+
+  it('hides rows embedded by a different model', async () => {
+    const m = await store.create({ type: 'user_fact', key: 'k', value: 'v' });
+    await store.setEmbedding(m.id, 'model-a', vec(1, 0));
+
+    expect(await store.getEmbedded('model-b')).toHaveLength(0);
+    expect((await store.getUnembedded('model-b')).map((x) => x.id)).toEqual([m.id]);
+  });
+
+  it('drops the vector when the text it described changes', async () => {
+    // Otherwise the memory stays findable by what it used to say, which is
+    // worse than not being findable at all.
+    const m = await store.create({ type: 'user_fact', key: 'k', value: 'old text' });
+    await store.setEmbedding(m.id, 'model-a', vec(1, 0));
+
+    await store.upsertByKey({ type: 'user_fact', key: 'k', value: 'completely new text' });
+    expect(await store.getEmbedded('model-a')).toHaveLength(0);
+    expect((await store.getUnembedded('model-a')).map((x) => x.id)).toEqual([m.id]);
+  });
+
+  it('finds pending rows beyond the newest page', async () => {
+    // getUnembedded filters in SQL, not after the limit. Filtering afterwards
+    // returns nothing exactly when the newest rows are already up to date —
+    // which is when a catch-up run still has older rows to do.
+    const older = await store.create({ type: 'user_fact', key: 'older', value: 'v' });
+    const newer = await store.create({ type: 'user_fact', key: 'newer', value: 'v' });
+    await store.setEmbedding(newer.id, 'model-a', vec(1, 0));
+
+    expect((await store.getUnembedded('model-a', 1)).map((x) => x.id)).toEqual([older.id]);
+  });
+
+  it('clears every vector without touching a single row', async () => {
+    const m = await store.create({ type: 'user_fact', key: 'k', value: 'the only copy' });
+    await store.setEmbedding(m.id, 'model-a', vec(1, 0));
+
+    await store.clearEmbeddings();
+    expect(await store.getEmbedded('model-a')).toHaveLength(0);
+    expect((await store.getByKey('k'))?.value).toBe('the only copy');
+  });
+
+  it('stores and returns an optional path', async () => {
+    await store.create({ type: 'user_fact', key: 'goal', value: 'v', path: 'finance/goals' });
+    expect((await store.getByKey('goal'))?.path).toBe('finance/goals');
+  });
+
+  it('leaves path absent when none was given', async () => {
+    await store.create({ type: 'user_fact', key: 'plain', value: 'v' });
+    expect((await store.getByKey('plain'))?.path).toBeUndefined();
+  });
+});
