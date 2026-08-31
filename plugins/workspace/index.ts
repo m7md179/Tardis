@@ -207,7 +207,18 @@ async function parentCandidates(io: IoClient, draft: Draft): Promise<Candidate[]
 async function draftEnvelope(io: IoClient, draft: Draft): Promise<Record<string, unknown>> {
   const blocking = blockingSlots(draft);
   const candidates = blocking[0] === 'parent_id' ? await parentCandidates(io, draft) : [];
+  const ready = blocking.length === 0;
   return {
+    // Stated first and in plain words, because the model will otherwise say the
+    // work item exists. Live, after draft-set it answered "The sub-task … has
+    // been created in the 'R&D Team' workspace" and listed its fields — and the
+    // user went looking for a task that was never created. Nothing here writes
+    // to the tracker; only workspace.draft-commit does.
+    created: false,
+    itemExists: false,
+    note: ready
+      ? 'This is still only a draft. Nothing has been created yet — call workspace.draft-commit to create the real work item.'
+      : 'This is still only a draft. Nothing has been created yet, and it is not ready to create.',
     draft,
     title: draft.slots.title.value ?? '(untitled draft)',
     summary: describeDraft(draft),

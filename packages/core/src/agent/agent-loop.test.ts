@@ -2412,3 +2412,60 @@ describe('runAgentLoop: answered without looking anything up', () => {
     expect(result.response).toBe('You are assigned to 135 work items.');
   });
 });
+
+// ─── The false "sub-task has been created" ───────────────────────────────────
+//
+// Live. draft-set only updates a draft; draft-commit creates the item. After a
+// draft-set, TARDIS answered:
+//
+//   The sub-task "Item Transfer Phase/Sub-phase/Activity Non-Mandatory" has
+//   been created in the 'R&D Team' workspace with the following details: …
+//
+// Nothing had been created. The user went looking for the task and could not
+// find it. The guard missed it because the tight noun→verb form required the
+// verb to follow the noun directly, and a quoted title sat between them.
+
+describe('completion claims with the thing named in the middle', () => {
+  it('catches the live false creation claim', () => {
+    expect(
+      looksLikeCompletionClaim(
+        'The sub-task "Item Transfer Phase/Sub-phase/Activity Non-Mandatory" has been created in the \'R&D Team\' workspace.'
+      )
+    ).toBe(true);
+  });
+
+  it('catches the work-item nouns that were missing entirely', () => {
+    for (const t of [
+      'The item has been created.',
+      'The story has been added.',
+      'The epic has been created.',
+      'The ticket has been updated.',
+      'The comment has been added.',
+    ]) {
+      expect({ t, matched: looksLikeCompletionClaim(t) }).toMatchObject({ matched: true });
+    }
+  });
+
+  it('leaves a true statement about a draft alone', () => {
+    // draft-start really does start a draft. Firing here would nudge the model
+    // to redo work it had just done, every time a draft opens.
+    for (const t of [
+      'The draft for a new work item has been started in the R&D Team workspace.',
+      'The draft has been updated with the title and description.',
+    ]) {
+      expect({ t, matched: looksLikeCompletionClaim(t) }).toMatchObject({ matched: false });
+    }
+  });
+
+  it('does not swallow a whole sentence looking for a verb', () => {
+    // The bounded window and the required "has been" are what keep this from
+    // matching any sentence that happens to contain a noun and a verb.
+    for (const t of [
+      'You have 5 items in TODO status, and I can show you the ones that were created last month.',
+      'What type of work item is this: EPIC, STORY, or SUB_TASK?',
+      'The item list is long, so here is a summary of what your team has been doing.',
+    ]) {
+      expect({ t, matched: looksLikeCompletionClaim(t) }).toMatchObject({ matched: false });
+    }
+  });
+});

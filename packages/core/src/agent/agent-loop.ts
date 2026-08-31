@@ -287,6 +287,16 @@ function claimCorrectionNudge(userMessage: string): string {
  * budget and health plugins naturally invite. The list is the guard's whole
  * vocabulary, so a gap in it is a gap in the guard.
  */
+/**
+ * Things a claim can be about.
+ *
+ * `item`, `task` and the work-item words were missing, so "The sub-task … has
+ * been created" read as ordinary prose. `draft` is deliberately absent: a draft
+ * genuinely is created by draft-start, and claiming so is true.
+ */
+const COMPLETION_NOUNS =
+  'memory|memories|reminder|task|sub-task|subtask|item|story|epic|ticket|issue|timer|session|note|event|alarm|entry|entries|fact|preference|spend|expense|transaction|meal|comment|goal|card';
+
 const COMPLETION_VERBS =
   'set|created|added|scheduled|started|stopped|paused|resumed|saved|deleted|removed|updated|cancell?ed|completed|marked|logged|recorded|tracked|noted|stored|registered|entered|booked';
 
@@ -301,7 +311,14 @@ const COMPLETION_CLAIM_PATTERN = new RegExp(
     // "I've set…", "I have created…", "I set…"
     `\\bi(?:'ve|\\s+have)?\\s+(?:just\\s+|already\\s+|now\\s+)?(?:${COMPLETION_VERBS})\\b`,
     // "Reminder set", "Task added", "Timer has been started", "Spend recorded"
-    `\\b(?:memory|memories|reminder|task|timer|session|note|event|alarm|entry|entries|fact|preference|spend|expense|transaction|meal)s?\\s+(?:has|have)?\\s*(?:been\\s+)?(?:${COMPLETION_VERBS})\\b`,
+    `\\b(?:${COMPLETION_NOUNS})s?\\s+(?:has|have)?\\s*(?:been\\s+)?(?:${COMPLETION_VERBS})\\b`,
+    // The same claim with the thing's name in the middle:
+    //   The sub-task "Item Transfer Phase/Sub-phase" has been created
+    // The tight form above requires the verb to follow the noun directly, so a
+    // quoted title slipped straight past it — and a false "has been created"
+    // sent someone looking for a work item that did not exist. Bounded, and it
+    // insists on an explicit "has been", so it cannot swallow a whole sentence.
+    `\\b(?:${COMPLETION_NOUNS})s?\\b[^.!?]{0,80}?\\s(?:has|have)\\s+been\\s+(?:${COMPLETION_VERBS})\\b`,
     // Bare confirmations
     /^(?:done|all set|ok(?:ay)?,?\s+done|got it,?\s+done)\b/.source,
   ].join('|'),
@@ -309,7 +326,16 @@ const COMPLETION_CLAIM_PATTERN = new RegExp(
 );
 
 export function looksLikeCompletionClaim(text: string): boolean {
-  return COMPLETION_CLAIM_PATTERN.test(text.trim());
+  const t = text.trim();
+  // A sentence about a draft is describing the intermediate state, and
+  // "the draft has been started" is simply true — firing on it would nudge the
+  // model to redo work it had just done, every single time a draft opens.
+  //
+  // This does let "I saved the draft and created the task" through, but the
+  // real-creation path is draft-commit, which reports success, so the guard was
+  // never the thing catching that one.
+  if (/\bdrafts?\b/i.test(t)) return false;
+  return COMPLETION_CLAIM_PATTERN.test(t);
 }
 
 /**
