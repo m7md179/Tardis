@@ -1,6 +1,43 @@
 {
-  "extends": "../../tsconfig.json",
+  // Deliberately self-contained: no `extends`.
+  //
+  // This used to extend ../../tsconfig.json, which is correct in the repo and
+  // wrong everywhere else. TARDIS loads plugins from $TARDIS_DATA_DIR/plugins,
+  // and production holds real copies there rather than symlinks — so the
+  // extends target does not exist, Bun cannot apply the root's `paths`, and
+  // resolution falls through to a workspace symlink that the copy broke.
+  // Measured on the server: with this file present the plugin fails to load
+  // with ENOENT on @tardis/shared; with it absent, it loads. No other plugin
+  // ships a tsconfig, which is why no other plugin hit this.
+  //
+  // The options below mirror the root's type-checking strictness, which is the
+  // only part this file needs.
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": ["bun-types"],
+
     "noEmit": true
   },
   "include": ["*.ts"],
