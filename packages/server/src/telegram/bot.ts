@@ -1,6 +1,11 @@
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
-import { runConversationTurn } from '@tardis/core';
+import {
+  runConversationTurn,
+  isCapabilityQuestion,
+  capabilityDetail,
+  describeCapabilities,
+} from '@tardis/core';
 import type { PendingApproval, ToolRouter, LLMProvider, LLMMessage, MemoryRetriever, ConversationStore, ThoughtTracer } from '@tardis/core';
 import type { MemoryExecutor } from '@tardis/core';
 import type { AgentConfig, PluginManifest, ToolDefinition } from '@tardis/shared';
@@ -93,8 +98,14 @@ export async function handleUserMessage(
 
   // ─── "What can you do" — answered from manifests, not by the model ─────
   // Only when nothing is pending, so it cannot swallow an approval reply.
+  //
+  // The shared answer rather than handleHelpCommand: this reply is sent without
+  // `parse_mode`, so the help text's asterisks rendered literally. It also
+  // gives the full skill list when the question asked for one.
   if (!state.pendingApprovals.has(chatId) && isCapabilityQuestion(text)) {
-    return handleHelpCommand(deps);
+    return {
+      text: describeCapabilities(deps.getAllManifests(), capabilityDetail(text)),
+    };
   }
 
   // ─── Pending workflow approval ─────────────────────────────────────────
@@ -212,17 +223,16 @@ export async function handleNewCommand(
  * fiction this project keeps having to guard against. The manifests already
  * know the answer, so read it from there.
  */
-// Two shapes, because they need different strictness. A bare "help" is a
-// capability question; "help me log lunch" is a request, and an earlier version
-// that matched `help\b` hijacked it.
-const CAPABILITY_PHRASE =
-  /^\s*(?:what\s+(?:can|do)\s+you\s+do|what\s+are\s+you\s+(?:able\s+to\s+do|capable\s+of)|what\s+can\s+you\s+help\s+(?:me\s+)?with)\b/i;
-const CAPABILITY_WORD = /^\s*(?:help|commands|capabilities)\s*[?!.]*\s*$/i;
-
-export function isCapabilityQuestion(text: string): boolean {
-  const t = text.trim();
-  return CAPABILITY_PHRASE.test(t) || CAPABILITY_WORD.test(t);
-}
+/**
+ * Moved to `@tardis/core`, and re-exported so this module's callers are
+ * unchanged.
+ *
+ * It lived here, which meant the web app, the mobile app and the terminal had
+ * no way to describe TARDIS at all — they reach the agent through
+ * `runConversationTurn`, not through this file. The matcher was also anchored
+ * and narrow enough to miss every real phrasing in one live conversation.
+ */
+export { isCapabilityQuestion };
 
 /** Photo sizes as Telegram sends them: ascending, smallest first. */
 export interface PhotoSize {

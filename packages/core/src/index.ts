@@ -61,6 +61,12 @@ export {
 } from './plugins/plugin-config.js';
 export type { ConfigIssue, ConfigValidation } from './plugins/plugin-config.js';
 export { applyTurnStart, applyTurnEnd } from './agent/turn-filters.js';
+export {
+  isCapabilityQuestion,
+  capabilityDetail,
+  describeCapabilities,
+} from './agent/capabilities.js';
+export type { CapabilityDetail } from './agent/capabilities.js';
 export type {
   TurnFilter,
   TurnStartContext,

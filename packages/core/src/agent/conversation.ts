@@ -5,12 +5,14 @@ import type { MemoryRetriever } from '../memory/memory-retriever.js';
 import type { ConversationStore } from '../memory/conversation-store.js';
 import type { ThoughtTracer } from './thought-tracer.js';
 import type { MemoryExecutor } from '../memory/memory-tools.js';
+import { randomUUID } from 'crypto';
 import { runAgentLoop } from './agent-loop.js';
 import type { PendingApproval } from './agent-loop.js';
 import { selectPlugins } from './plugin-router.js';
 import { CLARIFY_TOOL } from './clarify.js';
 import { applyTurnEnd, applyTurnStart } from './turn-filters.js';
 import type { TurnFilter } from './turn-filters.js';
+import { capabilityDetail, describeCapabilities, isCapabilityQuestion } from './capabilities.js';
 
 /**
  * One user message, all the way through TARDIS.
@@ -76,7 +78,31 @@ export async function runConversationTurn(
   // Before anything else, so plugin selection, memory retrieval, the trace and
   // the stored history all agree about what was asked.
   const filters = deps.turnFilters ?? [];
+  const startedAt = Date.now();
   const message = await applyTurnStart(filters, { chatId, userMessage: input.message });
+
+  // ─── "What can you do?" ────────────────────────────────────────────────
+  //
+  // Answered from the manifests, before the model is involved at all.
+  //
+  // Skill-based selection means the agent only sees the tools of the plugins
+  // the router picked, so asked what it can do it reports that subset as the
+  // whole. Live, with only `notes` selected, it listed five note skills and
+  // concluded "that is the primary set of tools I have access to" — true about
+  // what it could see, false about TARDIS.
+  //
+  // This used to exist in the Telegram bot only, which is why the web app, the
+  // mobile app and the terminal could not describe TARDIS at all.
+  if (isCapabilityQuestion(message)) {
+    return finishTurn({
+      chatId,
+      message,
+      answer: describeCapabilities(deps.getAllManifests(), capabilityDetail(message)),
+      filters,
+      startedAt,
+      deps,
+    });
+  }
 
   const { tools, selectedPlugins, method } = await selectPlugins(
     message,
@@ -146,6 +172,64 @@ export async function runConversationTurn(
     selectedPlugins,
     ...(result.pendingApproval ? { pendingApproval: result.pendingApproval } : {}),
   };
+}
+
+/**
+ * Completes a turn that was answered without running the agent loop.
+ *
+ * Everything after the answer still has to happen: `onTurnEnd` filters, the
+ * thought trace, and — the one that matters most — history. A short-circuit
+ * that skipped persistence would leave the next message with no idea what was
+ * just said, which is precisely how the live transcript ended up going in
+ * circles.
+ */
+async function finishTurn(args: {
+  chatId: string;
+  message: string;
+  answer: string;
+  filters: TurnFilter[];
+  startedAt: number;
+  deps: ConversationDeps;
+}): Promise<ConversationTurnResult> {
+  const { chatId, message, filters, startedAt, deps } = args;
+
+  const response = await applyTurnEnd(filters, {
+    chatId,
+    userMessage: message,
+    response: args.answer,
+    steps: [],
+  });
+
+  const trace: ThoughtTrace = {
+    id: randomUUID(),
+    userMessage: message,
+    steps: [
+      {
+        type: 'reasoning',
+        content: response,
+        timestamp: startedAt,
+        durationMs: Date.now() - startedAt,
+      },
+    ],
+    finalResponse: response,
+    totalDurationMs: Date.now() - startedAt,
+    // Honest: no model was asked. A trace claiming otherwise would make the
+    // traces page lie about where an answer came from.
+    modelUsed: 'none (answered from plugin manifests)',
+    timestamp: startedAt,
+  };
+
+  if (deps.thoughtTracer) {
+    try {
+      await deps.thoughtTracer.save(trace);
+    } catch (err) {
+      console.error(`[conversation] Failed to save trace for chat ${chatId}:`, err);
+    }
+  }
+
+  await persistHistory(chatId, message, { response, trace }, deps);
+
+  return { response, trace, selectedPlugins: [] };
 }
 
 /**
