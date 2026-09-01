@@ -24,7 +24,7 @@ function makeTestDb() {
 const MOCK_CONFIG: SystemConfig = {
   server: { host: '0.0.0.0', port: 3000, dataDir: '/tmp' },
   auth: { jwtSecret: 'a-very-long-secret-that-is-at-least-32-chars', jwtExpiry: '30d' },
-  llm: { provider: 'ollama', model: 'qwen3:4b' },
+  llm: { provider: 'ollama', model: 'qwen3:4b', maxResponseTokens: 2048 },
   agent: {
     maxSteps: 10,
     conversationHistoryLength: 10,

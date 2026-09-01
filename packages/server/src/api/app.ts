@@ -119,7 +119,13 @@ function mergeLlmConfig(
 ): LLMProviderConfig {
   const provider = overrides.provider?.trim() || current.provider;
   const model = overrides.model?.trim() || current.model;
-  const merged: LLMProviderConfig = { provider, model };
+  // Carried over rather than defaulted, so changing the model through the API
+  // cannot silently reset a reply ceiling someone tuned for it.
+  const merged: LLMProviderConfig = {
+    provider,
+    model,
+    maxResponseTokens: overrides.maxResponseTokens ?? current.maxResponseTokens,
+  };
 
   const baseUrl = overrides.baseUrl?.trim() || current.baseUrl;
   if (baseUrl) merged.baseUrl = baseUrl;

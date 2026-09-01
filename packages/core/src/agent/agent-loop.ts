@@ -32,6 +32,8 @@ export interface AgentLoopInput {
   llmProvider: LLMProvider;
   /** Model's max context window in tokens. Defaults to 4096 if not provided. */
   contextWindowSize?: number;
+  /** Ceiling on one reply. Unset means whatever the provider defaults to. */
+  maxResponseTokens?: number;
   /**
    * Data-URI images attached to the current user message.
    *
@@ -433,7 +435,11 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
     const stepStart = Date.now();
 
     // ─── REASON: Send to LLM ─────────────────────────────────────────────────
-    let llmResponse = await input.llmProvider.chat(tools ? { messages, tools } : { messages });
+    let llmResponse = await input.llmProvider.chat({
+      messages,
+      ...(tools ? { tools } : {}),
+      ...(input.maxResponseTokens !== undefined ? { maxTokens: input.maxResponseTokens } : {}),
+    });
 
     if (llmResponse.usage) {
       totalTokens += llmResponse.usage.promptTokens + llmResponse.usage.completionTokens;

@@ -8,6 +8,16 @@ export const LLMProviderConfigSchema = z.object({
   apiKey: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
   contextWindowSize: z.number().int().min(512).optional(),
+  /**
+   * Ceiling on a single reply, in tokens.
+   *
+   * TARDIS sent no `max_tokens` at all, so a model was free to generate up to
+   * its own maximum — 131,072 for the one now configured. On a reasoning model
+   * that budget also covers the reasoning trace, so it must be generous enough
+   * to leave room for an actual answer: too low and the reply comes back empty,
+   * measured at max_tokens=200 producing 200 reasoning tokens and no content.
+   */
+  maxResponseTokens: z.number().int().min(256).default(2048),
 });
 
 export const TelegramConfigSchema = z.object({

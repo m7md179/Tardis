@@ -222,6 +222,7 @@ async function main(): Promise<void> {
     ...(config.llm.contextWindowSize !== undefined
       ? { contextWindowSize: config.llm.contextWindowSize }
       : {}),
+    maxResponseTokens: config.llm.maxResponseTokens,
   };
 
   const app = createApp({

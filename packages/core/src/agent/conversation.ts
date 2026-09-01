@@ -37,6 +37,8 @@ export interface ConversationDeps {
   conversationStore?: ConversationStore;
   thoughtTracer?: ThoughtTracer;
   contextWindowSize?: number;
+  /** Ceiling on one reply, passed through to the model. */
+  maxResponseTokens?: number;
   /**
    * Plugin hooks that see the whole turn. See turn-filters.ts — in particular
    * that an onTurnStart rewrite is total: history and the trace record the
@@ -170,6 +172,7 @@ export async function runConversationTurn(
     llmProvider: deps.llmProvider,
     executeTool,
     ...(deps.contextWindowSize !== undefined ? { contextWindowSize: deps.contextWindowSize } : {}),
+    ...(deps.maxResponseTokens !== undefined ? { maxResponseTokens: deps.maxResponseTokens } : {}),
     ...(input.images?.length ? { userImages: input.images } : {}),
     ...(input.onStep ? { onStep: input.onStep } : {}),
     pluginSelectionMethod: method,
@@ -292,6 +295,51 @@ async function finishTurn(args: {
 }
 
 /**
+ * Shrinks a tool result before it is written to history.
+ *
+ * The model already saw the full result in the turn that produced it. Keeping
+ * every byte forever means each later turn re-sends it: one `workspace.my-items`
+ * call over 135 items stored a single **9,598-token** message, which then rode
+ * along on every subsequent question in that thread. Measured, "hi" on that
+ * thread cost 62 seconds against 4 on a fresh one.
+ *
+ * Scalars are kept, because that is where the answer usually is — `count`,
+ * `success`, `message`. Long arrays and strings are replaced by an honest note
+ * about what was there. Nothing pretends the data is still present.
+ */
+const HISTORY_VALUE_CHARS = 400;
+const HISTORY_RESULT_CHARS = 2000;
+
+export function summariseForHistory(result: unknown): string {
+  const full = JSON.stringify(result ?? null);
+  if (full.length <= HISTORY_RESULT_CHARS) return full;
+
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+    return JSON.stringify({
+      truncated: true,
+      preview: full.slice(0, HISTORY_VALUE_CHARS),
+      note: `Result of ${full.length} characters, shortened for history. Call the skill again for current data.`,
+    });
+  }
+
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(result as Record<string, unknown>)) {
+    if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+      kept[key] =
+        typeof value === 'string' && value.length > HISTORY_VALUE_CHARS
+          ? value.slice(0, HISTORY_VALUE_CHARS) + `… (${value.length} chars)`
+          : value;
+    } else if (Array.isArray(value)) {
+      kept[key] = `[${value.length} items, not kept in history]`;
+    } else {
+      kept[key] = '[object, not kept in history]';
+    }
+  }
+  kept['truncated'] = true;
+  return JSON.stringify(kept);
+}
+
+/**
  * Writes the turn to history, replaying completed tool calls.
  *
  * Without the tool calls the stored history reads as "user asks -> assistant
@@ -325,7 +373,7 @@ async function persistHistory(
     });
     await store.appendMessage(chatId, {
       role: 'tool',
-      content: JSON.stringify(observed.toolResult ?? null),
+      content: summariseForHistory(observed.toolResult),
       name: call.toolName,
     });
     i++; // the result step is consumed by the pair above

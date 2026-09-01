@@ -16,7 +16,7 @@ const JWT_SECRET = 'test-secret-that-is-long-enough-for-hs256';
 const BASE_CONFIG: SystemConfig = {
   server: { host: '0.0.0.0', port: 3000, dataDir: '/tmp' },
   auth: { jwtSecret: JWT_SECRET, jwtExpiry: '30d' },
-  llm: { provider: 'ollama', model: 'qwen3:4b' },
+  llm: { provider: 'ollama', model: 'qwen3:4b', maxResponseTokens: 2048 },
   agent: {
     maxSteps: 10,
     conversationHistoryLength: 10,

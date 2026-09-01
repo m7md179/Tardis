@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { createDb, migrate } from '@tardis/db';
-import { runConversationTurn } from './conversation.js';
+import { runConversationTurn, summariseForHistory } from './conversation.js';
 import type { ConversationDeps } from './conversation.js';
 import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 import { ConversationStore } from '../memory/conversation-store.js';
@@ -348,5 +348,59 @@ describe('runConversationTurn: plugins that cannot work', () => {
     expect(result.response).toMatch(/todoist.*needs setup/i);
     expect(result.response).toContain('workspace');
     expect(result.response).not.toMatch(/workspace.*needs setup/i);
+  });
+});
+
+// ─── What gets written to history ────────────────────────────────────────────
+//
+// One workspace.my-items call over 135 items stored a single 9,598-token
+// message. Every later question in that thread re-sent it: "hi" cost 62 seconds
+// on that thread against 4 on a fresh one.
+
+describe('summariseForHistory', () => {
+  it('leaves a small result exactly as it was', () => {
+    const small = { success: true, message: 'Done.' };
+    expect(JSON.parse(summariseForHistory(small))).toEqual(small);
+  });
+
+  it('keeps the scalars, which is where the answer usually is', () => {
+    const big = {
+      count: 135,
+      success: true,
+      message: '135 items',
+      items: Array.from({ length: 135 }, (_, i) => ({ id: i, title: 'x'.repeat(80) })),
+    };
+    const out = JSON.parse(summariseForHistory(big)) as Record<string, unknown>;
+    expect(out['count']).toBe(135);
+    expect(out['success']).toBe(true);
+    expect(out['message']).toBe('135 items');
+  });
+
+  it('replaces a long array with an honest note about what was there', () => {
+    const big = { count: 135, items: Array.from({ length: 135 }, (_, i) => ({ id: i, t: 'x'.repeat(80) })) };
+    const out = JSON.parse(summariseForHistory(big)) as Record<string, unknown>;
+    expect(out['items']).toBe('[135 items, not kept in history]');
+    expect(out['truncated']).toBe(true);
+  });
+
+  it('shrinks the stored message by an order of magnitude', () => {
+    const big = { count: 135, items: Array.from({ length: 135 }, (_, i) => ({ id: i, t: 'x'.repeat(80) })) };
+    const before = JSON.stringify(big).length;
+    const after = summariseForHistory(big).length;
+    expect(before).toBeGreaterThan(10_000);
+    expect(after).toBeLessThan(before / 10);
+  });
+
+  it('truncates a long bare string without pretending it is complete', () => {
+    const out = JSON.parse(summariseForHistory('y'.repeat(9000))) as Record<string, unknown>;
+    expect(out['truncated']).toBe(true);
+    // The length reported is of the JSON encoding, so it is 9002 with the
+    // quotes — assert the shape rather than an off-by-two.
+    expect(String(out['note'])).toMatch(/Result of 90\d\d characters/);
+  });
+
+  it('handles null and undefined without throwing', () => {
+    expect(summariseForHistory(null)).toBe('null');
+    expect(summariseForHistory(undefined)).toBe('null');
   });
 });
