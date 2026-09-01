@@ -438,3 +438,60 @@ describe('OpenAIAdapter error handling', () => {
     expect((err as LLMProviderError).providerName).toBe('groq');
   });
 });
+
+// ─── Linking a result to the call that asked for it ──────────────────────────
+//
+// The wire format joins a tool result to its call by id. This used to send the
+// tool *name* as `tool_call_id`, which never matches a provider-generated id.
+// llama.cpp tolerated it; OpenRouter did not, and the model answered
+// "You have 3 items assigned: Update API rate limits…" over a tool result that
+// said 135 items beginning with "PR Draft" — it could not see the result and
+// invented one. Asserted on the request body, because that is what the provider
+// actually receives.
+
+describe('tool messages carry the id of the call they answer', () => {
+  async function sentBody(messages: LLMMessage[]): Promise<Record<string, unknown>> {
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = mock(async (_url: unknown, init: RequestInit) => {
+      body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify(makeTextResponse('ok')), { status: 200 });
+    }) as unknown as typeof fetch;
+    await new OpenAIAdapter({ apiKey: 'k', model: 'm' }).chat({ messages });
+    return body;
+  }
+
+  it('sends the call id, not the tool name', async () => {
+    const body = await sentBody([
+      { role: 'user', content: 'what am I assigned to?' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_abc123', name: 'workspace.my-items', arguments: {} }],
+      },
+      {
+        role: 'tool',
+        content: '{"count":135}',
+        name: 'workspace.my-items',
+        toolCallId: 'call_abc123',
+      },
+    ]);
+
+    const msgs = body['messages'] as { role: string; tool_call_id?: string; tool_calls?: { id: string }[] }[];
+    const assistant = msgs.find((m) => m.role === 'assistant')!;
+    const tool = msgs.find((m) => m.role === 'tool')!;
+
+    expect(tool.tool_call_id).toBe('call_abc123');
+    // The property that was broken: these two must be the same string.
+    expect(tool.tool_call_id).toBe(assistant.tool_calls![0]!.id);
+  });
+
+  it('falls back to the tool name for replayed history, which is self-consistent', async () => {
+    // persistHistory writes both the call id and the tool message from the same
+    // tool name, so a replayed turn still links up.
+    const body = await sentBody([
+      { role: 'tool', content: '{}', name: 'workspace.my-items' },
+    ]);
+    const msgs = body['messages'] as { tool_call_id?: string }[];
+    expect(msgs[0]!.tool_call_id).toBe('workspace.my-items');
+  });
+});

@@ -670,6 +670,7 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
           role: 'tool',
           content: JSON.stringify(refusal),
           name: toolName,
+          toolCallId,
         });
         continue;
       }
@@ -729,9 +730,13 @@ export async function runAgentLoop(input: AgentLoopInput): Promise<AgentLoopOutp
         tool_calls: [{ id: toolCallId, name: toolName, arguments: toolArgs }],
       });
       messages.push({
+        // The id must be the one the model just emitted. Sending the tool name
+        // instead leaves the result unlinkable to the call that asked for it —
+        // see toOpenAIMessage.
         role: 'tool',
         content: JSON.stringify(toolResult),
         name: toolName,
+        toolCallId,
       });
     }
   }

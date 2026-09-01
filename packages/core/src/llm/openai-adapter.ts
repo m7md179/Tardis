@@ -80,7 +80,16 @@ function toOpenAIMessage(msg: LLMMessage): OpenAIMessage {
     return {
       role: 'tool',
       content: msg.content,
-      tool_call_id: msg.name ?? 'unknown',
+      // Must match the `id` of the tool_call the assistant emitted. It used to
+      // be the tool *name*, which never matches a provider-generated id like
+      // "call_abc123" — llama.cpp tolerated it, OpenRouter did not, and the
+      // model answered "You have 3 items assigned: Update API rate limits…"
+      // over a result that said 135 items starting with "PR Draft". It could
+      // not see the result it had asked for, so it invented one.
+      //
+      // Replayed history is self-consistent: persistHistory writes both the
+      // call id and the tool message from the same tool name.
+      tool_call_id: msg.toolCallId ?? msg.name ?? 'unknown',
     };
   }
 

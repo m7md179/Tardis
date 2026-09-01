@@ -28,6 +28,16 @@ export interface LLMMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: LLMContent;
   name?: string; // for tool messages: the tool name
+  /**
+   * For tool messages: the id of the tool_call this answers.
+   *
+   * The OpenAI wire format links a result to its call by id, and a provider is
+   * entitled to ignore a tool message that matches nothing. Its absence from
+   * this type is why the adapter fell back to the tool *name*, which never
+   * matches a provider-generated id — the model then could not see results it
+   * had asked for and answered from imagination instead.
+   */
+  toolCallId?: string;
   tool_calls?: LLMToolCall[]; // for assistant messages that call tools
 }
 
