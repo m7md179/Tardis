@@ -45,6 +45,16 @@ export type CapabilityDetail = 'overview' | 'detail';
 // People do not open with the phrase a regex author had in mind. They say hello
 // first, they typo, and they ask for "plugins" and "tools" by name.
 
+/**
+ * "capable of" / "capabilities" on their own.
+ *
+ * The structured pattern below hangs on the verb, so one typo defeats it:
+ * "what arre capable of" fell through to the model, which answered with the
+ * handful of tools it happened to be holding. This fragment survives the typo,
+ * and is specific enough that it does not appear in ordinary requests.
+ */
+const ASKS_ABOUT_CAPABILITY = /\bcapable\s+of\b|\bcapabilit(?:y|ies)\b/i;
+
 /** "what can you do", anywhere in the sentence, with or without the "you". */
 const ASKS_WHAT_YOU_DO =
   /\bwhat\s+(?:can|do|are)\s+(?:you\s+)?(?:do|able\s+to\s+do|capable\s+of|help\s+(?:me\s+)?with)\b/i;
@@ -90,6 +100,9 @@ export function isCapabilityQuestion(text: string): boolean {
   // "help me log lunch" is a request. An earlier matcher on `help\b` hijacked
   // it, which is why the bare-word case above is anchored to the whole message.
   if (ASKS_WHAT_YOU_DO.test(t) && ABOUT_YOU.test(t)) return true;
+
+  // Survives a typo in the verb, which the structured patterns cannot.
+  if (ASKS_ABOUT_CAPABILITY.test(t) && !FIRST_PERSON.test(t)) return true;
 
   // "what are capable of" — the live typo. The phrase alone is enough when
   // nothing suggests it is about the user instead.

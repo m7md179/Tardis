@@ -241,16 +241,30 @@ async function draftEnvelope(io: IoClient, draft: Draft): Promise<Record<string,
  * well as sitting in the payload, so it survives even if context fitting trims
  * the tail of a long list.
  */
-function listResult<T>(rows: T[], lines: string[]): {
-  count: number;
-  items: T[];
-  text: string;
-} {
+function listResult<T extends { status?: string }>(
+  rows: T[],
+  lines: string[]
+): { count: number; byStatus: Record<string, number>; items: T[]; text: string } {
   const noun = rows.length === 1 ? 'item' : 'items';
+
+  // Counted here rather than left to the model. Asked "what tasks do i have"
+  // over 135 items it produced a breakdown of its own — In Review 11, Done 55,
+  // To Do 1, Backlog 58 — which sums to 125, not 135, and put To Do at 1 when
+  // the real answer was 5. Same lesson as `count`: give it the number.
+  const byStatus: Record<string, number> = {};
+  for (const r of rows) {
+    const status = r.status ?? 'UNKNOWN';
+    byStatus[status] = (byStatus[status] ?? 0) + 1;
+  }
+  const breakdown = Object.entries(byStatus)
+    .map(([status, n]) => `${status} ${n}`)
+    .join(', ');
+
   return {
     count: rows.length,
+    byStatus,
     items: rows,
-    text: [`${rows.length} ${noun}:`, ...lines].join('\n'),
+    text: [`${rows.length} ${noun}${breakdown ? ` (${breakdown})` : ''}:`, ...lines].join('\n'),
   };
 }
 

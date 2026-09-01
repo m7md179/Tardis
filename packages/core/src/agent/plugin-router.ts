@@ -14,6 +14,25 @@ export interface PluginSelectionResult {
   method: 'llm' | 'explicit' | 'fallback' | 'empty';
 }
 
+/**
+ * Room for the router's answer.
+ *
+ * It was 100, which is plenty for `["workspace"]` — and not plenty on a
+ * reasoning model, where the same budget covers the reasoning trace first. The
+ * call did not fail; it returned `""` or `'["'`, which `parsePluginNames`
+ * rejects, and every rejection sent all nine plugins' tool schemas to the model
+ * instead of one. Measured against glm-5.3-flash over twelve real messages:
+ *
+ *   maxTokens=100   parseable  7/12
+ *   maxTokens=300   parseable 11/12
+ *   maxTokens=512   parseable 12/12
+ *   maxTokens=1024  parseable 12/12
+ *
+ * 512 is the knee. The ceiling costs nothing when unused — the model stops at
+ * its closing bracket.
+ */
+const ROUTER_MAX_TOKENS = 512;
+
 /** Keeps the routing prompt short; the router only needs the gist. */
 function truncate(text: string, max = 200): string {
   const t = text.trim().replace(/\s+/g, ' ');
@@ -113,7 +132,7 @@ export async function selectPlugins(
         'You are a plugin router. Return only a JSON array of plugin names. No explanation.',
       userPrompt: selectionPrompt,
       temperature: 0,
-      maxTokens: 100,
+      maxTokens: ROUTER_MAX_TOKENS,
     });
   } catch {
     // LLM call failed — fall back to all plugins

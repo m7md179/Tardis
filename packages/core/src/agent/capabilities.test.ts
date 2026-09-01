@@ -63,6 +63,19 @@ describe('isCapabilityQuestion: the messages that were missed', () => {
     }
   });
 
+  it('survives a typo in the verb', () => {
+    // Live: "what arre capable of" fell through to the model, which answered
+    // with the handful of tools it happened to be holding rather than the nine
+    // plugins actually installed.
+    for (const t of ['what arre capable of', 'what are u capable of', 'whats your capabilities']) {
+      expect({ t, matched: isCapabilityQuestion(t) }).toMatchObject({ matched: true });
+    }
+  });
+
+  it('does not treat the user\'s own capability as a question about TARDIS', () => {
+    expect(isCapabilityQuestion('am I capable of finishing this today?')).toBe(false);
+  });
+
   it('ignores an empty message', () => {
     expect(isCapabilityQuestion('   ')).toBe(false);
   });
