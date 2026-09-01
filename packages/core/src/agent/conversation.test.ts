@@ -4,6 +4,7 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { createDb, migrate } from '@tardis/db';
 import { runConversationTurn, summariseForHistory } from './conversation.js';
+import { createPendingApprovalStore } from './approvals.js';
 import type { ConversationDeps } from './conversation.js';
 import type { LLMProvider, LLMResponse } from '../llm/provider.js';
 import { ConversationStore } from '../memory/conversation-store.js';
@@ -402,5 +403,84 @@ describe('summariseForHistory', () => {
   it('handles null and undefined without throwing', () => {
     expect(summariseForHistory(null)).toBe('null');
     expect(summariseForHistory(undefined)).toBe('null');
+  });
+});
+
+// ─── Confirming an action, on a surface that is not Telegram ─────────────────
+//
+// The live soft lock: TARDIS offered workspace.delete-item, the user said "do
+// it", and got the same offer back. Three times. /api/chat returned the pending
+// approval and nothing stored it, so every message started a fresh turn.
+
+describe('runConversationTurn: approvals', () => {
+  const DELETE = {
+    toolName: 'workspace.delete-item',
+    args: { itemId: 1148 },
+    preview: 'About to run workspace.delete-item with: itemId=1148',
+  };
+
+  function deps(store: ReturnType<typeof createPendingApprovalStore>, executed: string[]) {
+    const { provider } = echoLLM('unused');
+    return makeDeps(provider, {
+      pendingApprovals: store,
+      toolRouter: {
+        asExecutor: () => async () => ({}),
+        execute: async (name: string) => {
+          executed.push(name);
+          return { success: true as const, data: { message: `Deleted #1148.` } };
+        },
+      } as unknown as ConversationDeps['toolRouter'],
+    });
+  }
+
+  it('runs the pending action on "do it" — the exact live phrasing', async () => {
+    const store = createPendingApprovalStore();
+    store.set('app', DELETE);
+    const executed: string[] = [];
+
+    const result = await runConversationTurn(
+      { chatId: 'app', message: 'do it' },
+      deps(store, executed)
+    );
+
+    expect(executed).toEqual(['workspace.delete-item']);
+    expect(result.response).toBe('Deleted #1148.');
+    // Answered and forgotten, so a later message cannot re-trigger it.
+    expect(store.get('app')).toBeUndefined();
+  });
+
+  it('cancels on anything that is not a clear yes, without running it', async () => {
+    const store = createPendingApprovalStore();
+    store.set('app', DELETE);
+    const executed: string[] = [];
+
+    const result = await runConversationTurn(
+      { chatId: 'app', message: 'actually show me the backlog first' },
+      deps(store, executed)
+    );
+
+    expect(executed).toEqual([]);
+    expect(result.response).toContain('Cancelled');
+    expect(store.get('app')).toBeUndefined();
+  });
+
+  it('does not let one chat answer another chat\'s question', async () => {
+    const store = createPendingApprovalStore();
+    store.set('telegram-1', DELETE);
+    const executed: string[] = [];
+
+    await runConversationTurn({ chatId: 'app', message: 'do it' }, deps(store, executed));
+
+    expect(executed).toEqual([]);
+    expect(store.get('telegram-1')).toEqual(DELETE);
+  });
+
+  it('behaves as before when no store is configured', async () => {
+    const { provider } = echoLLM('an answer');
+    const result = await runConversationTurn(
+      { chatId: 'app', message: 'do it' },
+      makeDeps(provider)
+    );
+    expect(result.response).toBe('an answer');
   });
 });

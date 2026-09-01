@@ -14,6 +14,8 @@ import { CLARIFY_TOOL } from './clarify.js';
 import { applyTurnEnd, applyTurnStart } from './turn-filters.js';
 import type { TurnFilter } from './turn-filters.js';
 import { capabilityDetail, describeCapabilities, isCapabilityQuestion } from './capabilities.js';
+import { cancellationMessage, decideApproval } from './approvals.js';
+import type { PendingApprovalStore } from './approvals.js';
 
 /**
  * One user message, all the way through TARDIS.
@@ -57,6 +59,14 @@ export interface ConversationDeps {
    * plugin that *is* configured.
    */
   isPluginConfigured?: (pluginName: string) => boolean;
+  /**
+   * Where an action paused for approval waits.
+   *
+   * Without it, a workflow skill can be *offered* and never confirmed — the
+   * shape of the live soft lock, where "do it" produced the same offer three
+   * times because nothing on this surface remembered the pending call.
+   */
+  pendingApprovals?: PendingApprovalStore;
 }
 
 export interface ConversationTurnInput {
@@ -95,6 +105,40 @@ export async function runConversationTurn(
   const filters = deps.turnFilters ?? [];
   const startedAt = Date.now();
   const message = await applyTurnStart(filters, { chatId, userMessage: input.message });
+
+  // ─── An answer to something already asked ──────────────────────────────
+  //
+  // Before anything else, and before the model is involved: a reply to a
+  // pending approval is an answer, not a new request. Anything that is not a
+  // clear yes cancels, because a destructive action must never run on an
+  // ambiguous reply.
+  const pending = deps.pendingApprovals?.get(chatId);
+  if (pending) {
+    deps.pendingApprovals!.delete(chatId);
+
+    if (decideApproval(message) === 'cancel') {
+      return finishTurn({
+        chatId,
+        message,
+        answer: cancellationMessage(pending.toolName, false),
+        filters,
+        startedAt,
+        deps,
+      });
+    }
+
+    const result = await deps.toolRouter.execute(pending.toolName, pending.args);
+    const data = result.success ? (result.data as Record<string, unknown> | null) : null;
+    const spoken = result.success
+      ? typeof data?.['message'] === 'string'
+        ? (data['message'] as string)
+        : typeof data?.['text'] === 'string'
+          ? (data['text'] as string)
+          : `Done — ${pending.toolName} completed.`
+      : `That failed: ${result.error}`;
+
+    return finishTurn({ chatId, message, answer: spoken, filters, startedAt, deps });
+  }
 
   // ─── "What can you do?" ────────────────────────────────────────────────
   //
@@ -198,6 +242,13 @@ export async function runConversationTurn(
   }
 
   await persistHistory(chatId, message, { ...result, response }, deps);
+
+  // Remembered so the next message can answer it. Returning it to the client
+  // without storing it is what made a workflow skill unreachable everywhere
+  // except Telegram, which kept its own copy.
+  if (result.pendingApproval) {
+    deps.pendingApprovals?.set(chatId, result.pendingApproval);
+  }
 
   return {
     response,

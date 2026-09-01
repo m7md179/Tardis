@@ -14,6 +14,7 @@ import {
   MemoryRetriever,
   MemoryIndexer,
   OllamaEmbedder,
+  createPendingApprovalStore,
   resolvePluginConfig,
   MEMORY_TOOLS,
   createMemoryExecutor,
@@ -177,6 +178,7 @@ async function main(): Promise<void> {
 
   // 4. Build AI engine
   const toolRouter = new ToolRouter(pluginManager);
+  const pendingApprovals = createPendingApprovalStore();
   const memoryRetriever = new MemoryRetriever(
     memoryStore,
     config.agent.memoryTokenBudget,
@@ -210,6 +212,9 @@ async function main(): Promise<void> {
     conversationStore,
     thoughtTracer,
     turnFilters,
+    // Shared by every surface, so a workflow skill can be confirmed from the
+    // web app and the terminal, not only from Telegram.
+    pendingApprovals,
     // Computed per call rather than captured once, so saving a credential
     // through the settings endpoint takes effect without a restart.
     isPluginConfigured: (name: string): boolean => {

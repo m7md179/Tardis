@@ -62,6 +62,14 @@ export {
 export type { ConfigIssue, ConfigValidation } from './plugins/plugin-config.js';
 export { applyTurnStart, applyTurnEnd } from './agent/turn-filters.js';
 export {
+  isApprovalText,
+  isDenialText,
+  decideApproval,
+  createPendingApprovalStore,
+  cancellationMessage,
+} from './agent/approvals.js';
+export type { PendingApprovalStore, ApprovalDecision } from './agent/approvals.js';
+export {
   isCapabilityQuestion,
   capabilityDetail,
   describeCapabilities,

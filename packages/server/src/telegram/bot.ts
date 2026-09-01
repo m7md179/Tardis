@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import {
   runConversationTurn,
+  isApprovalText,
   isCapabilityQuestion,
   capabilityDetail,
   describeCapabilities,
@@ -59,11 +60,12 @@ export function createBotState(): BotState {
 
 // ─── Approval detection ───────────────────────────────────────────────────────
 
-const APPROVAL_WORDS = new Set(['yes', 'y', 'yep', 'ok', 'confirm', 'approve']);
-
-export function isApprovalText(text: string): boolean {
-  return APPROVAL_WORDS.has(text.trim().toLowerCase());
-}
+/**
+ * Moved to @tardis/core and re-exported, so Telegram and the app surfaces agree
+ * on what a yes looks like. The local set was six words and rejected "do it",
+ * "go ahead" and "sure".
+ */
+export { isApprovalText };
 
 // ─── Core message handler (testable without Telegraf) ─────────────────────────
 
