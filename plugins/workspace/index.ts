@@ -255,10 +255,27 @@ async function draftEnvelope(io: IoClient, draft: Draft): Promise<Record<string,
  */
 const DEFAULT_LIST_LIMIT = 25;
 
+/**
+ * Which work a person means when they ask what they have.
+ *
+ * The sample used to be the first 25 in whatever order the API returned, which
+ * for 147 items was mostly DONE. The model then made two further calls to dig
+ * out IN_PROGRESS and TODO — one question, three round trips, 37 seconds.
+ * Showing the active work first answers it in one.
+ */
+const STATUS_RANK: Record<string, number> = {
+  IN_PROGRESS: 0,
+  TODO: 1,
+  IN_REVIEW: 2,
+  BACKLOG: 3,
+  DONE: 4,
+};
+
 function listResult<T extends { status?: string }>(
   rows: T[],
   lines: string[],
-  limit = DEFAULT_LIST_LIMIT
+  limit = DEFAULT_LIST_LIMIT,
+  activeFirst = false
 ): {
   count: number;
   showing: number;
@@ -282,10 +299,19 @@ function listResult<T extends { status?: string }>(
     .map(([status, n]) => `${status} ${n}`)
     .join(', ');
 
-  const shown = rows.slice(0, limit);
+  // Paired so a line never drifts from its row.
+  const paired = rows.map((row, i) => ({ row, line: lines[i] ?? '' }));
+  if (activeFirst) {
+    paired.sort(
+      (a, b) =>
+        (STATUS_RANK[a.row.status ?? ''] ?? 9) - (STATUS_RANK[b.row.status ?? ''] ?? 9)
+    );
+  }
+  const shownPairs = paired.slice(0, limit);
+  const shown = shownPairs.map((p) => p.row);
   const truncated = rows.length > shown.length;
   const header = `${rows.length} ${noun}${breakdown ? ` (${breakdown})` : ''}${
-    truncated ? `, showing the first ${shown.length}` : ''
+    truncated ? `, showing ${shown.length}${activeFirst ? ' (most active first)' : ''}` : ''
   }:`;
   const footer = truncated
     ? [`… and ${rows.length - shown.length} more. Counts above cover all of them; search for a specific item by name.`]
@@ -297,7 +323,7 @@ function listResult<T extends { status?: string }>(
     truncated,
     byStatus,
     items: shown,
-    text: [header, ...lines.slice(0, limit), ...footer].join('\n'),
+    text: [header, ...shownPairs.map((p) => p.line), ...footer].join('\n'),
   };
 }
 
@@ -359,7 +385,7 @@ export const executeTool = async (
       const io = assertConfigured();
       const status = typeof args['status'] === 'string' ? args['status'] : undefined;
       const items = await io.getMyItems(status);
-      return listResult(items.map(toRow), items.map(formatWorkItem));
+      return listResult(items.map(toRow), items.map(formatWorkItem), DEFAULT_LIST_LIMIT, true);
     }
 
     case 'workspace.search-items': {
