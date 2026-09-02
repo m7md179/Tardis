@@ -49,6 +49,8 @@ interface OpenAIRequestBody {
   tools?: OpenAITool[];
   temperature?: number;
   max_tokens?: number;
+  /** OpenRouter's reasoning control. Ignored by providers that do not know it. */
+  reasoning?: { effort: 'low' | 'medium' | 'high' };
 }
 
 interface OpenAIResponseBody {
@@ -207,6 +209,11 @@ export interface OpenAIAdapterConfig {
   model: string;
   /** Default temperature (0–2). Defaults to 0.7 */
   temperature?: number;
+  /**
+   * Reasoning budget for models that expose one. Sent as OpenRouter's
+   * `reasoning.effort`; providers that do not know the field ignore it.
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high' | undefined;
 }
 
 export class OpenAIAdapter implements LLMProvider {
@@ -216,12 +223,14 @@ export class OpenAIAdapter implements LLMProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly defaultTemperature: number;
+  private readonly reasoningEffort: 'low' | 'medium' | 'high' | undefined;
 
   constructor(config: OpenAIAdapterConfig) {
     this.baseUrl = (config.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '');
     this.apiKey = config.apiKey;
     this.model = config.model;
     this.defaultTemperature = config.temperature ?? 0.7;
+    this.reasoningEffort = config.reasoningEffort;
     // Derive name from base URL for tracing (e.g. "openai", "groq", "together")
     this.name = deriveProviderName(this.baseUrl);
   }
@@ -254,6 +263,9 @@ export class OpenAIAdapter implements LLMProvider {
     if (params.maxTokens !== undefined) {
       body.max_tokens = params.maxTokens;
     }
+    if (this.reasoningEffort !== undefined) {
+      body.reasoning = { effort: this.reasoningEffort };
+    }
 
     const responseBody = await this.post(body);
     return parseResponse(responseBody, this.name);
@@ -276,6 +288,9 @@ export class OpenAIAdapter implements LLMProvider {
 
     if (params.maxTokens !== undefined) {
       body.max_tokens = params.maxTokens;
+    }
+    if (this.reasoningEffort !== undefined) {
+      body.reasoning = { effort: this.reasoningEffort };
     }
 
     const responseBody = await this.post(body);

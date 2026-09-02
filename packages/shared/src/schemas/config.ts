@@ -18,6 +18,18 @@ export const LLMProviderConfigSchema = z.object({
    * measured at max_tokens=200 producing 200 reasoning tokens and no content.
    */
   maxResponseTokens: z.number().int().min(256).default(2048),
+  /**
+   * How hard a reasoning model should think before answering.
+   *
+   * Passed through as OpenRouter's `reasoning.effort`. Providers that do not
+   * know the field ignore it, so this is safe to leave set when switching.
+   * Unset means the provider's own default.
+   *
+   * Lower is faster and cheaper — the reasoning trace is billed as completion
+   * tokens — but it is the model's thinking budget for choosing tools, so it is
+   * worth measuring rather than assuming.
+   */
+  reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
 });
 
 export const TelegramConfigSchema = z.object({

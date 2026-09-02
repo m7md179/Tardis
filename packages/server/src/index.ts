@@ -30,7 +30,7 @@ import { TelegramBot } from './telegram/bot.js';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildLLMProvider(config: SystemConfig) {
-  const { provider, model, baseUrl, apiKey, temperature } = config.llm;
+  const { provider, model, baseUrl, apiKey, temperature, reasoningEffort } = config.llm;
 
   if (provider === 'ollama') {
     return new OllamaAdapter({
@@ -43,6 +43,7 @@ function buildLLMProvider(config: SystemConfig) {
   return new OpenAIAdapter({
     model,
     apiKey: apiKey ?? '',
+    ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
     ...(baseUrl !== undefined ? { baseUrl } : {}),
     ...(temperature !== undefined ? { temperature } : {}),
   });
