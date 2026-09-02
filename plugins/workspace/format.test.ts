@@ -158,3 +158,60 @@ describe('list results state their size', () => {
     expect(shape(0).text).toBe('0 items:');
   });
 });
+
+// ─── Sampling a long list without lying about its size ───────────────────────
+//
+// workspace.backlog returns 633 items — 38k tokens — and within a turn that gets
+// re-sent on every subsequent model call. Measured over a real day: 19,282
+// tokens per turn, single turns at 84k. Totals stay exact; only detail is
+// sampled.
+
+describe('long lists are sampled, not summarised away', () => {
+  const shape = (n: number, limit = 25) => {
+    const rows = Array.from({ length: n }, (_, i) => ({
+      id: i + 1,
+      status: i % 2 === 0 ? 'BACKLOG' : 'DONE',
+    }));
+    const lines = rows.map((r) => `#${r.id} item`);
+    const byStatus: Record<string, number> = {};
+    for (const r of rows) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+    const shown = rows.slice(0, limit);
+    const truncated = rows.length > shown.length;
+    const breakdown = Object.entries(byStatus).map(([k, v]) => `${k} ${v}`).join(', ');
+    const header = `${rows.length} items (${breakdown})${truncated ? `, showing the first ${shown.length}` : ''}:`;
+    return {
+      count: rows.length,
+      showing: shown.length,
+      truncated,
+      byStatus,
+      text: [header, ...lines.slice(0, limit)].join('\n'),
+    };
+  };
+
+  it('reports the true total, not the number shown', () => {
+    // The failure this must never have: answering "you have 25" when there are
+    // 633. The count is what someone acts on.
+    const out = shape(633);
+    expect(out.count).toBe(633);
+    expect(out.showing).toBe(25);
+    expect(out.truncated).toBe(true);
+    expect(out.text.split('\n')[0]).toContain('633 items');
+  });
+
+  it('counts every status across the whole set, not just the sample', () => {
+    const out = shape(633);
+    const summed = Object.values(out.byStatus).reduce((a, b) => a + b, 0);
+    expect(summed).toBe(633);
+  });
+
+  it('says plainly that it is showing a subset', () => {
+    expect(shape(633).text.split('\n')[0]).toContain('showing the first 25');
+  });
+
+  it('leaves a short list completely alone', () => {
+    const out = shape(5);
+    expect(out.truncated).toBe(false);
+    expect(out.showing).toBe(5);
+    expect(out.text).not.toContain('showing the first');
+  });
+});

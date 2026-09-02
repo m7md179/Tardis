@@ -241,10 +241,32 @@ async function draftEnvelope(io: IoClient, draft: Draft): Promise<Record<string,
  * well as sitting in the payload, so it survives even if context fitting trims
  * the tail of a long list.
  */
+/**
+ * How many items of a list actually go to the model.
+ *
+ * `workspace.backlog` returns 633 items — 38k tokens — and within a turn that
+ * result is re-sent on every subsequent model call. Measured over a real day:
+ * 19,282 tokens per turn on average, with single turns reaching 84k, almost all
+ * of it list payloads being carried along.
+ *
+ * `count` and `byStatus` are computed over the *whole* set, so totals stay
+ * exact; only the detail is sampled. Anyone who needs a specific item searches
+ * for it, which is what workspace.search-items is for.
+ */
+const DEFAULT_LIST_LIMIT = 25;
+
 function listResult<T extends { status?: string }>(
   rows: T[],
-  lines: string[]
-): { count: number; byStatus: Record<string, number>; items: T[]; text: string } {
+  lines: string[],
+  limit = DEFAULT_LIST_LIMIT
+): {
+  count: number;
+  showing: number;
+  truncated: boolean;
+  byStatus: Record<string, number>;
+  items: T[];
+  text: string;
+} {
   const noun = rows.length === 1 ? 'item' : 'items';
 
   // Counted here rather than left to the model. Asked "what tasks do i have"
@@ -260,11 +282,22 @@ function listResult<T extends { status?: string }>(
     .map(([status, n]) => `${status} ${n}`)
     .join(', ');
 
+  const shown = rows.slice(0, limit);
+  const truncated = rows.length > shown.length;
+  const header = `${rows.length} ${noun}${breakdown ? ` (${breakdown})` : ''}${
+    truncated ? `, showing the first ${shown.length}` : ''
+  }:`;
+  const footer = truncated
+    ? [`… and ${rows.length - shown.length} more. Counts above cover all of them; search for a specific item by name.`]
+    : [];
+
   return {
     count: rows.length,
+    showing: shown.length,
+    truncated,
     byStatus,
-    items: rows,
-    text: [`${rows.length} ${noun}${breakdown ? ` (${breakdown})` : ''}:`, ...lines].join('\n'),
+    items: shown,
+    text: [header, ...lines.slice(0, limit), ...footer].join('\n'),
   };
 }
 
