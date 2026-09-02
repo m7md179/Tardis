@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Reminders",
   "description": "Set timed notifications and reminders delivered via Telegram.",
-  "summary": "Set timed notifications and reminders. Supports 'in X minutes', 'in X hours', and specific delay amounts. Reminders are delivered via Telegram.",
+  "summary": "Set a one-off timed alert — 'in X minutes', 'in X hours', a specific delay — delivered via Telegram. This is a nudge at a time you name, NOT a task list or a to-do list; work items live in the workspace plugin.",
   "tier": 1,
   "main": "index.ts",
   "permissions": [

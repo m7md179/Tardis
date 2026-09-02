@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Workspace",
   "description": "Read and manage work items in the internal-operation Workspaces module.",
-  "summary": "Agile project management: workspaces, boards, backlogs, sprints and work items from the internal-operation system. Use for anything about epics, stories, sub-tasks, sprints or what is assigned to me.",
+  "summary": "Agile project management from the internal-operation system: my tasks, my to-do list, what I am assigned to and what I am working on, plus boards, backlogs, sprints, epics, stories and sub-tasks. Use this for anything about work items or what is on my plate.",
   "tier": 3,
   "main": "index.ts",
   "permissions": [
