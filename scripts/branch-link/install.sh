@@ -135,10 +135,19 @@ fi
 if [ ! -f "$CONFIG" ]; then
   echo
   echo "No config at $CONFIG yet."
-  read -r -p "TARDIS URL [https://tardis.tahamedia.online]: " url
-  url="${url:-https://tardis.tahamedia.online}"
-  read -r -s -p "TARDIS password: " password
-  echo
+  # No default host here on purpose: this repository is public, and a personal
+  # TARDIS address baked into it would be published with it. TARDIS_URL lets a
+  # scripted install skip the prompt without writing the address down.
+  url="${TARDIS_URL:-}"
+  while [ -z "$url" ]; do
+    read -r -p "TARDIS URL (e.g. https://tardis.example.com): " url
+  done
+
+  password="${TARDIS_PASSWORD:-}"
+  if [ -z "$password" ]; then
+    read -r -s -p "TARDIS password: " password
+    echo
+  fi
 
   mkdir -p "$HOME_DIR"
   umask 077
