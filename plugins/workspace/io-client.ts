@@ -218,6 +218,20 @@ export class IoClient {
     return this.request<WorkItem>('PATCH', `/workspaces/work-items/${itemId}/move`, body);
   }
 
+  /**
+   * Attach a GitHub pull request, commit, or branch URL to a work item.
+   *
+   * The server's CreateGitLinkDto takes a bare `{ url }` and does the
+   * GitHub-shape parsing itself (`parseGitHubUrl`), so it answers with a
+   * precise `workspace_git_link_invalid_url` rather than a generic URL error.
+   * Building a link row here would duplicate that and drift from it.
+   */
+  async registerGitLink(itemId: number, url: string): Promise<{ id: number }> {
+    return this.request<{ id: number }>('POST', `/workspaces/work-items/${itemId}/git-links`, {
+      url,
+    });
+  }
+
   async assign(itemId: number, accountIds: number[]): Promise<WorkItem> {
     return this.updateItem(itemId, { assignee_account_ids: accountIds });
   }

@@ -6,6 +6,8 @@ import {
   isSettled,
   newRecord,
   parseBranchKey,
+  branchUrl,
+  repoFullNameFromRemote,
 } from './branch.js';
 
 describe('branchKey', () => {
@@ -66,5 +68,40 @@ describe('isExpired', () => {
     // Sweeping this would orphan the link and let a re-push duplicate the item.
     const created = { ...base, state: 'created' as const, itemId: 143 };
     expect(isExpired(created, 14, later(3650))).toBe(false);
+  });
+});
+
+describe('branchUrl', () => {
+  it('matches the URL the server builds for a branch link, exactly', () => {
+    // workspace-git-link.service.ts builds
+    //   `https://github.com/${repoFullName}/tree/${encodeURI(branch)}`
+    // for a pushed branch. If ours differed, the same branch reached by push
+    // and by us would parse to two different links on the same item.
+    expect(branchUrl('taj-alsafa/internal-operation-server', 'feat/auto-submit-week')).toBe(
+      'https://github.com/taj-alsafa/internal-operation-server/tree/feat/auto-submit-week'
+    );
+  });
+
+  it('leaves the slashes in a branch name alone, as encodeURI does', () => {
+    expect(branchUrl('a/b', 'feat/x/y')).toBe('https://github.com/a/b/tree/feat/x/y');
+  });
+});
+
+describe('repoFullNameFromRemote', () => {
+  it('reads an https remote', () => {
+    expect(repoFullNameFromRemote('https://github.com/taj-alsafa/internal-operation-server.git')).toBe(
+      'taj-alsafa/internal-operation-server'
+    );
+  });
+
+  it('reads an ssh remote', () => {
+    expect(repoFullNameFromRemote('git@github.com:taj-alsafa/io-website.git')).toBe(
+      'taj-alsafa/io-website'
+    );
+  });
+
+  it('returns null for a remote that is not GitHub, rather than guessing', () => {
+    expect(repoFullNameFromRemote('https://gitlab.com/a/b.git')).toBeNull();
+    expect(repoFullNameFromRemote('')).toBeNull();
   });
 });

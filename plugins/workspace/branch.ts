@@ -83,6 +83,33 @@ export function isExpired(record: BranchRecord, ttlDays: number, now: string): b
   return age > ttlDays * 86400000;
 }
 
+/**
+ * The branch's URL, built to be byte-identical to the one
+ * `workspace-git-link.service.ts` builds when GitHub reports a push:
+ * `https://github.com/${repoFullName}/tree/${encodeURI(branch)}`.
+ *
+ * Deliberately `encodeURI` and not `encodeURIComponent` — the latter escapes
+ * '/', which would turn `feat/x` into `feat%2Fx` and produce a second, distinct
+ * link row on the same work item for the same branch.
+ */
+export function branchUrl(repoFullName: string, branch: string): string {
+  return `https://github.com/${repoFullName}/tree/${encodeURI(branch)}`;
+}
+
+/** `owner/repo` from an https or ssh GitHub remote; null for anything else. */
+export function repoFullNameFromRemote(remote: string): string | null {
+  const cleaned = remote.trim().replace(/\.git$/, '');
+  if (cleaned === '') return null;
+
+  const https = /^https?:\/\/(?:[^@/]+@)?github\.com\/([^/]+\/[^/]+)$/.exec(cleaned);
+  if (https) return https[1] ?? null;
+
+  const ssh = /^(?:ssh:\/\/)?git@github\.com[:/]([^/]+\/[^/]+)$/.exec(cleaned);
+  if (ssh) return ssh[1] ?? null;
+
+  return null;
+}
+
 export function parseBranchKey(key: string): BranchKeyParts | null {
   if (!key.startsWith(BRANCH_KEY_PREFIX)) return null;
   const rest = key.slice(BRANCH_KEY_PREFIX.length);
