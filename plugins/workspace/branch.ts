@@ -73,14 +73,34 @@ export function isSettled(record: BranchRecord): boolean {
 }
 
 /**
- * Only an unsettled record can expire. A `created` record is the local half of
- * the branch↔item mapping: sweeping it would orphan the git link and let the
- * next push to that branch create a second item.
+ * Only an abandoned `drafting` record expires.
+ *
+ * A `created` or `adopted` record is the local half of the branch↔item
+ * mapping — sweeping it would orphan the git link and let the next push to
+ * that branch create a second item. A `failed` one is kept deliberately too:
+ * `branch-status` is the only place a failure is ever seen, and silently
+ * sweeping it would turn "TARDIS refused to create this" into "nothing
+ * happened", which is the harder thing to notice.
  */
 export function isExpired(record: BranchRecord, ttlDays: number, now: string): boolean {
-  if (isSettled(record)) return false;
+  if (record.state !== 'drafting') return false;
   const age = Date.parse(now) - Date.parse(record.createdAt);
   return age > ttlDays * 86400000;
+}
+
+/** Split stored records into the ones to keep and the keys to delete. */
+export function partitionRecords(
+  entries: [string, BranchRecord][],
+  ttlDays: number,
+  now: string
+): { keep: [string, BranchRecord][]; expire: string[] } {
+  const keep: [string, BranchRecord][] = [];
+  const expire: string[] = [];
+  for (const entry of entries) {
+    if (isExpired(entry[1], ttlDays, now)) expire.push(entry[0]);
+    else keep.push(entry);
+  }
+  return { keep, expire };
 }
 
 /**

@@ -272,8 +272,13 @@ interface BranchRecord {
 push, or a queue drain replaying a request cannot produce a duplicate item.
 
 Records in `drafting` older than `draftTtlDays` (default 14) are swept on any
-`branch-status` call. Records in `created` are kept: they are the local half of
-the branch↔item mapping.
+`branch-status` call. Records in `created` or `adopted` are kept: they are the
+local half of the branch↔item mapping, and sweeping one would orphan the git
+link and let the next push duplicate the item.
+
+`failed` records are kept too, and deliberately. `branch-status` is the only
+place a failure is ever seen; sweeping it would turn "TARDIS refused to create
+this" into "nothing happened", which is the harder of the two to notice.
 
 ## 10. Skills
 
