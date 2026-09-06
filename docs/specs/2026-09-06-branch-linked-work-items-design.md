@@ -407,10 +407,12 @@ this design, and one is worked around by it (§11.4):
    `workspace_work_item_labels` have existed all along; the model correctly
    reported that it had no label field, having checked, and was wrong about the
    server as a result.
-2. **`my-items` returns `truncated: true` while showing all items** — observed as
-   `count: 9, showing: 9, truncated: true`. The model read that as "there is
+2. ~~**`my-items` returns `truncated: true` while showing all items**~~ — observed
+   as `count: 9, showing: 9, truncated: true`; the model read that as "there is
    more", called again, and stopped itself with "I was repeating the same
-   action."
+   action." **Fixed upstream** by the list-sampling work: `index.ts:312` now
+   computes `truncated` as `rows.length > shown.length`, pinned by
+   `format.test.ts:213`.
 3. **`draft-commit` fails on a missing due date instead of asking for it.**
    `blockingSlots` should surface `due_date` as a blocking slot; instead the
    commit fails with `Workspace: A work item needs a due date to be created`.
