@@ -1,0 +1,21 @@
+#!/bin/sh
+# tardis-branch-link (installed by scripts/branch-link/install.sh — do not commit)
+#
+# Turns the branch being pushed into a work item. See the design spec §7.
+#
+# Two things this must never do: block, or fail the push. It does not prompt
+# either — pushes here are issued by a coding agent, and a prompt would hang
+# it mid-task with nobody to answer.
+
+BUN='__BUN__'
+CLI='__CLI__'
+
+# git feeds "<local ref> <local sha> <remote ref> <remote sha>" on stdin. Read
+# it here and hand it on; consuming it is required either way.
+refs=$(cat)
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+printf '%s\n' "$refs" | "$BUN" "$CLI" push "$root" >/dev/null 2>&1 &
+
+exit 0
