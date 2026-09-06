@@ -1,0 +1,47 @@
+#!/bin/sh
+# tardis-branch-link (installed by scripts/branch-link/install.sh — do not commit)
+#
+# Fires on every checkout, so it has to be picky. Records a newly created
+# branch with TARDIS; creates nothing on the board. See the design spec §7.
+#
+# Exits 0 unconditionally: a checkout must never fail because a task tracker
+# had an opinion.
+
+BUN='__BUN__'
+CLI='__CLI__'
+
+# $1 previous HEAD, $2 new HEAD, $3 flag: 1 = branch checkout, 0 = file checkout.
+[ "$3" = "1" ] || exit 0
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+[ -n "$branch" ] || exit 0
+
+# Separating `checkout -b` from a plain `checkout` is the whole job of this
+# hook, and git makes it awkward: a branch reflog records updates to the REF,
+# not checkouts, so a branch created and never committed to keeps exactly one
+# entry forever. Counting entries therefore fires every time you switch back
+# to it — measured, not assumed.
+#
+# The oldest reflog entry is the creation, and it carries the moment it
+# happened. A branch created seconds ago is a new branch; the same branch
+# revisited tomorrow is not.
+oldest=$(git reflog show --date=unix "$branch" 2>/dev/null | tail -1)
+case "$oldest" in
+  *"branch: Created"*) ;;
+  *) exit 0 ;;
+esac
+
+created=$(printf '%s' "$oldest" | sed -n 's/.*@{\([0-9][0-9]*\)}.*/\1/p')
+[ -n "$created" ] || exit 0
+now=$(date +%s)
+window=${TARDIS_BRANCH_NEW_WINDOW:-15}
+[ "$((now - created))" -le "$window" ] || exit 0
+# Switching back within that window fires again; workspace.branch-draft is
+# idempotent on (repo, branch), so a repeat costs one request and changes
+# nothing.
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+"$BUN" "$CLI" draft "$root" "$branch" </dev/null >/dev/null 2>&1 &
+
+exit 0

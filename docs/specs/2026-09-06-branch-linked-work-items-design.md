@@ -187,10 +187,19 @@ Git passes `$1` previous HEAD, `$2` new HEAD, `$3` flag. Act only when **all** o
 - `git symbolic-ref --short HEAD` succeeds — not a detached HEAD.
 - The branch is not in `protectedBranches` (default `main`, `master`, `staging`,
   `develop`).
-- `git reflog show <branch>` has exactly one entry. A newly created branch has
-  one; a branch you are switching back to has more. This is the check that
-  distinguishes creation from checkout, and it is the one most likely to be
-  wrong, so it is tested against a real repo (§15).
+- the branch was created within the last 15 seconds, read from the timestamp on
+  the oldest entry of `git reflog show --date=unix <branch>`, which is its
+  `branch: Created from …` record.
+
+  An earlier draft of this spec used the reflog *entry count* instead — one
+  entry meaning "just created". That is wrong, and the hook test caught it: a
+  branch reflog records updates to the ref, not checkouts, so a branch created
+  and never committed to keeps exactly one entry forever and every switch back
+  to it re-fires. The window is overridable with `TARDIS_BRANCH_NEW_WINDOW`,
+  which is what makes it testable without sleeping through it.
+
+  Switching back inside the window does fire again. `workspace.branch-draft` is
+  idempotent on `(repo, branch)`, so that costs one request and changes nothing.
 
 Then background the CLI and `exit 0`.
 
@@ -291,8 +300,16 @@ All `actionType: 'direct'` (D7).
 | `workspace.branch-status` | `false` | `state?` | Lists records; sweeps expired drafts. Renders as a `list` block. |
 | `workspace.branch-adopt` | `true` | `repoFullName`, `branch`, `itemId` | Attaches the branch to an existing item, registers the git-link, sets `adopted`. The escape hatch when composition got it wrong. |
 
-`branch-status` is the TUI surface: it is how you see that three branches are
-waiting because TARDIS was down, and it is what drains the queue.
+`branch-status` is the TUI surface: it is how you see which branches became
+items and which failed.
+
+**It does not drain the queue.** An earlier draft of this spec said it did,
+which cannot work — `branch-status` executes on the server and the queue is a
+directory on the laptop. The CLI drains at the start of every run instead, so
+the next branch you create ships whatever failed while TARDIS was down. A
+queued request that comes back *refused* rather than failing is deleted: "branch
+linking is off" is a decision, and replaying it forever would grow the queue
+without bound.
 
 ## 11. `branch-create` in detail
 
