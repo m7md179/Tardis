@@ -97,3 +97,24 @@ describe('resolveTimeoutMs', () => {
     expect(resolveTimeoutMs('soon' as unknown as number)).toBe(resolveTimeoutMs(undefined));
   });
 });
+
+describe('parseCommitLog — author time', () => {
+  const SEP = '\x00';
+  const REC = '\x1e';
+
+  it('carries each commit’s author time, which is the clock time is divided by', () => {
+    // Without `at` the server has commit text but no idea when you worked, so
+    // it can only log time for branches pushed in the same breath as the ask.
+    const raw = `Subject${SEP}body${SEP}abc123${SEP}1788700000${REC}`;
+    expect(parseCommitLog(raw)).toEqual([
+      { subject: 'Subject', body: 'body', sha: 'abc123', at: 1788700000 },
+    ]);
+  });
+
+  it('tolerates a record with no timestamp rather than dropping the commit', () => {
+    // The text is still worth having for composing a title.
+    const out = parseCommitLog(`Subject${SEP}${SEP}abc${REC}`);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.at).toBeUndefined();
+  });
+});

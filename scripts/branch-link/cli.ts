@@ -27,8 +27,8 @@ import {
   shouldAct,
   DEFAULT_PROTECTED,
 } from './core.js';
-import { allocate, parseSourceLog, sessionize } from './sessions.js';
-import type { CommitEvent } from './sessions.js';
+import { allocate, parseSourceLog, sessionize } from '../../plugins/workspace/sessions.js';
+import type { CommitEvent } from '../../plugins/workspace/sessions.js';
 import { invokeSkill } from './transport.js';
 import type { TransportDeps } from './transport.js';
 
@@ -298,7 +298,7 @@ async function main(): Promise<void> {
       const raw = await git(repoRoot, [
         'log',
         `--max-count=${String(config.maxCommits ?? 50)}`,
-        '--format=%s%x00%b%x00%H%x1e',
+        '--format=%s%x00%b%x00%H%x00%at%x1e',
         `origin/${base}..${ref.sha}`,
       ]);
 

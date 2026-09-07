@@ -12,6 +12,8 @@ export interface Commit {
   subject: string;
   body: string;
   sha: string;
+  /** Author time, epoch seconds. Absent when the log format omitted it. */
+  at?: number;
 }
 
 export interface PushedRef {
@@ -76,18 +78,26 @@ export function shouldAct(branch: string, protectedBranches: string[]): boolean 
 }
 
 /**
- * Parse `git log --format=%s%x00%b%x00%H%x1e`. NUL separates the fields and
- * RS separates the records, because both are impossible in a commit subject —
- * a newline is not, which is why the obvious line-based format cannot work
- * once a commit has a body.
+ * Parse `git log --format=%s%x00%b%x00%H%x00%at%x1e`. NUL separates the fields
+ * and RS separates the records, because both are impossible in a commit
+ * subject — a newline is not, which is why the obvious line-based format
+ * cannot work once a commit has a body.
+ *
+ * `%at` is the clock the day's time is divided by. Without it the server has
+ * a branch's text but no idea when the work happened, so it could only ever
+ * log time for whatever was pushed in the same breath as the request.
  */
 export function parseCommitLog(raw: string): Commit[] {
   const out: Commit[] = [];
   for (const record of raw.split('\x1e')) {
     if (record.trim() === '') continue;
-    const [subject = '', body = '', sha = ''] = record.split('\x00');
+    const [subject = '', body = '', sha = '', at = ''] = record.split('\x00');
     if (subject.trim() === '') continue;
-    out.push({ subject: subject.trim(), body: body.trim(), sha: sha.trim() });
+
+    const seconds = Number(at.trim());
+    const commit: Commit = { subject: subject.trim(), body: body.trim(), sha: sha.trim() };
+    if (Number.isFinite(seconds) && seconds > 0) commit.at = seconds;
+    out.push(commit);
   }
   return out;
 }
