@@ -23,6 +23,18 @@ import type { Draft, SlotPatch } from './draft.js';
 import { describeDraft, nextQuestion } from './questions.js';
 import { rankCandidates } from './ranking.js';
 import type { Candidate } from './ranking.js';
+import {
+  BRANCH_KEY_PREFIX,
+  branchKey,
+  branchUrl,
+  newRecord,
+  partitionRecords,
+} from './branch.js';
+import type { BranchRecord } from './branch.js';
+import { createFromBranch } from './branch-create.js';
+import type { BranchLinkConfig } from './branch-create.js';
+import { compose } from './compose.js';
+import type { Commit } from './compose.js';
 
 let api: PluginAPI;
 let client: IoClient | null = null;
@@ -145,6 +157,86 @@ function requireItemId(args: Record<string, unknown>): number {
   const id = Number(args['itemId']);
   if (!Number.isInteger(id)) throw new Error('Workspace: itemId must be a whole number.');
   return id;
+}
+
+// ─── Branch linking ───
+
+function requireBranchArgs(args: Record<string, unknown>): {
+  repoFullName: string;
+  branch: string;
+} {
+  const repoFullName = typeof args['repoFullName'] === 'string' ? args['repoFullName'].trim() : '';
+  const branch = typeof args['branch'] === 'string' ? args['branch'].trim() : '';
+  if (repoFullName === '' || branch === '') {
+    throw new Error('Workspace: branch linking needs both repoFullName and branch.');
+  }
+  return { repoFullName, branch };
+}
+
+/**
+ * A hook installed in a repo can call these the moment it lands, so the switch
+ * is here rather than in the installer: turning the plugin setting off must
+ * stop items being created, even with hooks still in place.
+ */
+async function requireBranchLinkEnabled(): Promise<void> {
+  const on = (await api.config.get<boolean>('branchLinkEnabled')) ?? false;
+  if (on !== true) {
+    throw new Error(
+      'Workspace: branch linking is off. Turn on "Link git branches to work items" in the ' +
+        'workspace plugin settings to let pushed branches create work items.'
+    );
+  }
+}
+
+async function branchLinkConfig(): Promise<Omit<BranchLinkConfig, 'workspaceId'>> {
+  const epic = Number((await api.config.get<number>('branchLinkDefaultEpicId')) ?? 0);
+  const offset = Number((await api.config.get<number>('branchLinkDueDateOffsetDays')) ?? 7);
+  const ttl = Number((await api.config.get<number>('branchLinkDraftTtlDays')) ?? 14);
+  const priority = (await api.config.get<string>('branchLinkDefaultPriority')) ?? 'MEDIUM';
+
+  return {
+    // 0 is the manifest's default and means "unset" — passing it through would
+    // parent every unmatched branch to whatever item happens to have id 0.
+    defaultEpicId: Number.isInteger(epic) && epic > 0 ? epic : null,
+    dueDateOffsetDays: Number.isFinite(offset) ? offset : 7,
+    draftTtlDays: Number.isFinite(ttl) ? ttl : 14,
+    defaultPriority: (['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const).includes(
+      priority as WorkItemPriority
+    )
+      ? (priority as WorkItemPriority)
+      : 'MEDIUM',
+  };
+}
+
+/** Commits arrive over HTTP from a git hook, so nothing about them is trusted. */
+function parseCommits(raw: unknown): Commit[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Commit[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const subject = typeof record['subject'] === 'string' ? record['subject'].trim() : '';
+    if (subject === '') continue;
+    out.push({
+      subject,
+      body: typeof record['body'] === 'string' ? record['body'] : '',
+      sha: typeof record['sha'] === 'string' ? record['sha'] : '',
+    });
+  }
+  return out;
+}
+
+function describeBranchRecord(r: BranchRecord): string {
+  switch (r.state) {
+    case 'drafting':
+      return 'waiting for a push';
+    case 'created':
+      return `created #${String(r.itemId)}`;
+    case 'adopted':
+      return `linked to #${String(r.itemId)}`;
+    case 'failed':
+      return `failed — ${r.error ?? 'no reason recorded'}`;
+  }
 }
 
 /**
@@ -651,6 +743,123 @@ export const executeTool = async (
       const itemId = requireItemId(args);
       await io.deleteItem(itemId);
       return { success: true, message: `Deleted #${itemId}.` };
+    }
+
+    // ─── Branch-linked work items ───
+    //
+    // These four are reached over HTTP by git hooks as well as by the model,
+    // so none of them is `actionType: 'workflow'` — POST /api/skills/:id/invoke
+    // answers 409 for a workflow skill, which would make an installed hook
+    // permanently inert. See the design spec, D7.
+
+    case 'workspace.branch-draft': {
+      await requireBranchLinkEnabled();
+      const { repoFullName, branch } = requireBranchArgs(args);
+      const key = branchKey(repoFullName, branch);
+      const existing = await api.storage.get<BranchRecord>(key);
+      if (existing !== null) {
+        return { recorded: true, state: existing.state, note: 'Already known.' };
+      }
+      const base = typeof args['baseBranch'] === 'string' ? args['baseBranch'] : null;
+      await api.storage.set(key, newRecord(repoFullName, branch, base, new Date().toISOString()));
+      return {
+        recorded: true,
+        state: 'drafting',
+        note: 'Nothing has been created. Pushing this branch is what makes the work item.',
+      };
+    }
+
+    case 'workspace.branch-create': {
+      await requireBranchLinkEnabled();
+      const io = assertConfigured();
+      const { repoFullName, branch } = requireBranchArgs(args);
+      const workspaceId = await currentWorkspaceId(io);
+
+      const result = await createFromBranch(
+        {
+          storage: {
+            get: <T,>(k: string) => api.storage.get<T>(k),
+            set: (k, v) => api.storage.set(k, v),
+          },
+          client: {
+            createItem: (wid, payload) => io.createItem(wid, payload),
+            registerGitLink: (itemId, url) => io.registerGitLink(itemId, url),
+          },
+          listStories: () => io.searchItemsByType(workspaceId, 'STORY'),
+          compose: (b, commits) =>
+            compose({ generate: (p) => api.llm.generate(p), logger: api.logger }, b, commits),
+          rank: (query, items) =>
+            rankCandidates(
+              { generate: (p) => api.llm.generate(p), logger: api.logger },
+              query,
+              items
+            ),
+          notify: (message) => void api.notifications.send(message),
+          logger: api.logger,
+          now: new Date().toISOString(),
+          config: { ...(await branchLinkConfig()), workspaceId },
+        },
+        {
+          repoFullName,
+          branch,
+          commits: parseCommits(args['commits']),
+          baseBranch: typeof args['baseBranch'] === 'string' ? args['baseBranch'] : null,
+        }
+      );
+      return { ...result };
+    }
+
+    case 'workspace.branch-status': {
+      const cfg = await branchLinkConfig();
+      const now = new Date().toISOString();
+      const keys = await api.storage.list(BRANCH_KEY_PREFIX);
+
+      const entries: [string, BranchRecord][] = [];
+      for (const key of keys) {
+        const record = await api.storage.get<BranchRecord>(key);
+        if (record !== null) entries.push([key, record]);
+      }
+
+      const { keep, expire } = partitionRecords(entries, cfg.draftTtlDays, now);
+      for (const key of expire) await api.storage.delete(key);
+
+      const wanted = typeof args['state'] === 'string' ? args['state'] : null;
+      const branches = keep
+        .map(([, r]) => r)
+        .filter((r) => wanted === null || r.state === wanted)
+        .map((r) => ({
+          branch: r.branch,
+          repo: r.repoFullName,
+          state: r.state,
+          itemId: r.itemId ?? null,
+          summary: describeBranchRecord(r),
+        }));
+
+      return { count: branches.length, swept: expire.length, branches };
+    }
+
+    case 'workspace.branch-adopt': {
+      const io = assertConfigured();
+      const { repoFullName, branch } = requireBranchArgs(args);
+      const itemId = requireItemId(args);
+
+      // The link is the point of adopting, so unlike branch-create — where the
+      // item already exists and matters more — a failure here is reported.
+      const link = await io.registerGitLink(itemId, branchUrl(repoFullName, branch));
+
+      const key = branchKey(repoFullName, branch);
+      const existing = await api.storage.get<BranchRecord>(key);
+      const now = new Date().toISOString();
+      const base = existing ?? newRecord(repoFullName, branch, null, now);
+      await api.storage.set(key, {
+        ...base,
+        state: 'adopted',
+        itemId,
+        gitLinkId: link.id,
+        updatedAt: now,
+      } satisfies BranchRecord);
+
+      return { success: true, itemId, branch, message: `Linked ${branch} to #${itemId}.` };
     }
 
     default:

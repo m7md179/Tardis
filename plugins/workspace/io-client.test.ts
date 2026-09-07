@@ -353,3 +353,27 @@ describe('writes', () => {
     expect((caught as Error).message).toContain('needs a description');
   });
 });
+
+// ─── Git links (branch-linked work items) ───
+//
+// The server's CreateGitLinkDto takes a bare `{ url }` and parses the GitHub
+// shape itself, so the client's whole job is building the right URL and
+// posting it to the right item.
+
+describe('registerGitLink', () => {
+  it('posts the url to the item it belongs to', async () => {
+    const { client, calls } = makeClient((_c, n) =>
+      n === 1
+        ? jsonResponse(LOGIN_OK)
+        : jsonResponse({ data: { id: 7 }, status: 201, message: 'ok' })
+    );
+
+    await client.registerGitLink(143, 'https://github.com/a/b/tree/feat/x');
+
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/143/git-links');
+    expect(calls[1]!.init?.method).toBe('POST');
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({
+      url: 'https://github.com/a/b/tree/feat/x',
+    });
+  });
+});

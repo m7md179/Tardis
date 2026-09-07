@@ -1,0 +1,10 @@
+# Shell scripts must keep LF endings.
+#
+# core.autocrlf is true on this machine, so without this git rewrites these
+# files to CRLF on checkout — and a shell script with CRLF dies with
+# "bad interpreter: /bin/sh^M". The git hooks are the sharp case: install.sh
+# copies these bytes straight into .git/hooks, so a CRLF checkout produces a
+# hook that fails on every checkout and every push.
+*.sh text eol=lf
+scripts/branch-link/hooks/post-checkout text eol=lf
+scripts/branch-link/hooks/pre-push text eol=lf

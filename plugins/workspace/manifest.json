@@ -849,6 +849,173 @@
           "subtitle": "reason"
         }
       }
+    },
+    {
+      "id": "workspace.branch-draft",
+      "description": "Record that a git branch was created, so a later push can turn it into a work item. Called by the post-checkout git hook, not usually by a person. Creates nothing on the board.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "mutates": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repoFullName": {
+            "type": "string",
+            "description": "owner/repo, e.g. taj-alsafa/internal-operation-server."
+          },
+          "branch": {
+            "type": "string",
+            "description": "The branch that was just created."
+          },
+          "baseBranch": {
+            "type": "string",
+            "description": "The branch it was created from, if known."
+          }
+        },
+        "required": [
+          "repoFullName",
+          "branch"
+        ]
+      }
+    },
+    {
+      "id": "workspace.branch-create",
+      "description": "Turn a pushed git branch into a work item, titling and describing it from the branch name and its commits. Called by the pre-push git hook. Does nothing if this branch already has an item.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "mutates": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repoFullName": {
+            "type": "string",
+            "description": "owner/repo."
+          },
+          "branch": {
+            "type": "string",
+            "description": "The branch being pushed."
+          },
+          "commits": {
+            "type": "array",
+            "description": "Commits on the branch, newest first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "subject": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                },
+                "sha": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "subject"
+              ]
+            }
+          },
+          "baseBranch": {
+            "type": "string",
+            "description": "The branch it was created from, if known."
+          }
+        },
+        "required": [
+          "repoFullName",
+          "branch"
+        ]
+      }
+    },
+    {
+      "id": "workspace.branch-status",
+      "description": "Show git branches TARDIS knows about: which are waiting to be pushed, which became work items, and which failed. Use when asked what happened to a branch, or why a branch did not turn into a task.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "mutates": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Optional filter.",
+            "enum": [
+              "drafting",
+              "created",
+              "failed",
+              "adopted"
+            ]
+          }
+        },
+        "required": []
+      },
+      "ui": {
+        "block": "list",
+        "label": "Branches",
+        "icon": "git-branch",
+        "resultPath": "branches",
+        "emptyText": "No branches are linked yet.",
+        "item": {
+          "id": "branch",
+          "title": "branch",
+          "subtitle": "summary"
+        }
+      }
+    },
+    {
+      "id": "workspace.branch-adopt",
+      "description": "Attach a git branch to a work item that already exists, instead of creating a new one. Use when a branch made the wrong item, or when the work item was written by hand first.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "mutates": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repoFullName": {
+            "type": "string",
+            "description": "owner/repo."
+          },
+          "branch": {
+            "type": "string",
+            "description": "The branch to attach."
+          },
+          "itemId": {
+            "type": "number",
+            "description": "The work item to attach it to."
+          }
+        },
+        "required": [
+          "repoFullName",
+          "branch",
+          "itemId"
+        ]
+      },
+      "ui": {
+        "block": "form",
+        "label": "Link branch to an item",
+        "icon": "git-branch",
+        "submitLabel": "Link",
+        "fields": [
+          {
+            "name": "repoFullName",
+            "type": "text",
+            "label": "Repository",
+            "required": true
+          },
+          {
+            "name": "branch",
+            "type": "text",
+            "label": "Branch",
+            "required": true
+          },
+          {
+            "name": "itemId",
+            "type": "number",
+            "label": "Work item id",
+            "required": true
+          }
+        ]
+      }
     }
   ],
   "config": {
@@ -887,6 +1054,47 @@
       "label": "Default workspace",
       "description": "Workspace key to use when you have not said which one.",
       "default": ""
+    },
+    "branchLinkEnabled": {
+      "type": "boolean",
+      "label": "Link git branches to work items",
+      "description": "When on, the git hooks may create work items from pushed branches. Off means the branch skills refuse, so an installed hook cannot act until you say so.",
+      "default": false,
+      "required": false
+    },
+    "branchLinkDefaultEpicId": {
+      "type": "number",
+      "label": "Fallback epic id",
+      "description": "Where a branch goes when no story matches it. Without this, a branch that matches nothing fails rather than landing somewhere wrong.",
+      "default": 0,
+      "required": false
+    },
+    "branchLinkDueDateOffsetDays": {
+      "type": "number",
+      "label": "Due date offset (days)",
+      "description": "The server requires a due date and a git hook has nobody to ask, so branch-created items get today plus this many days.",
+      "default": 7,
+      "required": false
+    },
+    "branchLinkDefaultPriority": {
+      "type": "select",
+      "label": "Default priority",
+      "description": "Priority for a branch-created item.",
+      "options": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "URGENT"
+      ],
+      "default": "MEDIUM",
+      "required": false
+    },
+    "branchLinkDraftTtlDays": {
+      "type": "number",
+      "label": "Abandoned draft lifetime (days)",
+      "description": "A branch created but never pushed is forgotten after this long. Linked and failed records are kept.",
+      "default": 14,
+      "required": false
     }
   }
 }
