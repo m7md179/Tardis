@@ -20,7 +20,7 @@ gh pr create → merge     →  GitHub webhook → PR_MERGED rule → item moves
 |---|---|
 | io server running code with the head-ref match (PR #582) | `git log --oneline origin/staging \| grep head-ref` → `86a91f9c` |
 | The io server is reachable **from the public internet** | GitHub has to POST to it. A LAN-only address cannot receive webhooks. |
-| TARDIS deployed with the workspace plugin | `/skills` in the TUI lists `workspace.branch-status` |
+| **TARDIS deployed with THIS branch's plugin** | `/skills` in the TUI lists `workspace.branch-status`. If it does not, the branch is not deployed and nothing below will work — the settings in step 1 will not exist either |
 | `bun` on your PATH | `command -v bun` |
 
 If the server isn't publicly reachable, steps 3–5 can't work yet and you'll get
@@ -31,15 +31,53 @@ That half is still useful, and the rest can be added later without redoing it.
 
 ## Step 1 — Turn on branch linking in TARDIS
 
-In the workspace plugin's settings:
+**There is no settings screen for this.** The server exposes
+`GET`/`PUT /api/plugins/:name/config` (`app.ts:526`, `:546`), but nothing in the
+web UI or the TUI calls it — `web-ui/src/pages/plugins.tsx` lists plugins and
+stops there. Set the values over the API.
 
-| Setting | Value |
-|---|---|
-| **Link git branches to work items** | on |
-| **Fallback epic id** | the epic that catches branches matching no story |
-| **Due date offset (days)** | `7` unless you want otherwise |
-| **Default priority** | `MEDIUM` |
-| **Abandoned draft lifetime (days)** | `14` |
+Get a token, then send only the keys you are changing — the endpoint merges with
+what is stored, so your credentials do not need resending:
+
+```bash
+TARDIS=https://your-tardis.example.com
+
+TOKEN=$(curl -s -X POST "$TARDIS/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"YOUR_TARDIS_PASSWORD"}' | jq -r .token)
+
+curl -s -X PUT "$TARDIS/api/plugins/workspace/config" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "values": {
+      "branchLinkEnabled": true,
+      "branchLinkDefaultEpicId": 80,
+      "branchLinkDueDateOffsetDays": 7,
+      "branchLinkDefaultPriority": "MEDIUM",
+      "branchLinkDraftTtlDays": 14
+    }
+  }' | jq
+```
+
+Replace `80` with the epic that should catch branches matching no story.
+
+The response includes **`"restartRequired": true`**, and it means it: a plugin
+reads its settings at activation, so **restart TARDIS** or the new values change
+nothing. That is the step most likely to be skipped here.
+
+Read the values back with `GET /api/plugins/workspace/config` — secrets come
+back masked, the rest as stored.
+
+<details>
+<summary>Or edit the config file directly on the host</summary>
+
+Settings live at `plugins.workspace` in `~/.tardis/config.json`
+(`/root/.tardis/config.json` in the container). Add the same keys there and
+restart. Note that `scripts/deploy.sh` copies your local config over the
+container's, so a value set only on the container is lost on the next deploy.
+
+</details>
 
 It defaults to **off** deliberately: an installed hook can call TARDIS the
 moment it lands, and this is the switch that stops it creating anything.
