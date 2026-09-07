@@ -40,6 +40,8 @@ export interface CreateDeps {
   logger: { debug: (msg: string) => void; warn: (msg: string) => void };
   now: string;
   config: BranchLinkConfig;
+  /** The account TARDIS acts as; -1 is the plugin's "unknown" sentinel. */
+  myAccountId: number;
 }
 
 export interface CreateArgs {
@@ -107,6 +109,19 @@ export async function createFromBranch(
       return { created: false, reason };
     }
 
+    // The server rejects an item with no assignee. A hook has nobody to ask,
+    // and the branch is this account's own work, so it assigns to itself —
+    // but never to the -1 "unknown account" sentinel, which the server would
+    // reject as a bad id and make a configuration fault look like a server one.
+    if (!Number.isInteger(deps.myAccountId) || deps.myAccountId < 0) {
+      const reason =
+        'the acting account is unknown, so the item would have no assignee — check the ' +
+        'workspace plugin email/password settings and restart TARDIS';
+      await save({ state: 'failed', error: reason, attempts: record.attempts + 1 });
+      deps.logger.warn(`branch-create: ${args.branch} — ${reason}`);
+      return { created: false, reason };
+    }
+
     const due = dueDate(deps.now, deps.config.dueDateOffsetDays);
     const item = await deps.client.createItem(deps.config.workspaceId, {
       type,
@@ -116,6 +131,7 @@ export async function createFromBranch(
       due_date: due,
       priority: deps.config.defaultPriority,
       status: 'BACKLOG',
+      assignee_account_ids: [deps.myAccountId],
     });
 
     // The item exists now. A failure past this point must not lose it.
