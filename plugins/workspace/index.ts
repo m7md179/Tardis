@@ -34,6 +34,7 @@ import type { BranchRecord } from './branch.js';
 import { createFromBranch } from './branch-create.js';
 import type { BranchLinkConfig } from './branch-create.js';
 import { compose } from './compose.js';
+import { logBranchTime } from './branch-time.js';
 import type { Commit } from './compose.js';
 
 let api: PluginAPI;
@@ -837,6 +838,42 @@ export const executeTool = async (
         }));
 
       return { count: branches.length, swept: expire.length, branches };
+    }
+
+    case 'workspace.log-branch-time': {
+      await requireBranchLinkEnabled();
+      const io = assertConfigured();
+      const date = typeof args['date'] === 'string' ? args['date'] : '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new Error('Workspace: log-branch-time needs a date as YYYY-MM-DD.');
+      }
+
+      const raw = Array.isArray(args['allocations']) ? args['allocations'] : [];
+      const allocations = raw.flatMap((entry) => {
+        if (typeof entry !== 'object' || entry === null) return [];
+        const r = entry as Record<string, unknown>;
+        const repoFullName = typeof r['repoFullName'] === 'string' ? r['repoFullName'] : '';
+        const branch = typeof r['branch'] === 'string' ? r['branch'] : '';
+        const seconds = Number(r['seconds']);
+        if (repoFullName === '' || branch === '' || !Number.isFinite(seconds)) return [];
+        return [{ repoFullName, branch, seconds: Math.round(seconds) }];
+      });
+
+      const result = await logBranchTime(
+        {
+          storage: {
+            get: <T,>(k: string) => api.storage.get<T>(k),
+            set: (k, v) => api.storage.set(k, v),
+          },
+          client: {
+            createTimeEntry: (itemId, entry) => io.createTimeEntry(itemId, entry),
+            deleteTimeEntry: (itemId, entryId) => io.deleteTimeEntry(itemId, entryId),
+          },
+          logger: api.logger,
+        },
+        { date, allocations, replace: args['replace'] === true }
+      );
+      return { ...result, hours: Math.round((result.seconds / 3600) * 100) / 100 };
     }
 
     case 'workspace.branch-adopt': {

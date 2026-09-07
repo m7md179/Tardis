@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { allocate, sessionize } from './sessions.js';
+import { allocate, parseSourceLog, sessionize } from './sessions.js';
 import type { CommitEvent } from './sessions.js';
 
 const OPTS = { gapSeconds: 45 * 60, leadInSeconds: 30 * 60 };
@@ -107,5 +107,57 @@ describe('allocate', () => {
     for (let i = 0; i < 1; i++) commits.push(c('tiny', 9.01));
     const out = allocate(sessionize(commits, OPTS), { minSeconds: 600 });
     expect(out.every((a) => a.seconds >= 600)).toBe(true);
+  });
+});
+
+describe('parseSourceLog', () => {
+  const SEP = '\x00';
+  const REC = '\x1e';
+
+  it('reads the ref a commit was reached from, stripped to a branch name', () => {
+    // `git log --all --source --format=%S%x00%at%x1e` — %S is the ref that led
+    // to this commit, which is how one command covers every branch at once
+    // instead of looping over hundreds of them.
+    const raw = `refs/heads/feat/x${SEP}1788700000${REC}refs/heads/fix/y${SEP}1788703600${REC}`;
+    expect(parseSourceLog(raw, 'org/a')).toEqual([
+      { repoFullName: 'org/a', branch: 'feat/x', at: 1788700000 },
+      { repoFullName: 'org/a', branch: 'fix/y', at: 1788703600 },
+    ]);
+  });
+
+  it('ignores commits reached only from a remote ref or a tag', () => {
+    // A commit reachable from origin/main is someone else's merge, not a
+    // branch you are working on.
+    const raw =
+      `refs/remotes/origin/main${SEP}1788700000${REC}` +
+      `refs/tags/v1${SEP}1788700001${REC}` +
+      `refs/heads/feat/x${SEP}1788700002${REC}`;
+    expect(parseSourceLog(raw, 'org/a').map((c) => c.branch)).toEqual(['feat/x']);
+  });
+
+  it('drops a malformed record rather than dating it to 1970', () => {
+    expect(parseSourceLog(`refs/heads/a${SEP}notanumber${REC}`, 'org/a')).toEqual([]);
+    expect(parseSourceLog('', 'org/a')).toEqual([]);
+  });
+});
+
+describe('parseSourceLog — the two shapes %S actually emits', () => {
+  const SEP = '\x00';
+  const REC = '\x1e';
+
+  it('accepts the bare branch name that --branches produces', () => {
+    // Measured, not assumed: `git log --all --source` prints
+    // `refs/heads/feat/x`, while `git log --branches --source` prints just
+    // `feat/x`. Accepting only the long form silently found zero commits.
+    const raw = `feat/x${SEP}1788700000${REC}chore/audit-20260907${SEP}1788703600${REC}`;
+    expect(parseSourceLog(raw, 'org/a').map((c) => c.branch)).toEqual([
+      'feat/x',
+      'chore/audit-20260907',
+    ]);
+  });
+
+  it('still refuses a remote or tag ref in the long form', () => {
+    const raw = `refs/remotes/origin/main${SEP}1788700000${REC}refs/tags/v1${SEP}1788700001${REC}`;
+    expect(parseSourceLog(raw, 'org/a')).toEqual([]);
   });
 });

@@ -1016,6 +1016,53 @@
           }
         ]
       }
+    },
+    {
+      "id": "workspace.log-branch-time",
+      "description": "Log a day's working time onto the work items its git branches became, from a division computed locally. Called by the branch-link CLI, not usually by a person. Refuses to log the same day twice unless replace is set.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "mutates": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The day being logged, YYYY-MM-DD."
+          },
+          "allocations": {
+            "type": "array",
+            "description": "Seconds per branch, already divided so the total is the time actually worked.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repoFullName": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "seconds": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "repoFullName",
+                "branch",
+                "seconds"
+              ]
+            }
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Delete this day's previous entries and write again."
+          }
+        },
+        "required": [
+          "date",
+          "allocations"
+        ]
+      }
     }
   ],
   "config": {
