@@ -22,6 +22,27 @@ export interface PushedRef {
 /** Branches shared with other people never become someone's personal task. */
 export const DEFAULT_PROTECTED = ['main', 'master', 'staging', 'develop'];
 
+/**
+ * How long to wait for TARDIS before treating the request as an outage.
+ *
+ * Five minutes, which looks absurd for an HTTP call and is not: this runs
+ * detached, after the git command has already returned, and nobody is waiting
+ * on it. `branch-create` makes two model round-trips — composing the title and
+ * re-ranking the parent — before it writes anything.
+ *
+ * Measured live at the original 30s: the client gave up and queued the request
+ * as a failure while the server went on to create the item successfully. The
+ * retry was harmless only because creation is idempotent. Timing out early
+ * costs a false failure, so the timeout exists to catch a genuinely dead
+ * server, not a slow model.
+ */
+export const DEFAULT_TIMEOUT_MS = 300000;
+
+export function resolveTimeoutMs(raw: number | undefined): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return DEFAULT_TIMEOUT_MS;
+  return raw;
+}
+
 const ZERO_SHA = /^0{40}$/;
 
 /**

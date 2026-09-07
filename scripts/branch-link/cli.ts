@@ -20,7 +20,13 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
-import { parseCommitLog, parsePrePushRefs, shouldAct, DEFAULT_PROTECTED } from './core.js';
+import {
+  parseCommitLog,
+  parsePrePushRefs,
+  resolveTimeoutMs,
+  shouldAct,
+  DEFAULT_PROTECTED,
+} from './core.js';
 import { invokeSkill } from './transport.js';
 import type { TransportDeps } from './transport.js';
 
@@ -35,6 +41,7 @@ interface Config {
   password: string;
   protectedBranches?: string[];
   maxCommits?: number;
+  requestTimeoutMs?: number;
 }
 
 async function log(message: string): Promise<void> {
@@ -55,6 +62,7 @@ async function readConfig(): Promise<Config | null> {
       password: parsed.password,
       protectedBranches: parsed.protectedBranches ?? DEFAULT_PROTECTED,
       maxCommits: parsed.maxCommits ?? 50,
+      requestTimeoutMs: resolveTimeoutMs(parsed.requestTimeoutMs),
     };
   } catch {
     return null;
@@ -76,7 +84,7 @@ function makeDeps(config: Config): TransportDeps {
     baseUrl: config.baseUrl,
     password: config.password,
     fetchImpl: (url, init) =>
-      fetch(url, { ...init, signal: AbortSignal.timeout(30000) }),
+      fetch(url, { ...init, signal: AbortSignal.timeout(resolveTimeoutMs(config.requestTimeoutMs)) }),
     readToken: async () => {
       try {
         return (await readFile(TOKEN_PATH, 'utf8')).trim() || null;
