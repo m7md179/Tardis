@@ -47,7 +47,7 @@ export function fitToContextWindow(opts: FitToContextWindowOptions): LLMMessage[
 
   if (historyTokens <= historyBudget) {
     // All history fits — no trimming needed
-    return conversationHistory;
+    return startAtTurnBoundary(conversationHistory);
   }
 
   // Trim oldest messages first until it fits
@@ -56,5 +56,19 @@ export function fitToContextWindow(opts: FitToContextWindowOptions): LLMMessage[
     trimmed = trimmed.slice(1);
   }
 
-  return trimmed;
+  return startAtTurnBoundary(trimmed);
+}
+
+/**
+ * Drop any leading fragment of a partially-trimmed turn.
+ *
+ * Trimming one message at a time can cut a turn in half and leave a `tool`
+ * message whose originating assistant `tool_calls` was trimmed away, which
+ * providers reject as an unanswered/orphaned tool result. Advancing to the
+ * first user message always shrinks the array, so the result still fits the
+ * budget computed by the caller.
+ */
+function startAtTurnBoundary(messages: LLMMessage[]): LLMMessage[] {
+  const firstUser = messages.findIndex((m) => m.role === 'user');
+  return firstUser === -1 ? [] : messages.slice(firstUser);
 }
