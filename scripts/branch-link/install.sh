@@ -139,14 +139,38 @@ if [ ! -f "$CONFIG" ]; then
   # TARDIS address baked into it would be published with it. TARDIS_URL lets a
   # scripted install skip the prompt without writing the address down.
   url="${TARDIS_URL:-}"
-  while [ -z "$url" ]; do
-    read -r -p "TARDIS URL (e.g. https://tardis.example.com): " url
-  done
-
   password="${TARDIS_PASSWORD:-}"
-  if [ -z "$password" ]; then
-    read -r -s -p "TARDIS password: " password
+
+  # Only prompt if there is a terminal to prompt on. Without this guard a
+  # non-interactive run (CI, an agent, anything with stdin closed) spins
+  # forever: `read` returns EOF immediately, the variable stays empty, and the
+  # loop never ends.
+  if [ -t 0 ]; then
+    while [ -z "$url" ]; do
+      read -r -p "TARDIS URL (e.g. https://tardis.example.com): " url || break
+    done
+    if [ -z "$password" ]; then
+      read -r -s -p "TARDIS password: " password || true
+      echo
+    fi
+  fi
+
+  if [ -z "$url" ] || [ -z "$password" ]; then
     echo
+    echo "Hooks are installed, but there is no config yet and nothing to ask on."
+    echo "The hooks stay dormant until $CONFIG exists. Create it with:"
+    echo
+    echo "  mkdir -p '$HOME_DIR' && (umask 077 && cat > '$CONFIG' <<'JSON'"
+    echo "  {"
+    echo '    "baseUrl": "https://your-tardis.example.com",'
+    echo '    "password": "your-tardis-password",'
+    echo '    "protectedBranches": ["main", "master", "staging", "develop"],'
+    echo '    "maxCommits": 50'
+    echo "  }"
+    echo "  JSON"
+    echo "  )"
+    echo
+    exit 0
   fi
 
   mkdir -p "$HOME_DIR"
