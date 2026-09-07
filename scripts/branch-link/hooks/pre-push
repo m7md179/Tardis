@@ -10,6 +10,26 @@
 BUN='__BUN__'
 CLI='__CLI__'
 
+# Re-assert core.hooksPath if husky's `prepare` script reverted it.
+# `npm install` runs `husky`, which sets core.hooksPath back to `.husky/_` --
+# a RELATIVE path, which git resolves against each working tree's own root, so
+# worktrees (which have no `.husky/_`) silently stop running hooks. This hook
+# still fires in the main checkout after such a revert, via the copy left in
+# .husky/, and putting the value back is what restores every worktree.
+WANT='__HOOKSDIR__'
+# Only ever re-assert a real, absolute directory. An unsubstituted placeholder,
+# or a path whose directory has since been deleted, must never reach
+# core.hooksPath: git would then look for hooks somewhere that does not exist
+# and silently run NONE of them, repo-wide -- the exact failure this line is
+# here to repair. A bad value is dropped rather than written.
+case "$WANT" in
+  /*|[A-Za-z]:[\/]*) [ -d "$WANT" ] || WANT='' ;;
+  *) WANT='' ;;
+esac
+if [ -n "$WANT" ] && [ "$(git config --get core.hooksPath 2>/dev/null)" != "$WANT" ]; then
+  git config core.hooksPath "$WANT" 2>/dev/null || true
+fi
+
 # git feeds "<local ref> <local sha> <remote ref> <remote sha>" on stdin. Read
 # it here and hand it on; consuming it is required either way.
 refs=$(cat)

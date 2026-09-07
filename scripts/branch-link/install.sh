@@ -33,87 +33,146 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-BUN="$(command -v bun || true)"
+BUN="${TARDIS_BUN:-$(command -v bun || true)}"
+CLI="${TARDIS_CLI:-$CLI}"
 if [ -z "$BUN" ] && [ "$UNINSTALL" -eq 0 ]; then
   echo "install.sh: bun is not on PATH, and a git hook does not reliably inherit yours." >&2
   exit 1
 fi
 
 hook_body() {
-  # $1 = hook name. Bake in absolute paths: a git hook's PATH is not your shell's.
-  sed -e "s|__BUN__|${BUN}|g" -e "s|__CLI__|${CLI}|g" "$HERE/hooks/$1"
+  # $1 = hook name, $2 = the shared hooks dir baked into the re-assert.
+  # Absolute paths throughout: a git hook's PATH is not your shell's.
+  sed -e "s|__BUN__|${BUN}|g" -e "s|__CLI__|${CLI}|g" -e "s|__HOOKSDIR__|${2:-}|g" \
+    "$HERE/hooks/$1"
 }
 
-# Where hooks actually go, which is not the same in every repo.
+# ── Where hooks go, and why a worktree changes the answer ────────────────
 #
-# The io repos run husky, so core.hooksPath is .husky/_ and its generated
-# wrappers call .husky/<hook>. Repos without husky use the default .git/hooks.
-# Installing husky-style into a plain repo puts the file somewhere git never
-# looks, and the hook silently never fires — so this is detected, not assumed.
+# husky sets core.hooksPath to the RELATIVE path `.husky/_`. git resolves a
+# relative hooksPath against each working tree's OWN root — and `.husky/_` is
+# gitignored, generated only where `npm install` ran. So every worktree looks
+# for hooks in a directory that does not exist there and runs none, silently.
+# Measured on internal-operation-server: 253 worktrees, no hooks, husky's own
+# pre-commit included.
 #
-# Echoes "<dir> <needs-exclude>": .husky lives in the worktree and would be
-# committed, .git/hooks never is.
-hook_target() {
-  local repo="$1" common top hooks_path
-  common="$(cd "$repo" && git rev-parse --path-format=absolute --git-common-dir)"
-  top="$(dirname "$common")"
-  hooks_path="$(git -C "$repo" config --get core.hooksPath || true)"
-
-  case "$hooks_path" in
-    '')            echo "$common/hooks 0" ;;
-    .husky/_|.husky/_/) echo "$top/.husky 1" ;;
-    /*)            echo "$hooks_path 0" ;;
-    *)             echo "$top/$hooks_path 0" ;;
-  esac
+# The fix is an ABSOLUTE hooksPath. It lives in .git/config, which every
+# worktree shares, so all of them — including ones created later — are covered
+# with no files in any working tree at all.
+#
+# A repo with no hooksPath keeps using .git/hooks, which lives in the common
+# git dir and is already shared by every worktree. Nothing to fix there.
+repo_slug() {
+  local common="$1" hash
+  hash="$(printf '%s' "$common" | md5sum 2>/dev/null | cut -c1-8)"
+  [ -n "$hash" ] || hash="$(printf '%s' "$common" | cksum | cut -d' ' -f1)"
+  printf '%s-%s' "$(basename "$(dirname "$common")")" "$hash"
 }
 
 install_one() {
-  local repo="$1" hook path exclude common dir needs_exclude
+  local repo="$1" hook path exclude common top hooks_path shared
   if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
     echo "  skipped: not a git repository" >&2
     return
   fi
 
-  # --git-common-dir, not --git-dir: run inside a worktree, the latter points
-  # at .git/worktrees/<name> and the hooks would never fire.
+  # --git-common-dir, not --git-dir: inside a worktree the latter points at
+  # .git/worktrees/<name>, and the config we must edit is the shared one.
   common="$(cd "$repo" && git rev-parse --path-format=absolute --git-common-dir)"
-  read -r dir needs_exclude <<<"$(hook_target "$repo")"
-
-  mkdir -p "$dir"
+  top="$(dirname "$common")"
+  hooks_path="$(git -C "$repo" config --get core.hooksPath || true)"
   exclude="$common/info/exclude"
   mkdir -p "$(dirname "$exclude")"
   touch "$exclude"
 
-  for hook in post-checkout pre-push; do
-    path="$dir/$hook"
+  if [ -z "$hooks_path" ]; then
+    # Plain repo: .git/hooks is already shared by every worktree.
+    mkdir -p "$common/hooks"
+    for hook in post-checkout pre-push; do
+      path="$common/hooks/$hook"
+      if [ -e "$path" ] && ! grep -q "$MARKER" "$path" 2>/dev/null; then
+        echo "  refusing to overwrite $path (not ours)" >&2
+        continue
+      fi
+      hook_body "$hook" "" > "$path"
+      chmod +x "$path"
+      echo "  installed .git/hooks/$hook"
+    done
+    return
+  fi
 
+  # ── hooksPath repo (husky) ─────────────────────────────────────────────
+  shared="$HOME_DIR/hooks/$(repo_slug "$common")"
+  mkdir -p "$shared"
+
+  for hook in post-checkout pre-push; do
+    hook_body "$hook" "$shared" > "$shared/$hook"
+    chmod +x "$shared/$hook"
+  done
+
+  # Stand in for every hook husky owns, so its behaviour is unchanged where it
+  # was already working and unchanged where it was not. See hooks/husky-shim.
+  if [ -d "$top/.husky" ]; then
+    for path in "$top"/.husky/*; do
+      hook="$(basename "$path")"
+      case "$hook" in
+        _|post-checkout|pre-push|'*') continue ;;
+      esac
+      [ -f "$path" ] || continue
+      cp "$HERE/hooks/husky-shim" "$shared/$hook"
+      chmod +x "$shared/$hook"
+      echo "  shimmed $hook (husky keeps it)"
+    done
+  fi
+
+  # Remember what to put back, then take over.
+  if [ "$hooks_path" != "$shared" ]; then
+    git -C "$repo" config tardis.previousHooksPath "$hooks_path"
+  fi
+  git -C "$repo" config core.hooksPath "$shared"
+  echo "  core.hooksPath -> $shared"
+  echo "  covers $(git -C "$repo" worktree list | wc -l | tr -d ' ') worktrees, and any created later"
+
+  # A copy in .husky/ as well: `npm install` runs husky's `prepare`, which
+  # resets core.hooksPath to `.husky/_`. That still fires in the MAIN checkout,
+  # and the copy left here is what notices and puts the absolute path back.
+  for hook in post-checkout pre-push; do
+    path="$top/.husky/$hook"
     if [ -e "$path" ] && ! grep -q "$MARKER" "$path" 2>/dev/null; then
       echo "  refusing to overwrite $path (not ours)" >&2
       continue
     fi
-
-    hook_body "$hook" > "$path"
+    hook_body "$hook" "$shared" > "$path"
     chmod +x "$path"
-
-    if [ "$needs_exclude" = "1" ] && ! grep -qxF ".husky/$hook" "$exclude"; then
+    if ! grep -qxF ".husky/$hook" "$exclude"; then
       printf '.husky/%s\n' "$hook" >> "$exclude"
     fi
-    echo "  installed ${path#"$(dirname "$dir")"/}"
   done
 }
 
 uninstall_one() {
-  local repo="$1" hook path exclude common dir needs_exclude
+  local repo="$1" hook path exclude common top previous shared
   common="$(cd "$repo" && git rev-parse --path-format=absolute --git-common-dir)"
-  read -r dir needs_exclude <<<"$(hook_target "$repo")"
+  top="$(dirname "$common")"
   exclude="$common/info/exclude"
+  previous="$(git -C "$repo" config --get tardis.previousHooksPath || true)"
+
+  if [ -n "$previous" ]; then
+    git -C "$repo" config core.hooksPath "$previous"
+    git -C "$repo" config --unset tardis.previousHooksPath 2>/dev/null || true
+    echo "  core.hooksPath restored to $previous"
+  fi
+
+  shared="$HOME_DIR/hooks/$(repo_slug "$common")"
+  rm -rf "$shared"
 
   for hook in post-checkout pre-push; do
-    path="$dir/$hook"
-    if [ -e "$path" ] && grep -q "$MARKER" "$path" 2>/dev/null; then
-      rm -f "$path"
-      echo "  removed .husky/$hook"
-    fi
+    for path in "$top/.husky/$hook" "$common/hooks/$hook"; do
+      if [ -e "$path" ] && grep -q "$MARKER" "$path" 2>/dev/null; then
+        rm -f "$path"
+        echo "  removed ${path#"$top"/}"
+      fi
+    done
     if [ -f "$exclude" ]; then
       grep -vxF ".husky/$hook" "$exclude" > "$exclude.tmp" || true
       mv "$exclude.tmp" "$exclude"

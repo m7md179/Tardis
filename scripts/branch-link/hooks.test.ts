@@ -23,10 +23,16 @@ async function sh(cwd: string, cmd: string): Promise<void> {
   await proc.exited;
 }
 
-/** The hooks background their work, so give it a moment to land. */
+/**
+ * The hooks background their work, so give it a moment to land.
+ *
+ * Twelve seconds, not two: these files run alongside each other, and under
+ * that contention git alone took longer than the original budget — the tests
+ * passed alone and failed together, which is the worst way to learn it.
+ */
 async function settled(): Promise<string> {
-  for (let i = 0; i < 40; i++) {
-    await Bun.sleep(50);
+  for (let i = 0; i < 100; i++) {
+    await Bun.sleep(80);
     const seen = await readFile(calls, 'utf8').catch(() => '');
     if (seen !== '') return seen;
   }
@@ -77,7 +83,12 @@ beforeAll(async () => {
   for (const name of ['post-checkout', 'pre-push']) {
     const body = (await readFile(join(HOOKS, name), 'utf8'))
       .replace('__BUN__', 'sh')
-      .replace('__CLI__', stub.replace(/\\/g, '/'));
+      .replace('__CLI__', stub.replace(/\\/g, '/'))
+      // Every placeholder, exactly as install.sh does. Leaving this one behind
+      // made the hook write the literal '__HOOKSDIR__' into core.hooksPath and
+      // silently disable every hook in the repo — which is how the guard in
+      // the hook itself came to exist.
+      .replace('__HOOKSDIR__', '');
     const path = join(repo, '.git', 'hooks', name);
     await writeFile(path, body);
     await chmod(path, 0o755);
@@ -94,7 +105,7 @@ describe('post-checkout', () => {
     await sh(repo, 'git checkout -q -b feat/new-thing');
     expect(await settled()).toContain('draft');
     expect(await settled()).toContain('feat/new-thing');
-  });
+  }, 30000);
 
   it('does NOT fire when switching back to a branch created earlier', async () => {
     // Without this, switching between two branches all day re-drafts each
@@ -121,7 +132,7 @@ describe('post-checkout', () => {
     await reset();
     await sh(repo, 'git checkout -q -b feat/third');
     expect(await settled()).toContain('feat/third');
-  });
+  }, 30000);
 
   it('does NOT fire on a file checkout', async () => {
     // git passes flag 0 for `git checkout -- <path>`; acting on it would
@@ -164,5 +175,5 @@ describe('pre-push', () => {
     expect(proc.exitCode).toBe(0);
     expect(await settled()).toContain('push');
     await rm(remote, { recursive: true, force: true }).catch(() => {});
-  });
+  }, 30000);
 });

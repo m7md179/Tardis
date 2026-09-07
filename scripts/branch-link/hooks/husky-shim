@@ -1,0 +1,24 @@
+#!/bin/sh
+# tardis-branch-link (installed by scripts/branch-link/install.sh — do not commit)
+#
+# Stands in for a hook husky owns, now that core.hooksPath points at a shared
+# directory instead of `.husky/_`.
+#
+# Delegates ONLY where husky's own wrappers actually exist. In the main
+# checkout `.husky/_` is present and husky runs exactly as it did before. In a
+# worktree it is absent — because it is gitignored and generated only where
+# `npm install` ran — so this exits 0 and husky stays as inert there as it
+# already was.
+#
+# Copying husky's `_` directory into every worktree instead would switch
+# lint-staged and commitlint on across all of them for the first time. That is
+# a change to the commit workflow nobody asked for, so it is deliberately not
+# done here.
+
+n=$(basename "$0")
+
+if [ -f ".husky/_/$n" ]; then
+  exec sh ".husky/_/$n" "$@"
+fi
+
+exit 0
