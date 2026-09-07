@@ -90,9 +90,9 @@ describe('branchUrl', () => {
 
 describe('repoFullNameFromRemote', () => {
   it('reads an https remote', () => {
-    expect(repoFullNameFromRemote('https://github.com/taj-alsafa/internal-operation-server.git')).toBe(
-      'taj-alsafa/internal-operation-server'
-    );
+    expect(
+      repoFullNameFromRemote('https://github.com/taj-alsafa/internal-operation-server.git')
+    ).toBe('taj-alsafa/internal-operation-server');
   });
 
   it('reads an ssh remote', () => {
@@ -111,8 +111,16 @@ describe('partitionRecords', () => {
   const made = '2026-09-01T00:00:00.000Z';
   const now = '2026-09-20T00:00:00.000Z'; // 19 days later
   const draft = newRecord('a/b', 'feat/old', 'main', made);
-  const linked = { ...newRecord('a/b', 'feat/done', 'main', made), state: 'created' as const, itemId: 1 };
-  const failed = { ...newRecord('a/b', 'feat/bad', 'main', made), state: 'failed' as const, error: 'x' };
+  const linked = {
+    ...newRecord('a/b', 'feat/done', 'main', made),
+    state: 'created' as const,
+    itemId: 1,
+  };
+  const failed = {
+    ...newRecord('a/b', 'feat/bad', 'main', made),
+    state: 'failed' as const,
+    error: 'x',
+  };
 
   it('expires only stale drafts, keeping links and failures', () => {
     // A failure is kept so it stays visible in branch-status; a link is kept

@@ -22,15 +22,15 @@ It is on `origin/staging`, **not** `origin/main` — a first pass at this design
 grepped a stale checkout, concluded no GitHub support existed anywhere, and was
 wrong. Anyone revisiting this should check `origin/staging` explicitly.
 
-| Capability | Location |
-|---|---|
-| `workspace_git_link` — `pull_request` \| `commit` \| `branch`, with `state` (`open`/`merged`/`closed`) | `prisma/schema.prisma:8354` |
-| HMAC-verified webhook, `POST /workspaces/git/webhook`, gated on `GITHUB_WEBHOOK_SECRET` | `workspace-git-webhook.controller.ts` |
-| Branch-push handling — `refs/heads/…` upserts a `branch` link | `workspace-git-link.service.ts:588` |
-| `PR_MERGED` automation trigger; `MOVE_STATUS` action | `schema.prisma:8239`, `8246` |
-| Item-key parser, `\b<KEY>-(\d+)\b`, anchored so `TMS-142` never matches `TMS-1420` | `workspace-git-key-parser.util.ts` |
-| Manual link UI ("Linked work") + auto-vs-manual attribution | `work-item-git-links.tsx` |
-| `POST /workspaces/work-items/:wid/git-links`, body `{ url }` | `workspace-git-link.controller.ts:46` |
+| Capability                                                                                             | Location                              |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| `workspace_git_link` — `pull_request` \| `commit` \| `branch`, with `state` (`open`/`merged`/`closed`) | `prisma/schema.prisma:8354`           |
+| HMAC-verified webhook, `POST /workspaces/git/webhook`, gated on `GITHUB_WEBHOOK_SECRET`                | `workspace-git-webhook.controller.ts` |
+| Branch-push handling — `refs/heads/…` upserts a `branch` link                                          | `workspace-git-link.service.ts:588`   |
+| `PR_MERGED` automation trigger; `MOVE_STATUS` action                                                   | `schema.prisma:8239`, `8246`          |
+| Item-key parser, `\b<KEY>-(\d+)\b`, anchored so `TMS-142` never matches `TMS-1420`                     | `workspace-git-key-parser.util.ts`    |
+| Manual link UI ("Linked work") + auto-vs-manual attribution                                            | `work-item-git-links.tsx`             |
+| `POST /workspaces/work-items/:wid/git-links`, body `{ url }`                                           | `workspace-git-link.controller.ts:46` |
 
 Two consequences:
 
@@ -68,8 +68,8 @@ which is what makes an LLM-composed description worth having.
 
 Checkout therefore writes a storage key and stops. Push composes and creates.
 
-*Rejected:* create at checkout — thin descriptions, and every abandoned
-experiment becomes a board item. *Rejected:* create at PR open — server-side and
+_Rejected:_ create at checkout — thin descriptions, and every abandoned
+experiment becomes a board item. _Rejected:_ create at PR open — server-side and
 simple, but the task appears after the work is finished, which defeats the point.
 
 ### D2 — The item is created, never matched
@@ -88,13 +88,13 @@ The fix is a server-side lookup: when a `pull_request` event arrives, also look
 for an existing `branch` git-link in the same repo whose branch matches the PR's
 head ref, and reuse its work item. See §13.
 
-*Rejected:* instruct the coding agent to put `TMS-143` in every PR body. It
+_Rejected:_ instruct the coding agent to put `TMS-143` in every PR body. It
 works, costs nothing server-side, and would be a reasonable start — but it makes
 the closing half of the feature depend on a model complying every time, and a
 merged PR that silently fails to close its task is a failure nobody notices for
 a week. A database join is not a hope.
 
-*Rejected:* rename the branch at push to embed the key. Everything downstream
+_Rejected:_ rename the branch at push to embed the key. Everything downstream
 would work untouched, but a hook that rewrites your branch under you is a bad
 trade for saving one service-layer change.
 
@@ -191,7 +191,7 @@ Git passes `$1` previous HEAD, `$2` new HEAD, `$3` flag. Act only when **all** o
   the oldest entry of `git reflog show --date=unix <branch>`, which is its
   `branch: Created from …` record.
 
-  An earlier draft of this spec used the reflog *entry count* instead — one
+  An earlier draft of this spec used the reflog _entry count_ instead — one
   entry meaning "just created". That is wrong, and the hook test caught it: a
   branch reflog records updates to the ref, not checkouts, so a branch created
   and never committed to keeps exactly one entry forever and every switch back
@@ -261,17 +261,17 @@ Key: `branch:<provider>:<repo_full_name>:<branch>`.
 ```ts
 interface BranchRecord {
   provider: 'github';
-  repoFullName: string;       // "taj-alsafa/internal-operation-server"
+  repoFullName: string; // "taj-alsafa/internal-operation-server"
   branch: string;
   baseBranch: string | null;
   state: 'drafting' | 'created' | 'failed' | 'adopted';
   createdAt: string;
   updatedAt: string;
-  itemId?: number;            // set when state is created | adopted
-  itemKey?: string;           // "TMS-143"
+  itemId?: number; // set when state is created | adopted
+  itemKey?: string; // "TMS-143"
   gitLinkId?: number;
   parentId?: number | null;
-  error?: string;             // set when state is failed
+  error?: string; // set when state is failed
   attempts: number;
 }
 ```
@@ -293,12 +293,12 @@ this" into "nothing happened", which is the harder of the two to notice.
 
 All `actionType: 'direct'` (D7).
 
-| Skill | `mutates` | Arguments | Behaviour |
-|---|---|---|---|
-| `workspace.branch-draft` | `true` | `repoFullName`, `branch`, `baseBranch?` | Writes a `drafting` record. No server call. Idempotent. |
-| `workspace.branch-create` | `true` | `repoFullName`, `branch`, `commits[]`, `headSha` | §11. Idempotent on `state`. |
-| `workspace.branch-status` | `false` | `state?` | Lists records; sweeps expired drafts. Renders as a `list` block. |
-| `workspace.branch-adopt` | `true` | `repoFullName`, `branch`, `itemId` | Attaches the branch to an existing item, registers the git-link, sets `adopted`. The escape hatch when composition got it wrong. |
+| Skill                     | `mutates` | Arguments                                        | Behaviour                                                                                                                        |
+| ------------------------- | --------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `workspace.branch-draft`  | `true`    | `repoFullName`, `branch`, `baseBranch?`          | Writes a `drafting` record. No server call. Idempotent.                                                                          |
+| `workspace.branch-create` | `true`    | `repoFullName`, `branch`, `commits[]`, `headSha` | §11. Idempotent on `state`.                                                                                                      |
+| `workspace.branch-status` | `false`   | `state?`                                         | Lists records; sweeps expired drafts. Renders as a `list` block.                                                                 |
+| `workspace.branch-adopt`  | `true`    | `repoFullName`, `branch`, `itemId`               | Attaches the branch to an existing item, registers the git-link, sets `adopted`. The escape hatch when composition got it wrong. |
 
 `branch-status` is the TUI surface: it is how you see which branches became
 items and which failed.
@@ -307,7 +307,7 @@ items and which failed.
 which cannot work — `branch-status` executes on the server and the queue is a
 directory on the laptop. The CLI drains at the start of every run instead, so
 the next branch you create ships whatever failed while TARDIS was down. A
-queued request that comes back *refused* rather than failing is deleted: "branch
+queued request that comes back _refused_ rather than failing is deleted: "branch
 linking is off" is a decision, and replaying it forever would grow the queue
 without bound.
 
@@ -342,15 +342,15 @@ without bound.
 
 Added to the workspace plugin's `config` block:
 
-| Key | Default | Purpose |
-|---|---|---|
-| `branchLink.enabled` | `false` | Off until deliberately turned on. |
-| `branchLink.repoMap` | `{}` | `repoFullName` → workspace key. One entry today. |
-| `branchLink.defaultEpicId` | none | Fallback parent for the `STORY` path (D8). |
-| `branchLink.dueDateOffsetDays` | `7` | The server requires a due date. |
-| `branchLink.defaultPriority` | `MEDIUM` | |
-| `branchLink.protectedBranches` | `main,master,staging,develop` | |
-| `branchLink.draftTtlDays` | `14` | |
+| Key                            | Default                       | Purpose                                          |
+| ------------------------------ | ----------------------------- | ------------------------------------------------ |
+| `branchLink.enabled`           | `false`                       | Off until deliberately turned on.                |
+| `branchLink.repoMap`           | `{}`                          | `repoFullName` → workspace key. One entry today. |
+| `branchLink.defaultEpicId`     | none                          | Fallback parent for the `STORY` path (D8).       |
+| `branchLink.dueDateOffsetDays` | `7`                           | The server requires a due date.                  |
+| `branchLink.defaultPriority`   | `MEDIUM`                      |                                                  |
+| `branchLink.protectedBranches` | `main,master,staging,develop` |                                                  |
+| `branchLink.draftTtlDays`      | `14`                          |                                                  |
 
 The CLI's own config (TARDIS URL, password, log and queue paths) lives on the
 laptop at `~/.tardis-branch-link/config.json`, mode 600, written by the
@@ -390,7 +390,7 @@ easy to break:
 Delivered as `docs/handoff/2026-09-06-agent-branch-conventions.md`, to be pasted
 into each io repo's `CLAUDE.md`.
 
-Under D1 the branch name and commit messages *become* the work item's text. That
+Under D1 the branch name and commit messages _become_ the work item's text. That
 turns them from style preference into an interface, and the instructions say so:
 branch names describe the change rather than the file touched; commit subjects
 are meaningful on their own; the first push of a branch is the moment the task is

@@ -50,8 +50,7 @@ export function composeFallback(branch: string, commits: Commit[]): Composition 
   const description =
     commits.length === 0
       ? `Created from branch \`${branch}\`.`
-      : `Created from branch \`${branch}\`.\n\n` +
-        commits.map((c) => `- ${c.subject}`).join('\n');
+      : `Created from branch \`${branch}\`.\n\n` + commits.map((c) => `- ${c.subject}`).join('\n');
 
   return { title, description };
 }
@@ -81,8 +80,7 @@ export function parseComposition(raw: string): Composition | null {
 
   const record = parsed as Record<string, unknown>;
   const title = typeof record['title'] === 'string' ? record['title'].trim() : '';
-  const description =
-    typeof record['description'] === 'string' ? record['description'].trim() : '';
+  const description = typeof record['description'] === 'string' ? record['description'].trim() : '';
   if (title === '') return null;
 
   return { title, description };
@@ -125,7 +123,9 @@ export async function compose(
       description: parsed.description === '' ? fallback.description : parsed.description,
     };
   } catch (err) {
-    deps.logger.warn(`compose: model unavailable for ${branch} (${String(err)}), using the branch name`);
+    deps.logger.warn(
+      `compose: model unavailable for ${branch} (${String(err)}), using the branch name`
+    );
     return fallback;
   }
 }

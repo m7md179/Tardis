@@ -75,8 +75,7 @@ function makeDeps(config: Config): TransportDeps {
   return {
     baseUrl: config.baseUrl,
     password: config.password,
-    fetchImpl: (url, init) =>
-      fetch(url, { ...init, signal: AbortSignal.timeout(30000) }),
+    fetchImpl: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(30000) }),
     readToken: async () => {
       try {
         return (await readFile(TOKEN_PATH, 'utf8')).trim() || null;

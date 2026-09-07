@@ -51,7 +51,7 @@ function harness(over: Partial<CreateDeps> = {}, seed?: BranchRecord): Harness {
 
   const deps: CreateDeps = {
     storage: {
-      get: async <T,>(k: string): Promise<T | null> => (store.get(k) as T) ?? null,
+      get: async <T>(k: string): Promise<T | null> => (store.get(k) as T) ?? null,
       set: async (k: string, v: unknown): Promise<void> => void store.set(k, v),
     },
     client: {

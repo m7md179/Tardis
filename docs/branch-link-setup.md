@@ -16,12 +16,12 @@ gh pr create → merge     →  GitHub webhook → PR_MERGED rule → item moves
 
 ## Before you start
 
-| Requirement | How to check |
-|---|---|
-| io server running code with the head-ref match (PR #582) | `git log --oneline origin/staging \| grep head-ref` → `86a91f9c` |
-| The io server is reachable **from the public internet** | GitHub has to POST to it. A LAN-only address cannot receive webhooks. |
-| TARDIS deployed with the workspace plugin | `/skills` in the TUI lists `workspace.branch-status` |
-| `bun` on your PATH | `command -v bun` |
+| Requirement                                              | How to check                                                          |
+| -------------------------------------------------------- | --------------------------------------------------------------------- |
+| io server running code with the head-ref match (PR #582) | `git log --oneline origin/staging \| grep head-ref` → `86a91f9c`      |
+| The io server is reachable **from the public internet**  | GitHub has to POST to it. A LAN-only address cannot receive webhooks. |
+| TARDIS deployed with the workspace plugin                | `/skills` in the TUI lists `workspace.branch-status`                  |
+| `bun` on your PATH                                       | `command -v bun`                                                      |
 
 If the server isn't publicly reachable, steps 3–5 can't work yet and you'll get
 the first half only: branches become work items, but merging won't close them.
@@ -33,13 +33,13 @@ That half is still useful, and the rest can be added later without redoing it.
 
 In the workspace plugin's settings:
 
-| Setting | Value |
-|---|---|
-| **Link git branches to work items** | on |
-| **Fallback epic id** | the epic that catches branches matching no story |
-| **Due date offset (days)** | `7` unless you want otherwise |
-| **Default priority** | `MEDIUM` |
-| **Abandoned draft lifetime (days)** | `14` |
+| Setting                             | Value                                            |
+| ----------------------------------- | ------------------------------------------------ |
+| **Link git branches to work items** | on                                               |
+| **Fallback epic id**                | the epic that catches branches matching no story |
+| **Due date offset (days)**          | `7` unless you want otherwise                    |
+| **Default priority**                | `MEDIUM`                                         |
+| **Abandoned draft lifetime (days)** | `14`                                             |
 
 It defaults to **off** deliberately: an installed hook can call TARDIS the
 moment it lands, and this is the switch that stops it creating anything.
@@ -86,7 +86,7 @@ cat ~/.tardis-branch-link/branch-link.log   # → "draft ... -> ok"
 ```
 
 Then ask TARDIS what branches it knows about — `feat/branch-link-smoke-test`
-should be there, *waiting for a push*. Nothing is on your board yet.
+should be there, _waiting for a push_. Nothing is on your board yet.
 
 To undo: `./scripts/branch-link/install.sh --uninstall <repo>...`
 
@@ -112,12 +112,12 @@ payload it cannot verify.
 
 GitHub → repo → Settings → Webhooks → Add webhook:
 
-| Field | Value |
-|---|---|
-| **Payload URL** | `<io base url>/workspaces/git/webhook` |
-| **Content type** | `application/json` — **not** form-encoded |
-| **Secret** | the string from step 3 |
-| **Events** | *Let me select individual events* → **Pushes** and **Pull requests** |
+| Field            | Value                                                                |
+| ---------------- | -------------------------------------------------------------------- |
+| **Payload URL**  | `<io base url>/workspaces/git/webhook`                               |
+| **Content type** | `application/json` — **not** form-encoded                            |
+| **Secret**       | the string from step 3                                               |
+| **Events**       | _Let me select individual events_ → **Pushes** and **Pull requests** |
 
 The base URL is the same one in the workspace plugin's `baseUrl` setting.
 
@@ -188,15 +188,15 @@ Nothing here ever blocks a git command, which is the point — and also why
 failures are quiet. `~/.tardis-branch-link/branch-link.log` is the first place
 to look, and `workspace.branch-status` is the second.
 
-| Symptom | Likely cause |
-|---|---|
-| Log says `refused` | Branch linking is off (step 1), or TARDIS is in read-only mode |
-| Log says `queued` | TARDIS was unreachable. The next branch you create ships it — the queue drains on every hook run |
-| No log line at all | Hook not installed, or `bun` wasn't on PATH when you installed |
-| `branch-status` shows **failed** | It names the reason. Usually no matching story and no fallback epic |
-| Item created, no Linked work | The item is kept when only the link fails. Repair with `branch-adopt` |
-| Merged PR didn't move to Done | Step 5 rule disabled; or the webhook isn't delivering (step 4); or the branch was pushed before step 2 so no link exists |
-| Hook fails with `/bin/sh^M` | The checkout got CRLF endings. `.gitattributes` pins LF — re-clone or `git add --renormalize` |
+| Symptom                          | Likely cause                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Log says `refused`               | Branch linking is off (step 1), or TARDIS is in read-only mode                                                           |
+| Log says `queued`                | TARDIS was unreachable. The next branch you create ships it — the queue drains on every hook run                         |
+| No log line at all               | Hook not installed, or `bun` wasn't on PATH when you installed                                                           |
+| `branch-status` shows **failed** | It names the reason. Usually no matching story and no fallback epic                                                      |
+| Item created, no Linked work     | The item is kept when only the link fails. Repair with `branch-adopt`                                                    |
+| Merged PR didn't move to Done    | Step 5 rule disabled; or the webhook isn't delivering (step 4); or the branch was pushed before step 2 so no link exists |
+| Hook fails with `/bin/sh^M`      | The checkout got CRLF endings. `.gitattributes` pins LF — re-clone or `git add --renormalize`                            |
 
 Nothing needs a task to exist beforehand, and nothing needs an item key in the
 branch name. Push the branch and the item follows.

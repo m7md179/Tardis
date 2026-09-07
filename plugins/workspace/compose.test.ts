@@ -19,7 +19,10 @@ describe('composeFallback', () => {
   });
 
   it('lists the commit subjects as the description', () => {
-    const out = composeFallback('fix/x', [commit('Stop the nag firing twice'), commit('Add a test')]);
+    const out = composeFallback('fix/x', [
+      commit('Stop the nag firing twice'),
+      commit('Add a test'),
+    ]);
     expect(out.description).toContain('Stop the nag firing twice');
     expect(out.description).toContain('Add a test');
   });

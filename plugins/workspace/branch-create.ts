@@ -62,10 +62,7 @@ function dueDate(now: string, days: number): string {
   return at.toISOString().slice(0, 10);
 }
 
-export async function createFromBranch(
-  deps: CreateDeps,
-  args: CreateArgs
-): Promise<CreateResult> {
+export async function createFromBranch(deps: CreateDeps, args: CreateArgs): Promise<CreateResult> {
   const key = branchKey(args.repoFullName, args.branch);
   const existing = await deps.storage.get<BranchRecord>(key);
 
@@ -121,8 +118,9 @@ export async function createFromBranch(
     // The item exists now. A failure past this point must not lose it.
     let gitLinkId: number | undefined;
     try {
-      gitLinkId = (await deps.client.registerGitLink(item.id, branchUrl(args.repoFullName, args.branch)))
-        .id;
+      gitLinkId = (
+        await deps.client.registerGitLink(item.id, branchUrl(args.repoFullName, args.branch))
+      ).id;
     } catch (err) {
       deps.logger.warn(
         `branch-create: item ${item.id} created but its branch link failed (${String(err)}) — ` +
