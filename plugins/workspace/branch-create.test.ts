@@ -71,6 +71,7 @@ function harness(over: Partial<CreateDeps> = {}, seed?: BranchRecord): Harness {
     logger: { debug: (): void => {}, warn: (): void => {} },
     now: '2026-09-06T00:00:00.000Z',
     config: CONFIG,
+    myAccountId: 100,
     ...over,
   };
   return { deps, store, created, links, notes };
@@ -205,5 +206,30 @@ describe('createFromBranch', () => {
     expect(h.notes).toHaveLength(1);
     expect(h.notes[0]).toContain('Composed title');
     expect(h.notes[0]).toContain('2026-09-13');
+  });
+});
+
+describe('required fields a hook cannot ask for', () => {
+  it('assigns the item to the account whose branch it is', async () => {
+    // Measured against the live server: without this the create fails with
+    // "A work item needs at least one assignee to be created". A git hook has
+    // nobody to ask, and the branch is the acting account's own work, so the
+    // acting account is the answer.
+    const h = harness();
+    await createFromBranch(h.deps, ARGS);
+    expect(h.created[0]!['assignee_account_ids']).toEqual([100]);
+  });
+
+  it('fails cleanly rather than creating an unassignable item when it has no account', async () => {
+    // -1 is the plugin's "account unknown" sentinel. Sending it would be
+    // rejected by the server as a bad account id, which reads as a server
+    // fault rather than a configuration one.
+    const h = harness({ myAccountId: -1 });
+    const out = await createFromBranch(h.deps, ARGS);
+    expect(out.created).toBe(false);
+    expect(h.created).toHaveLength(0);
+    const rec = h.store.get(branchKey(ARGS.repoFullName, ARGS.branch)) as BranchRecord;
+    expect(rec.state).toBe('failed');
+    expect(rec.error).toContain('account');
   });
 });

@@ -798,6 +798,7 @@ export const executeTool = async (
           logger: api.logger,
           now: new Date().toISOString(),
           config: { ...(await branchLinkConfig()), workspaceId },
+          myAccountId: (await api.storage.get<number>('accountId')) ?? -1,
         },
         {
           repoFullName,
