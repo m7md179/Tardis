@@ -1016,6 +1016,90 @@
           }
         ]
       }
+    },
+    {
+      "id": "workspace.log-branch-time",
+      "description": "Log a day's working time onto the work items its git branches became, from a division computed locally. Called by the branch-link CLI, not usually by a person. Refuses to log the same day twice unless replace is set.",
+      "aiInvocable": false,
+      "actionType": "direct",
+      "mutates": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The day being logged, YYYY-MM-DD."
+          },
+          "allocations": {
+            "type": "array",
+            "description": "Seconds per branch, already divided so the total is the time actually worked.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repoFullName": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "seconds": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "repoFullName",
+                "branch",
+                "seconds"
+              ]
+            }
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Delete this day's previous entries and write again."
+          }
+        },
+        "required": [
+          "date",
+          "allocations"
+        ]
+      }
+    },
+    {
+      "id": "workspace.log-my-time",
+      "description": "Log my working time for a day, divided between the git branches I actually worked on. Use when asked to log, record, register or submit time, or 'how long did I work today'. Measures the day once from commit times and splits it, so several branches worked in parallel never add up to more hours than the day held.",
+      "aiInvocable": true,
+      "actionType": "direct",
+      "mutates": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day to log, YYYY-MM-DD. Defaults to today."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "Show the split without writing anything."
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Re-log a day that was already logged, replacing the previous entries."
+          }
+        },
+        "required": []
+      },
+      "ui": {
+        "block": "list",
+        "label": "Time logged",
+        "icon": "clock",
+        "resultPath": "split",
+        "emptyText": "No pushed commits for that day.",
+        "item": {
+          "id": "branch",
+          "title": "branch",
+          "subtitle": "hours"
+        }
+      }
     }
   ],
   "config": {
@@ -1094,6 +1178,34 @@
       "label": "Abandoned draft lifetime (days)",
       "description": "A branch created but never pushed is forgotten after this long. Linked and failed records are kept.",
       "default": 14,
+      "required": false
+    },
+    "timeGapMinutes": {
+      "type": "number",
+      "label": "Session gap (minutes)",
+      "description": "Commits further apart than this belong to different working sessions.",
+      "default": 45,
+      "required": false
+    },
+    "timeLeadInMinutes": {
+      "type": "number",
+      "label": "Lead-in (minutes)",
+      "description": "Credited before a session's first commit, for the work that produced it. A guess, and the main thing to tune.",
+      "default": 30,
+      "required": false
+    },
+    "timeMaxDayHours": {
+      "type": "number",
+      "label": "Daily cap (hours)",
+      "description": "Never log more than this in a day; the split is scaled, not truncated.",
+      "default": 10,
+      "required": false
+    },
+    "timeMinMinutes": {
+      "type": "number",
+      "label": "Smallest entry (minutes)",
+      "description": "Shares below this are dropped rather than logged as a rounding artefact.",
+      "default": 10,
       "required": false
     }
   }

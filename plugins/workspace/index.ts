@@ -34,6 +34,9 @@ import type { BranchRecord } from './branch.js';
 import { createFromBranch } from './branch-create.js';
 import type { BranchLinkConfig } from './branch-create.js';
 import { compose } from './compose.js';
+import { logBranchTime } from './branch-time.js';
+import { readActivity, recordActivity } from './activity.js';
+import { allocate, sessionize } from './sessions.js';
 import type { Commit } from './compose.js';
 
 let api: PluginAPI;
@@ -205,6 +208,24 @@ async function branchLinkConfig(): Promise<Omit<BranchLinkConfig, 'workspaceId'>
     )
       ? (priority as WorkItemPriority)
       : 'MEDIUM',
+  };
+}
+
+async function timeConfig(): Promise<{
+  gapMinutes: number;
+  leadInMinutes: number;
+  maxDayHours: number;
+  minMinutes: number;
+}> {
+  const num = async (key: string, fallback: number): Promise<number> => {
+    const raw = Number((await api.config.get<number>(key)) ?? fallback);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+  };
+  return {
+    gapMinutes: await num('timeGapMinutes', 45),
+    leadInMinutes: await num('timeLeadInMinutes', 30),
+    maxDayHours: await num('timeMaxDayHours', 10),
+    minMinutes: await num('timeMinMinutes', 10),
   };
 }
 
@@ -774,6 +795,21 @@ export const executeTool = async (
       const io = assertConfigured();
       const { repoFullName, branch } = requireBranchArgs(args);
       const workspaceId = await currentWorkspaceId(io);
+      const commits = parseCommits(args['commits']);
+
+      // Before anything else, and deliberately outside createFromBranch: that
+      // returns early once a branch has an item, but every push still carries
+      // the day's commit times and they are what "log my time" runs on.
+      await recordActivity(
+        {
+          get: <T,>(k: string) => api.storage.get<T>(k),
+          set: (k, v) => api.storage.set(k, v),
+          list: (prefix) => api.storage.list(prefix),
+        },
+        repoFullName,
+        branch,
+        commits
+      );
 
       const result = await createFromBranch(
         {
@@ -803,7 +839,7 @@ export const executeTool = async (
         {
           repoFullName,
           branch,
-          commits: parseCommits(args['commits']),
+          commits,
           baseBranch: typeof args['baseBranch'] === 'string' ? args['baseBranch'] : null,
         }
       );
@@ -837,6 +873,118 @@ export const executeTool = async (
         }));
 
       return { count: branches.length, swept: expire.length, branches };
+    }
+
+    case 'workspace.log-branch-time': {
+      await requireBranchLinkEnabled();
+      const io = assertConfigured();
+      const date = typeof args['date'] === 'string' ? args['date'] : '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new Error('Workspace: log-branch-time needs a date as YYYY-MM-DD.');
+      }
+
+      const raw = Array.isArray(args['allocations']) ? args['allocations'] : [];
+      const allocations = raw.flatMap((entry) => {
+        if (typeof entry !== 'object' || entry === null) return [];
+        const r = entry as Record<string, unknown>;
+        const repoFullName = typeof r['repoFullName'] === 'string' ? r['repoFullName'] : '';
+        const branch = typeof r['branch'] === 'string' ? r['branch'] : '';
+        const seconds = Number(r['seconds']);
+        if (repoFullName === '' || branch === '' || !Number.isFinite(seconds)) return [];
+        return [{ repoFullName, branch, seconds: Math.round(seconds) }];
+      });
+
+      const result = await logBranchTime(
+        {
+          storage: {
+            get: <T,>(k: string) => api.storage.get<T>(k),
+            set: (k, v) => api.storage.set(k, v),
+          },
+          client: {
+            createTimeEntry: (itemId, entry) => io.createTimeEntry(itemId, entry),
+            deleteTimeEntry: (itemId, entryId) => io.deleteTimeEntry(itemId, entryId),
+          },
+          logger: api.logger,
+        },
+        { date, allocations, replace: args['replace'] === true }
+      );
+      return { ...result, hours: Math.round((result.seconds / 3600) * 100) / 100 };
+    }
+
+    case 'workspace.log-my-time': {
+      const io = assertConfigured();
+      const date =
+        typeof args['date'] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args['date'])
+          ? args['date']
+          : new Date().toISOString().slice(0, 10);
+
+      const store = {
+        get: <T,>(k: string) => api.storage.get<T>(k),
+        set: (k: string, v: unknown) => api.storage.set(k, v),
+        list: (prefix: string) => api.storage.list(prefix),
+      };
+
+      const commits = await readActivity(store, date);
+      const cfg = await timeConfig();
+      const sessions = sessionize(commits, {
+        gapSeconds: cfg.gapMinutes * 60,
+        leadInSeconds: cfg.leadInMinutes * 60,
+      });
+      const worked = sessions.reduce((n, sess) => n + sess.seconds, 0);
+      const allocations = allocate(sessions, {
+        maxDaySeconds: cfg.maxDayHours * 3600,
+        minSeconds: cfg.minMinutes * 60,
+      });
+
+      const hours = (sec: number): number => Math.round((sec / 3600) * 100) / 100;
+      const summary = {
+        date,
+        commits: commits.length,
+        sessions: sessions.map((sess) => ({
+          from: new Date(sess.startedAt * 1000).toISOString().slice(11, 16),
+          to: new Date(sess.endedAt * 1000).toISOString().slice(11, 16),
+          hours: hours(sess.seconds),
+          commits: sess.commits.length,
+        })),
+        workedHours: hours(worked),
+        split: allocations.map((a) => ({ branch: a.branch, hours: hours(a.seconds) })),
+      };
+
+      if (commits.length === 0) {
+        return {
+          ...summary,
+          logged: 0,
+          note: 'No pushed commits recorded for that day, so there is nothing to divide. Only pushed work is visible here.',
+        };
+      }
+
+      if (args['dryRun'] === true) {
+        return { ...summary, logged: 0, note: 'Nothing written — this was a preview.' };
+      }
+
+      const result = await logBranchTime(
+        {
+          storage: { get: store.get, set: store.set },
+          client: {
+            createTimeEntry: (itemId, entry) => io.createTimeEntry(itemId, entry),
+            deleteTimeEntry: (itemId, entryId) => io.deleteTimeEntry(itemId, entryId),
+          },
+          logger: api.logger,
+        },
+        { date, allocations, replace: args['replace'] === true }
+      );
+
+      return {
+        ...summary,
+        logged: result.logged,
+        loggedHours: hours(result.seconds),
+        alreadyLogged: result.alreadyLogged,
+        unlinked: result.unlinked.map((a) => ({ branch: a.branch, hours: hours(a.seconds) })),
+        failed: result.failed,
+        note: result.alreadyLogged
+          ? 'This day was already logged. Ask again with replace to redo it.'
+          : undefined,
+      };
     }
 
     case 'workspace.branch-adopt': {

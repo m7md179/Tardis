@@ -108,8 +108,23 @@ It asks once for your TARDIS URL and password and writes
 
 Worth knowing:
 
-- **Worktrees are covered automatically.** All ~400 `wt-*` directories share the
-  parent repo's hooks, so three installs cover everything.
+- **Worktrees are covered automatically**, including ones created later — 475 of
+  them across the three repos at the time of writing.
+
+  This took a second attempt. An earlier version of this guide claimed worktrees
+  were covered because they share the parent's hooks. That is true of a repo
+  using `.git/hooks`, and false of a husky repo: husky sets `core.hooksPath` to
+  the **relative** path `.husky/_`, git resolves a relative hooksPath against
+  each working tree's own root, and `.husky/_` is gitignored — generated only
+  where `npm install` ran. Every worktree therefore looked for hooks in a
+  directory that did not exist and ran none, silently. Husky's own `pre-commit`
+  had never fired in a worktree either.
+
+  The installer now points `core.hooksPath` at an absolute directory under
+  `~/.tardis-branch-link/hooks/`. That value lives in `.git/config`, which every
+  worktree shares, so there is nothing to install per worktree and nothing to
+  remember when you make a new one.
+
 - **Your teammates are not affected.** The io repos use husky, so the hooks land
   in `.husky/` — which is committed — and the installer adds them to
   `.git/info/exclude`, which is local and never pushed.

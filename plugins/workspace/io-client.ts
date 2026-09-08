@@ -232,6 +232,33 @@ export class IoClient {
     });
   }
 
+  /**
+   * Log time against a work item.
+   *
+   * Always `source: MANUAL`. An AUTO entry asserts that the workspace's own
+   * timer ran and was stopped by a status transition; branch time is the
+   * opposite claim — nothing was timed, a day was measured once and divided.
+   * Writing these as AUTO would make them indistinguishable from timer output
+   * and inherit its `auto_capped` semantics, which do not apply.
+   */
+  async createTimeEntry(
+    itemId: number,
+    entry: { seconds: number; logged_date: string; note?: string }
+  ): Promise<{ id: number }> {
+    return this.request<{ id: number }>('POST', `/workspaces/work-items/${itemId}/time-entries`, {
+      ...entry,
+      source: 'MANUAL',
+    });
+  }
+
+  /** Remove a time entry, so re-logging a day replaces it rather than doubling it. */
+  async deleteTimeEntry(itemId: number, entryId: number): Promise<void> {
+    await this.request<unknown>(
+      'DELETE',
+      `/workspaces/work-items/${itemId}/time-entries/${entryId}`
+    );
+  }
+
   async assign(itemId: number, accountIds: number[]): Promise<WorkItem> {
     return this.updateItem(itemId, { assignee_account_ids: accountIds });
   }

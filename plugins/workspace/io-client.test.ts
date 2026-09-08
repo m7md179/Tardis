@@ -377,3 +377,45 @@ describe('registerGitLink', () => {
     });
   });
 });
+
+// ─── Time entries (branch time allocation) ───
+
+describe('createTimeEntry', () => {
+  it('logs a MANUAL entry against the item, with a date and a note', async () => {
+    // source MANUAL, never AUTO: an AUTO entry claims a timer ran, and the
+    // whole point of allocating time is that no timer did.
+    const { client, calls } = makeClient((_c, n) =>
+      n === 1
+        ? jsonResponse(LOGIN_OK)
+        : jsonResponse({ data: { id: 9 }, status: 201, message: 'ok' })
+    );
+
+    await client.createTimeEntry(1277, {
+      seconds: 5400,
+      logged_date: '2026-09-07',
+      note: 'branch-link: feat/x',
+    });
+
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/1277/time-entries');
+    expect(calls[1]!.init?.method).toBe('POST');
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({
+      seconds: 5400,
+      logged_date: '2026-09-07',
+      note: 'branch-link: feat/x',
+      source: 'MANUAL',
+    });
+  });
+});
+
+describe('deleteTimeEntry', () => {
+  it('removes an entry so a re-logged day replaces rather than doubles', async () => {
+    const { client, calls } = makeClient((_c, n) =>
+      n === 1 ? jsonResponse(LOGIN_OK) : jsonResponse({ data: null, status: 200, message: 'ok' })
+    );
+
+    await client.deleteTimeEntry(1277, 501);
+
+    expect(calls[1]!.url).toBe('http://io.test/workspaces/work-items/1277/time-entries/501');
+    expect(calls[1]!.init?.method).toBe('DELETE');
+  });
+});

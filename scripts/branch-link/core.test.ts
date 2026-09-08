@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'bun:test';
-import { parseCommitLog, parsePrePushRefs, shouldAct, DEFAULT_PROTECTED } from './core.js';
+import {
+  parseCommitLog,
+  parsePrePushRefs,
+  resolveTimeoutMs,
+  shouldAct,
+  DEFAULT_PROTECTED,
+} from './core.js';
 
 describe('parsePrePushRefs', () => {
   it('reads a branch being pushed', () => {
@@ -68,5 +74,47 @@ describe('parseCommitLog', () => {
 
   it('drops a record with no subject rather than emitting a blank commit', () => {
     expect(parseCommitLog(`${SEP}body${SEP}abc${REC}`)).toEqual([]);
+  });
+});
+
+describe('resolveTimeoutMs', () => {
+  it('defaults generously, because branch-create makes two LLM calls', () => {
+    // Measured live: compose + re-rank against a real model took longer than
+    // the original 30s, the client gave up, and the request was queued as an
+    // outage — while the server went on to create the item successfully.
+    expect(resolveTimeoutMs(undefined)).toBeGreaterThanOrEqual(120000);
+  });
+
+  it('honours an explicit value', () => {
+    expect(resolveTimeoutMs(45000)).toBe(45000);
+  });
+
+  it('ignores nonsense rather than disabling the timeout', () => {
+    // A zero or negative timeout would abort instantly; a non-number would
+    // make AbortSignal.timeout throw inside a detached process nobody watches.
+    expect(resolveTimeoutMs(0)).toBe(resolveTimeoutMs(undefined));
+    expect(resolveTimeoutMs(-1)).toBe(resolveTimeoutMs(undefined));
+    expect(resolveTimeoutMs('soon' as unknown as number)).toBe(resolveTimeoutMs(undefined));
+  });
+});
+
+describe('parseCommitLog — author time', () => {
+  const SEP = '\x00';
+  const REC = '\x1e';
+
+  it('carries each commit’s author time, which is the clock time is divided by', () => {
+    // Without `at` the server has commit text but no idea when you worked, so
+    // it can only log time for branches pushed in the same breath as the ask.
+    const raw = `Subject${SEP}body${SEP}abc123${SEP}1788700000${REC}`;
+    expect(parseCommitLog(raw)).toEqual([
+      { subject: 'Subject', body: 'body', sha: 'abc123', at: 1788700000 },
+    ]);
+  });
+
+  it('tolerates a record with no timestamp rather than dropping the commit', () => {
+    // The text is still worth having for composing a title.
+    const out = parseCommitLog(`Subject${SEP}${SEP}abc${REC}`);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.at).toBeUndefined();
   });
 });

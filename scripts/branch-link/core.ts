@@ -12,6 +12,8 @@ export interface Commit {
   subject: string;
   body: string;
   sha: string;
+  /** Author time, epoch seconds. Absent when the log format omitted it. */
+  at?: number;
 }
 
 export interface PushedRef {
@@ -21,6 +23,27 @@ export interface PushedRef {
 
 /** Branches shared with other people never become someone's personal task. */
 export const DEFAULT_PROTECTED = ['main', 'master', 'staging', 'develop'];
+
+/**
+ * How long to wait for TARDIS before treating the request as an outage.
+ *
+ * Five minutes, which looks absurd for an HTTP call and is not: this runs
+ * detached, after the git command has already returned, and nobody is waiting
+ * on it. `branch-create` makes two model round-trips — composing the title and
+ * re-ranking the parent — before it writes anything.
+ *
+ * Measured live at the original 30s: the client gave up and queued the request
+ * as a failure while the server went on to create the item successfully. The
+ * retry was harmless only because creation is idempotent. Timing out early
+ * costs a false failure, so the timeout exists to catch a genuinely dead
+ * server, not a slow model.
+ */
+export const DEFAULT_TIMEOUT_MS = 300000;
+
+export function resolveTimeoutMs(raw: number | undefined): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return DEFAULT_TIMEOUT_MS;
+  return raw;
+}
 
 const ZERO_SHA = /^0{40}$/;
 
@@ -55,18 +78,26 @@ export function shouldAct(branch: string, protectedBranches: string[]): boolean 
 }
 
 /**
- * Parse `git log --format=%s%x00%b%x00%H%x1e`. NUL separates the fields and
- * RS separates the records, because both are impossible in a commit subject —
- * a newline is not, which is why the obvious line-based format cannot work
- * once a commit has a body.
+ * Parse `git log --format=%s%x00%b%x00%H%x00%at%x1e`. NUL separates the fields
+ * and RS separates the records, because both are impossible in a commit
+ * subject — a newline is not, which is why the obvious line-based format
+ * cannot work once a commit has a body.
+ *
+ * `%at` is the clock the day's time is divided by. Without it the server has
+ * a branch's text but no idea when the work happened, so it could only ever
+ * log time for whatever was pushed in the same breath as the request.
  */
 export function parseCommitLog(raw: string): Commit[] {
   const out: Commit[] = [];
   for (const record of raw.split('\x1e')) {
     if (record.trim() === '') continue;
-    const [subject = '', body = '', sha = ''] = record.split('\x00');
+    const [subject = '', body = '', sha = '', at = ''] = record.split('\x00');
     if (subject.trim() === '') continue;
-    out.push({ subject: subject.trim(), body: body.trim(), sha: sha.trim() });
+
+    const seconds = Number(at.trim());
+    const commit: Commit = { subject: subject.trim(), body: body.trim(), sha: sha.trim() };
+    if (Number.isFinite(seconds) && seconds > 0) commit.at = seconds;
+    out.push(commit);
   }
   return out;
 }
