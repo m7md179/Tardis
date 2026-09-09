@@ -3,15 +3,10 @@
   "version": "1.0.0",
   "displayName": "Workspace",
   "description": "Read and manage work items in the internal-operation Workspaces module.",
-  "summary": "Agile project management from the internal-operation system: my tasks, my to-do list, what I am assigned to and what I am working on, plus boards, backlogs, sprints, epics, stories and sub-tasks. Use this for anything about work items or what is on my plate.",
+  "summary": "Agile project management from the internal-operation system: my tasks, my to-do list, what I am assigned to and what I am working on, plus boards, backlogs, sprints, epics, stories and sub-tasks. Also my timesheet: logging, recording or submitting the time and hours I worked on a day, and how long I worked, divided between the git branches I worked on. Use this for anything about work items, what is on my plate, or logging the time I worked.",
   "tier": 3,
   "main": "index.ts",
-  "permissions": [
-    "http:external",
-    "storage:read",
-    "storage:write",
-    "llm:use"
-  ],
+  "permissions": ["http:external", "storage:read", "storage:write", "llm:use"],
   "skills": [
     {
       "id": "workspace.list-workspaces",
@@ -49,9 +44,7 @@
             "description": "The short workspace key, e.g. PLAT"
           }
         },
-        "required": [
-          "key"
-        ]
+        "required": ["key"]
       },
       "ui": {
         "block": "form",
@@ -166,9 +159,7 @@
             "description": "Optional workspace key; defaults to the current one."
           }
         },
-        "required": [
-          "q"
-        ]
+        "required": ["q"]
       },
       "ui": {
         "block": "list",
@@ -196,9 +187,7 @@
             "description": "The work item's numeric id."
           }
         },
-        "required": [
-          "itemId"
-        ]
+        "required": ["itemId"]
       },
       "ui": {
         "block": "detail",
@@ -207,11 +196,7 @@
         "item": {
           "title": "title",
           "body": "body",
-          "meta": [
-            "status",
-            "priority",
-            "due"
-          ]
+          "meta": ["status", "priority", "due"]
         }
       }
     },
@@ -287,9 +272,7 @@
             "description": "Optional workspace key; defaults to the current one."
           }
         },
-        "required": [
-          "text"
-        ]
+        "required": ["text"]
       },
       "ui": {
         "block": "form",
@@ -491,9 +474,7 @@
         "item": {
           "title": "title",
           "body": "summary",
-          "meta": [
-            "stillNeeded"
-          ]
+          "meta": ["stillNeeded"]
         }
       }
     },
@@ -581,10 +562,7 @@
             "description": "Optional workspace key; defaults to the current one."
           }
         },
-        "required": [
-          "type",
-          "title"
-        ]
+        "required": ["type", "title"]
       },
       "ui": {
         "block": "form",
@@ -631,9 +609,7 @@
             "description": "Due date, ISO 8601"
           }
         },
-        "required": [
-          "itemId"
-        ]
+        "required": ["itemId"]
       },
       "ui": {
         "block": "form",
@@ -660,10 +636,7 @@
             "description": "BACKLOG, TODO, IN_PROGRESS, IN_REVIEW or DONE"
           }
         },
-        "required": [
-          "itemId",
-          "status"
-        ]
+        "required": ["itemId", "status"]
       },
       "ui": {
         "block": "form",
@@ -690,10 +663,7 @@
             "description": "Comment text"
           }
         },
-        "required": [
-          "itemId",
-          "body"
-        ]
+        "required": ["itemId", "body"]
       },
       "ui": {
         "block": "form",
@@ -735,9 +705,7 @@
             "description": "Due date, ISO 8601"
           }
         },
-        "required": [
-          "itemId"
-        ]
+        "required": ["itemId"]
       },
       "ui": {
         "block": "form",
@@ -763,10 +731,7 @@
             "description": "Account ids to assign the item to"
           }
         },
-        "required": [
-          "itemId",
-          "accountIds"
-        ]
+        "required": ["itemId", "accountIds"]
       },
       "ui": {
         "block": "form",
@@ -788,9 +753,7 @@
             "description": "Numeric work item id"
           }
         },
-        "required": [
-          "itemId"
-        ]
+        "required": ["itemId"]
       },
       "ui": {
         "block": "form",
@@ -812,9 +775,7 @@
             "description": "Numeric work item id"
           }
         },
-        "required": [
-          "itemId"
-        ]
+        "required": ["itemId"]
       },
       "ui": {
         "block": "form",
@@ -872,10 +833,7 @@
             "description": "The branch it was created from, if known."
           }
         },
-        "required": [
-          "repoFullName",
-          "branch"
-        ]
+        "required": ["repoFullName", "branch"]
       }
     },
     {
@@ -911,9 +869,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "subject"
-              ]
+              "required": ["subject"]
             }
           },
           "baseBranch": {
@@ -921,10 +877,7 @@
             "description": "The branch it was created from, if known."
           }
         },
-        "required": [
-          "repoFullName",
-          "branch"
-        ]
+        "required": ["repoFullName", "branch"]
       }
     },
     {
@@ -939,12 +892,7 @@
           "state": {
             "type": "string",
             "description": "Optional filter.",
-            "enum": [
-              "drafting",
-              "created",
-              "failed",
-              "adopted"
-            ]
+            "enum": ["drafting", "created", "failed", "adopted"]
           }
         },
         "required": []
@@ -984,11 +932,7 @@
             "description": "The work item to attach it to."
           }
         },
-        "required": [
-          "repoFullName",
-          "branch",
-          "itemId"
-        ]
+        "required": ["repoFullName", "branch", "itemId"]
       },
       "ui": {
         "block": "form",
@@ -1046,11 +990,7 @@
                   "type": "number"
                 }
               },
-              "required": [
-                "repoFullName",
-                "branch",
-                "seconds"
-              ]
+              "required": ["repoFullName", "branch", "seconds"]
             }
           },
           "replace": {
@@ -1058,10 +998,7 @@
             "description": "Delete this day's previous entries and write again."
           }
         },
-        "required": [
-          "date",
-          "allocations"
-        ]
+        "required": ["date", "allocations"]
       }
     },
     {
@@ -1164,12 +1101,7 @@
       "type": "select",
       "label": "Default priority",
       "description": "Priority for a branch-created item.",
-      "options": [
-        "LOW",
-        "MEDIUM",
-        "HIGH",
-        "URGENT"
-      ],
+      "options": ["LOW", "MEDIUM", "HIGH", "URGENT"],
       "default": "MEDIUM",
       "required": false
     },

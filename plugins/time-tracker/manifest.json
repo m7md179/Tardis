@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Time Tracker",
   "description": "Track time spent on tasks with start/stop/pause/resume.",
-  "summary": "Track time spent working on tasks. Start, stop, pause, and resume timers. View session history and daily summaries.",
+  "summary": "A live stopwatch for the task in front of me right now: start, stop, pause and resume a running timer, and review the sessions it recorded. Only for a timer I am starting or stopping at this moment. It is NOT a timesheet: logging, recording or submitting the hours I worked on a day belongs to the workspace plugin.",
   "tier": 1,
   "main": "index.ts",
   "permissions": [
@@ -28,9 +28,7 @@
             "description": "Name of the task to track"
           }
         },
-        "required": [
-          "taskName"
-        ]
+        "required": ["taskName"]
       },
       "ui": {
         "block": "form",
