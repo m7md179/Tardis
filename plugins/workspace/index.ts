@@ -216,7 +216,9 @@ async function timeConfig(): Promise<{
   leadInMinutes: number;
   maxDayHours: number;
   minMinutes: number;
+  utcOffsetMinutes: number;
 }> {
+  const rawOffset = (await api.config.get<number>('timeUtcOffsetMinutes')) ?? 0;
   const num = async (key: string, fallback: number): Promise<number> => {
     const raw = Number((await api.config.get<number>(key)) ?? fallback);
     return Number.isFinite(raw) && raw > 0 ? raw : fallback;
@@ -226,6 +228,12 @@ async function timeConfig(): Promise<{
     leadInMinutes: await num('timeLeadInMinutes', 30),
     maxDayHours: await num('timeMaxDayHours', 10),
     minMinutes: await num('timeMinMinutes', 10),
+    // Signed, so `num` (which rejects <= 0) cannot be used: a negative offset
+    // is exactly as valid as a positive one.
+    utcOffsetMinutes: (() => {
+      const raw = Number(rawOffset);
+      return Number.isFinite(raw) && Math.abs(raw) <= 14 * 60 ? raw : 0;
+    })(),
   };
 }
 
@@ -808,7 +816,8 @@ export const executeTool = async (
         },
         repoFullName,
         branch,
-        commits
+        commits,
+        { utcOffsetMinutes: (await timeConfig()).utcOffsetMinutes }
       );
 
       const result = await createFromBranch(

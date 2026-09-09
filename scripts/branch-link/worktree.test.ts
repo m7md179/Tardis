@@ -103,7 +103,10 @@ describe('after install', () => {
       join(home, '.tardis-branch-link', 'config.json'),
       JSON.stringify({ baseUrl: 'http://x', password: 'y' })
     );
-    await sh(main, `TARDIS_BUN=sh TARDIS_CLI='${stub.replace(/\\/g, '/')}' sh "${INSTALL.replace(/\\/g, '/')}" "${main.replace(/\\/g, '/')}"`);
+    await sh(
+      main,
+      `TARDIS_BUN=sh TARDIS_CLI='${stub.replace(/\\/g, '/')}' sh "${INSTALL.replace(/\\/g, '/')}" "${main.replace(/\\/g, '/')}"`
+    );
   });
 
   it('sets an absolute hooksPath, which every worktree shares', async () => {
@@ -111,6 +114,13 @@ describe('after install', () => {
     expect(out.trim().startsWith('.')).toBe(false);
     expect(out.trim().length).toBeGreaterThan(0);
   });
+
+  it('still fires in a worktree after husky prepare resets core.hooksPath', async () => {
+    await sh(tree, 'git config core.hooksPath .husky/_');
+    await writeFile(calls, '');
+    await sh(tree, 'git checkout -q -b feat/after-husky-prepare');
+    expect(await settled()).toContain('feat/after-husky-prepare');
+  }, 30000);
 
   it('fires in a worktree — the whole point', async () => {
     await writeFile(calls, '');

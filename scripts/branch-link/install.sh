@@ -70,7 +70,7 @@ repo_slug() {
 }
 
 install_one() {
-  local repo="$1" hook path exclude common top hooks_path shared
+  local repo="$1" hook path exclude common top hooks_path shared pin
   if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
     echo "  skipped: not a git repository" >&2
     return
@@ -125,11 +125,20 @@ install_one() {
     done
   fi
 
-  # Remember what to put back, then take over.
+  # Remember what to put back, then take over. The included config is written
+  # after the repo's own core.hooksPath entry, so a later `husky` prepare can
+  # rewrite that entry to `.husky/_` without changing the effective value.
+  # This matters most in worktrees: they do not have Husky's generated `_`
+  # directory, so a relative hooksPath silently disables every hook there.
   if [ "$hooks_path" != "$shared" ]; then
     git -C "$repo" config tardis.previousHooksPath "$hooks_path"
   fi
   git -C "$repo" config core.hooksPath "$shared"
+  pin="$shared/hooks-path.gitconfig"
+  git config --file "$pin" core.hooksPath "$shared"
+  if ! git -C "$repo" config --local --get-all include.path 2>/dev/null | grep -qxF "$pin"; then
+    git -C "$repo" config --local --add include.path "$pin"
+  fi
   echo "  core.hooksPath -> $shared"
   echo "  covers $(git -C "$repo" worktree list | wc -l | tr -d ' ') worktrees, and any created later"
 
@@ -151,11 +160,15 @@ install_one() {
 }
 
 uninstall_one() {
-  local repo="$1" hook path exclude common top previous shared
+  local repo="$1" hook path exclude common top previous shared pin
   common="$(cd "$repo" && git rev-parse --path-format=absolute --git-common-dir)"
   top="$(dirname "$common")"
   exclude="$common/info/exclude"
   previous="$(git -C "$repo" config --get tardis.previousHooksPath || true)"
+
+  shared="$HOME_DIR/hooks/$(repo_slug "$common")"
+  pin="$shared/hooks-path.gitconfig"
+  git -C "$repo" config --local --fixed-value --unset-all include.path "$pin" 2>/dev/null || true
 
   if [ -n "$previous" ]; then
     git -C "$repo" config core.hooksPath "$previous"
@@ -163,7 +176,6 @@ uninstall_one() {
     echo "  core.hooksPath restored to $previous"
   fi
 
-  shared="$HOME_DIR/hooks/$(repo_slug "$common")"
   rm -rf "$shared"
 
   for hook in post-checkout pre-push; do

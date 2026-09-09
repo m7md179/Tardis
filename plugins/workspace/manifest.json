@@ -1207,6 +1207,13 @@
       "description": "Shares below this are dropped rather than logged as a rounding artefact.",
       "default": 10,
       "required": false
+    },
+    "timeUtcOffsetMinutes": {
+      "type": "number",
+      "label": "Working-day offset from UTC (minutes)",
+      "description": "Which timezone your working day is measured in. 180 for UTC+3. Without it a commit made after midnight local time is filed under the previous day.",
+      "default": 0,
+      "required": false
     }
   }
 }

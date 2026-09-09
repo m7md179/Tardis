@@ -71,3 +71,33 @@ describe('recordActivity', () => {
     expect(new Set(day.map((c) => c.repoFullName)).size).toBe(2);
   });
 });
+
+describe('the day boundary is where you work, not UTC', () => {
+  it('files a 01:30 local commit under that local day, not the previous UTC one', async () => {
+    // Measured: this machine reports +0300 and commits are authored there.
+    // 01:30 on the 9th at +0300 is 22:30 UTC on the 8th, so bucketing by UTC
+    // moved a late night's work to the day before — and late nights are
+    // normal here (commits at 22:54 and 23:14 the day this was found).
+    const s = store();
+    const at = Math.floor(Date.parse('2026-09-08T22:30:00Z') / 1000); // 01:30 +0300 on the 9th
+    await recordActivity(s, 'org/a', 'feat/x', [{ sha: 'a1', at }], { utcOffsetMinutes: 180 });
+
+    expect(await readActivity(s, '2026-09-09')).toHaveLength(1);
+    expect(await readActivity(s, '2026-09-08')).toHaveLength(0);
+  });
+
+  it('still buckets by UTC when no offset is configured', async () => {
+    // The default cannot assume anyone's timezone.
+    const s = store();
+    const at = Math.floor(Date.parse('2026-09-08T22:30:00Z') / 1000);
+    await recordActivity(s, 'org/a', 'feat/x', [{ sha: 'a1', at }]);
+    expect(await readActivity(s, '2026-09-08')).toHaveLength(1);
+  });
+
+  it('shifts a midday commit nowhere, offset or not', async () => {
+    const s = store();
+    const at = Math.floor(Date.parse('2026-09-09T09:00:00Z') / 1000);
+    await recordActivity(s, 'org/a', 'feat/x', [{ sha: 'a1', at }], { utcOffsetMinutes: 180 });
+    expect(await readActivity(s, '2026-09-09')).toHaveLength(1);
+  });
+});

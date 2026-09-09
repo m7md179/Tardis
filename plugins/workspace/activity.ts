@@ -31,9 +31,19 @@ export const ACTIVITY_KEY_PREFIX = 'activity:';
 
 export const activityKey = (date: string): string => `${ACTIVITY_KEY_PREFIX}${date}`;
 
-/** YYYY-MM-DD in UTC. */
-function dayOf(epochSeconds: number): string {
-  return new Date(epochSeconds * 1000).toISOString().slice(0, 10);
+/**
+ * YYYY-MM-DD in the timezone the work happened in.
+ *
+ * UTC is the wrong boundary for anyone who is not on it. This machine reports
+ * +0300 and commits are authored there, so a commit at 01:30 local is 22:30
+ * UTC the day before — bucketing by UTC moved a late night's work onto the
+ * previous day, and late nights are normal here.
+ *
+ * The default stays UTC because a plugin cannot assume anyone's timezone;
+ * `timeUtcOffsetMinutes` in settings is what makes it match the working day.
+ */
+function dayOf(epochSeconds: number, utcOffsetMinutes: number): string {
+  return new Date((epochSeconds + utcOffsetMinutes * 60) * 1000).toISOString().slice(0, 10);
 }
 
 /**
@@ -49,8 +59,10 @@ export async function recordActivity(
   store: ActivityStore,
   repoFullName: string,
   branch: string,
-  commits: { sha?: string; at?: number }[]
+  commits: { sha?: string; at?: number }[],
+  opts: { utcOffsetMinutes?: number } = {}
 ): Promise<void> {
+  const offset = Number.isFinite(opts.utcOffsetMinutes) ? (opts.utcOffsetMinutes as number) : 0;
   const byDay = new Map<string, ActivityCommit[]>();
 
   for (const commit of commits) {
@@ -61,7 +73,7 @@ export async function recordActivity(
     if (typeof at !== 'number' || !Number.isFinite(at) || at <= 0) continue;
     if (typeof sha !== 'string' || sha === '') continue;
 
-    const day = dayOf(at);
+    const day = dayOf(at, offset);
     const list = byDay.get(day) ?? [];
     list.push({ repoFullName, branch, sha, at });
     byDay.set(day, list);
