@@ -33,11 +33,10 @@ import {
 import type { BranchRecord } from './branch.js';
 import { createFromBranch } from './branch-create.js';
 import type { BranchLinkConfig } from './branch-create.js';
-import { compose } from './compose.js';
+import { compose, parseCommits } from './compose.js';
 import { logBranchTime } from './branch-time.js';
 import { readActivity, recordActivity } from './activity.js';
 import { allocate, sessionize } from './sessions.js';
-import type { Commit } from './compose.js';
 
 let api: PluginAPI;
 let client: IoClient | null = null;
@@ -235,24 +234,6 @@ async function timeConfig(): Promise<{
       return Number.isFinite(raw) && Math.abs(raw) <= 14 * 60 ? raw : 0;
     })(),
   };
-}
-
-/** Commits arrive over HTTP from a git hook, so nothing about them is trusted. */
-function parseCommits(raw: unknown): Commit[] {
-  if (!Array.isArray(raw)) return [];
-  const out: Commit[] = [];
-  for (const entry of raw) {
-    if (typeof entry !== 'object' || entry === null) continue;
-    const record = entry as Record<string, unknown>;
-    const subject = typeof record['subject'] === 'string' ? record['subject'].trim() : '';
-    if (subject === '') continue;
-    out.push({
-      subject,
-      body: typeof record['body'] === 'string' ? record['body'] : '',
-      sha: typeof record['sha'] === 'string' ? record['sha'] : '',
-    });
-  }
-  return out;
 }
 
 function describeBranchRecord(r: BranchRecord): string {

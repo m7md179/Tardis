@@ -15,6 +15,39 @@ export interface Commit {
   subject: string;
   body: string;
   sha: string;
+  /** Author time, epoch seconds. The clock the timesheet is measured from. */
+  at?: number;
+}
+
+/**
+ * Commits arrive over HTTP from a git hook, so nothing about them is trusted.
+ *
+ * `at` is easy to lose here and expensive to lose: an earlier version rebuilt
+ * each commit as {subject, body, sha}, which is everything composing a title
+ * needs and nothing the timesheet does. Thirty-seven pushes reported "ok" and
+ * the server recorded no activity at all, because recordActivity then dropped
+ * every commit for having no timestamp — silently, since branch-create itself
+ * had succeeded.
+ */
+export function parseCommits(raw: unknown): Commit[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Commit[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const subject = typeof record['subject'] === 'string' ? record['subject'].trim() : '';
+    if (subject === '') continue;
+
+    const commit: Commit = {
+      subject,
+      body: typeof record['body'] === 'string' ? record['body'] : '',
+      sha: typeof record['sha'] === 'string' ? record['sha'] : '',
+    };
+    const at = Number(record['at']);
+    if (Number.isFinite(at) && at > 0) commit.at = at;
+    out.push(commit);
+  }
+  return out;
 }
 
 export interface Composition {

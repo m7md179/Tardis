@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { compose, composeFallback, parseComposition } from './compose.js';
+import { compose, composeFallback, parseCommits, parseComposition } from './compose.js';
 import type { Commit } from './compose.js';
 
 const noopLog = { debug: (): void => {}, warn: (): void => {} };
@@ -90,5 +90,29 @@ describe('compose', () => {
       commits
     );
     expect(out.title).toBe('Nag');
+  });
+});
+
+describe('parseCommits — what arrives over HTTP from a git hook', () => {
+  it('keeps the author time, which the whole timesheet is measured from', () => {
+    // Found live: 37 pushes reported "ok" and the server recorded zero
+    // activity, because this rebuilt each commit as {subject, body, sha} and
+    // dropped `at`. recordActivity then discarded every commit for having no
+    // timestamp — silently, since branch-create itself had succeeded.
+    expect(parseCommits([{ subject: 'S', body: 'B', sha: 'abc', at: 1788700000 }])).toEqual([
+      { subject: 'S', body: 'B', sha: 'abc', at: 1788700000 },
+    ]);
+  });
+
+  it('drops a nonsense timestamp rather than carrying it into a day bucket', () => {
+    const out = parseCommits([{ subject: 'S', sha: 'a', at: 'yesterday' }]);
+    expect(out[0]!.at).toBeUndefined();
+    expect(out[0]!.subject).toBe('S');
+  });
+
+  it('still refuses a commit with no subject, and anything that is not an object', () => {
+    expect(parseCommits([{ body: 'B', sha: 'a', at: 1 }])).toEqual([]);
+    expect(parseCommits(['nope', null, 42])).toEqual([]);
+    expect(parseCommits('not an array')).toEqual([]);
   });
 });
