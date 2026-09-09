@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Workspace",
   "description": "Read and manage work items in the internal-operation Workspaces module.",
-  "summary": "Agile project management from the internal-operation system: my tasks, my to-do list, what I am assigned to and what I am working on, plus boards, backlogs, sprints, epics, stories and sub-tasks. Use this for anything about work items or what is on my plate.",
+  "summary": "Agile project management from the internal-operation system: my tasks, my to-do list, what I am assigned to and what I am working on, plus boards, backlogs, sprints, epics, stories and sub-tasks. Also my TIMESHEET: log, record, register or submit my hours for a day, how long I worked, and how that time is split across the work items I actually touched, measured from my git commits. Use this for anything about work items, what is on my plate, or logging my hours.",
   "tier": 3,
   "main": "index.ts",
   "permissions": [

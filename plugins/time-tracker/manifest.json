@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "displayName": "Time Tracker",
   "description": "Track time spent on tasks with start/stop/pause/resume.",
-  "summary": "Track time spent working on tasks. Start, stop, pause, and resume timers. View session history and daily summaries.",
+  "summary": "A manual stopwatch I start and stop by hand: start, stop, pause and resume a timer for something I am doing right now, and see those stopwatch sessions afterwards. NOT the timesheet on my work items and NOT where a day's hours are logged \u2014 use workspace for logging, recording or submitting my hours.",
   "tier": 1,
   "main": "index.ts",
   "permissions": [
